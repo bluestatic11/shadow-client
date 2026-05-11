@@ -74,6 +74,10 @@ jobs:
         working-directory: launcher
         run: npm install
 
+      - name: Generate platform icons (.ico / .icns from icon.png)
+        working-directory: launcher
+        run: npx --yes @tauri-apps/cli@^2 icon src-tauri/icons/icon.png --output src-tauri/icons
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

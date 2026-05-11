@@ -59,8 +59,8 @@ npm run build        # production .exe / .dmg / .AppImage
 
 ## Performance
 
-Benchmarks on Cosmos MC **Survival**, 1.21.11, 16-chunk render distance, identical
-hardware, same player load. Singleplayer reproduces the same ratio.
+Benchmarks on **Singleplayer**, 1.21.11, 32-chunk render distance, identical
+hardware.
 
 | Client | FPS |
 |---|---|

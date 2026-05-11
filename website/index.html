@@ -127,24 +127,27 @@
       <h2>Download</h2>
       <p class="sub">Single-file installer. Microsoft account sign-in. First launch downloads the right version automatically.</p>
       <div class="download-grid">
-        <a href="https://github.com/bluestatic11/shadow-client/releases/latest"
-           class="download-card primary" data-platform="windows" target="_blank" rel="noopener">
+        <a href="https://github.com/bluestatic11/shadow-client/releases/download/v0.1.0/Shadow.Client_0.1.0_x64-setup.exe"
+           class="download-card primary" data-platform="windows"
+           data-asset-pattern="x64-setup\.exe$" download>
           <div class="dl-os">Windows</div>
-          <div class="dl-version">latest release</div>
+          <div class="dl-version">v0.1.0</div>
           <div class="dl-btn">Download .exe</div>
           <div class="dl-size">Windows 10 / 11 x64</div>
         </a>
-        <a href="https://github.com/bluestatic11/shadow-client/releases/latest"
-           class="download-card" data-platform="mac" target="_blank" rel="noopener">
+        <a href="https://github.com/bluestatic11/shadow-client/releases/download/v0.1.0/Shadow.Client_0.1.0_universal.dmg"
+           class="download-card" data-platform="mac"
+           data-asset-pattern="universal\.dmg$" download>
           <div class="dl-os">macOS</div>
-          <div class="dl-version">latest release</div>
+          <div class="dl-version">v0.1.0</div>
           <div class="dl-btn">Download .dmg</div>
           <div class="dl-size">macOS 12+ universal</div>
         </a>
-        <a href="https://github.com/bluestatic11/shadow-client/releases/latest"
-           class="download-card" data-platform="linux" target="_blank" rel="noopener">
+        <a href="https://github.com/bluestatic11/shadow-client/releases/download/v0.1.0/Shadow.Client_0.1.0_amd64.AppImage"
+           class="download-card" data-platform="linux"
+           data-asset-pattern="amd64\.AppImage$" download>
           <div class="dl-os">Linux</div>
-          <div class="dl-version">latest release</div>
+          <div class="dl-version">v0.1.0</div>
           <div class="dl-btn">Download .AppImage</div>
           <div class="dl-size">x86_64</div>
         </a>
@@ -177,16 +180,37 @@
   </main>
 
   <script>
-    // Auto-detect OS for the download button and bring it to focus.
-    // Falls back to Windows if undetected.
+    // 1. Auto-detect OS so the right platform card gets the .primary highlight.
+    //    Falls back to Windows if undetected.
     (function() {
       const ua = navigator.userAgent.toLowerCase();
       let os = 'windows';
       if (ua.includes('mac')) os = 'mac';
       else if (ua.includes('linux')) os = 'linux';
       document.querySelectorAll('.download-card').forEach(card => {
+        card.classList.remove('primary');
         if (card.dataset.platform === os) card.classList.add('primary');
       });
+    })();
+
+    // 2. Rewire each download card's href to the LATEST release's asset URL,
+    //    so we don't have to edit HTML on every version bump. The static hrefs
+    //    in the markup are the working v0.1.0 fallback if this request fails.
+    (async function() {
+      try {
+        const r = await fetch('https://api.github.com/repos/bluestatic11/shadow-client/releases/latest');
+        if (!r.ok) return;
+        const release = await r.json();
+        document.querySelectorAll('.download-card[data-asset-pattern]').forEach(card => {
+          const pattern = new RegExp(card.dataset.assetPattern, 'i');
+          const asset = release.assets.find(a => pattern.test(a.name));
+          if (asset) {
+            card.href = asset.browser_download_url;
+            const verEl = card.querySelector('.dl-version');
+            if (verEl) verEl.textContent = release.tag_name;
+          }
+        });
+      } catch (_) { /* fall back to the hardcoded v0.1.0 hrefs */ }
     })();
   </script>
 </body>

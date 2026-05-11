@@ -5304,23 +5304,49 @@ public final class ShadowHud implements ClientModInitializer {
             catch (Throwable t) { logOnce("HudEdit", t); }
         }
 
-        // Toggle Sprint / Sneak: when the module is ON, lock the matching
-        // KeyBinding's `pressed` state to true every tick. MC's movement code
-        // reads this directly, so the player effectively walks with sprint
-        // (or sneak) held without ever having to touch the key. Turning the
-        // module OFF immediately clears it.
+        // Toggle Sprint / Sneak: hold the matching action while the
+        // module is ON.
+        //
+        // ToggleSneak still uses the old "force KeyBinding.pressed=true"
+        // trick — sneak just slows movement + edge protection, has no
+        // internal state-machine to fight with, stays smooth.
+        //
+        // ToggleSprint used to do the same, but vanilla's sprint detection
+        // looks for the FRESH-PRESS edge (keySprint.wasPressed() consuming
+        // timesPressed) rather than the held state, so pressed=true never
+        // engaged sprint cleanly — vanilla kept flicking isSprinting off
+        // whenever its own checks ran (collision, brief food drop, etc.)
+        // and we kept slamming the key back to pressed every tick. Net
+        // result: visible FOV / animation / speed flicker every few frames
+        // = "choppy". We now drive setSprinting() directly each tick the
+        // user is moving forward, which keeps the state stable (same path
+        // AutoSprint uses).
         resolveKeyBindings();
-        if (kbSetPressed != null) {
+        if (kbSetPressed != null && keySneakBinding != null) {
             try {
-                if (keySprintBinding != null) {
-                    boolean want = modOn("ToggleSprint", false);
-                    if (want) kbSetPressed.invoke(keySprintBinding, true);
-                }
-                if (keySneakBinding != null) {
-                    boolean want = modOn("ToggleSneak", false);
-                    if (want) kbSetPressed.invoke(keySneakBinding, true);
+                if (modOn("ToggleSneak", false)) {
+                    kbSetPressed.invoke(keySneakBinding, true);
                 }
             } catch (Throwable ignored) {}
+        }
+        if (modOn("ToggleSprint", false)) {
+            try {
+                Object sprintPlayer = playerField != null ? playerField.get(mc) : null;
+                if (sprintPlayer != null) {
+                    // Only engage sprint when the user actually wants to move
+                    // forward. 87 = GLFW_KEY_W. We poll GLFW directly so this
+                    // works regardless of menu state / KeyBinding focus.
+                    boolean wDown = false;
+                    if (glfwGetKey != null && windowHandle > 0) {
+                        wDown = (int) glfwGetKey.invoke(null, windowHandle, 87) == 1;
+                    }
+                    if (wDown) {
+                        Method ss = findMethodByName(sprintPlayer.getClass(), "method_5728");
+                        if (ss == null) ss = findMethodByName(sprintPlayer.getClass(), "setSprinting");
+                        if (ss != null) ss.invoke(sprintPlayer, true);
+                    }
+                }
+            } catch (Throwable t) { logOnce("ToggleSprint", t); }
         }
 
         if (!menuOpen) return;

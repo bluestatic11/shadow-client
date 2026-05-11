@@ -126,31 +126,16 @@ body {
   padding-top: 14px;
 }
 
-.account {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.account:hover { background: var(--bg-2); }
-
-.account-avatar {
-  width: 28px;
-  height: 28px;
-  background: var(--bg-3);
+.version-pill {
+  background: var(--bg-2);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 6px 10px;
   border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-mute);
+  text-align: center;
+  font-family: 'Consolas', monospace;
+  border: 1px solid var(--line);
 }
-
-.account-name { font-size: 13px; font-weight: 600; }
-.account-status { font-size: 11px; color: var(--text-mute); }
 
 /* ───── Main panel ───────────────────────────────────────────── */
 .main {
@@ -166,7 +151,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 
 .page-head h2 {
@@ -175,30 +160,128 @@ body {
   flex: 1;
 }
 
-/* ───── Home (Play) ──────────────────────────────────────────── */
-.hero {
-  text-align: center;
-  margin-top: 60px;
-}
-
-.hero h1 {
-  font-size: 48px;
-  font-weight: 800;
-  letter-spacing: -1px;
-  margin-bottom: 6px;
-}
-
-.hero-sub {
+.page-blurb {
   color: var(--text-dim);
-  font-size: 15px;
-  margin-bottom: 40px;
+  font-size: 13px;
+  margin-bottom: 20px;
+  max-width: 720px;
 }
 
-.play-btn {
-  display: inline-flex;
+/* ───── Play card (the new home page) ────────────────────────── */
+.play-card {
+  max-width: 520px;
+  margin: 24px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Account row */
+.account-row {
+  display: flex;
   align-items: center;
   gap: 14px;
-  padding: 22px 80px;
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  background: var(--bg-3);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-mute);
+  font-weight: 700;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.account-row.signed-in .avatar {
+  background: var(--accent);
+  color: white;
+}
+
+.account-info { flex: 1; min-width: 0; }
+.account-name { font-size: 14px; font-weight: 600; }
+.account-mode { font-size: 12px; color: var(--text-mute); margin-top: 2px; }
+
+.ms-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #2b579a;       /* Microsoft blue — visually unambiguous */
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.ms-btn:hover { background: #366fc4; }
+
+.ms-icon {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+}
+
+.account-row.signed-in .ms-btn {
+  background: var(--bg-3);
+  color: var(--text-dim);
+}
+
+/* Username row — hidden when signed in */
+.username-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px;
+}
+
+.username-row label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  width: 80px;
+}
+
+.username-row input {
+  flex: 1;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.username-row input:focus {
+  outline: none;
+  border-color: var(--accent-2);
+}
+
+.account-row.signed-in + .username-row { display: none; }
+
+/* Big PLAY button */
+.play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  padding: 22px;
   background: var(--accent);
   color: white;
   border: none;
@@ -210,6 +293,7 @@ body {
   box-shadow: 0 0 32px rgba(175, 18, 26, 0.4);
   font-family: inherit;
   transition: all 0.15s;
+  margin-top: 6px;
 }
 
 .play-btn:hover:not(:disabled) {
@@ -221,37 +305,105 @@ body {
 .play-btn:disabled {
   background: var(--bg-3);
   color: var(--text-mute);
-  cursor: not-allowed;
+  cursor: wait;
+  box-shadow: none;
+}
+
+.play-btn.busy {
+  background: var(--bg-3);
+  color: var(--amber);
+  cursor: wait;
   box-shadow: none;
 }
 
 .play-icon { font-size: 18px; }
 
-.hero-version {
-  margin-top: 18px;
-}
-
-.hero-version select {
-  background: var(--bg-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  padding: 8px 14px;
-  border-radius: 5px;
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.hero-bench {
-  margin-top: 80px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
+/* Status line + progress bar */
+.status-line {
   text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  min-height: 18px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
 }
 
-.bench-row { display: inline-flex; align-items: baseline; gap: 12px; }
-.bench-num { font-size: 18px; font-weight: 700; font-family: 'Consolas', monospace; }
-.bench-label { color: var(--text-mute); font-size: 12px; }
+.status-line.ok      { color: var(--green); }
+.status-line.error   { color: #ff8a8a; }
+.status-line.working { color: var(--amber); }
+
+.progress {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.indeterminate {
+  width: 30%;
+  animation: indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* Detail log toggle + view */
+.details-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  font-size: 12px;
+  padding: 6px 4px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.12s;
+}
+
+.details-toggle:hover { color: var(--text-dim); }
+
+.details-toggle .caret {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.details-toggle.open .caret { transform: rotate(90deg); }
+
+.log-view {
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  background: #050709;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  transition: height 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
+}
+
+.log-view.collapsed {
+  height: 0;
+  padding: 0 10px;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.log-line { padding: 1px 0; }
+.log-line.stderr { color: #ff8a8a; }
+.log-line.exit   { color: var(--amber); border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }
 
 /* ───── Generic buttons ──────────────────────────────────────── */
 .btn-sm {
@@ -317,15 +469,6 @@ body {
   border: 1px dashed var(--line);
 }
 
-.placeholder {
-  text-align: center;
-  padding: 80px 40px;
-}
-
-.placeholder h2 { font-size: 28px; margin-bottom: 12px; }
-.placeholder p { color: var(--text-dim); margin: 8px 0; }
-.placeholder .dim { color: var(--text-mute); font-size: 13px; }
-
 /* ───── Settings ─────────────────────────────────────────────── */
 .settings-grid {
   display: grid;
@@ -340,7 +483,7 @@ body {
   border: 1px solid var(--line);
 }
 
-.setting.full { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
+.setting.full { grid-column: 1 / -1; }
 
 .setting label {
   display: block;
@@ -367,33 +510,20 @@ body {
   border-color: var(--accent-2);
 }
 
-.hint {
-  color: var(--text-mute);
-  font-size: 12px;
-}
-
-.hint code {
-  background: var(--bg);
-  padding: 2px 6px;
-  border-radius: 3px;
+.setting-hint {
   font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 6px;
 }
 
-/* ───── Logs ─────────────────────────────────────────────────── */
-.log-view {
+.code-block {
+  display: block;
+  background: var(--bg);
+  padding: 8px 10px;
+  border-radius: 4px;
   font-family: 'Consolas', monospace;
-  font-size: 12px;
-  background: #050709;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 14px;
-  height: calc(100vh - 180px);
-  overflow-y: auto;
-  white-space: pre-wrap;
+  font-size: 11px;
+  color: var(--text-dim);
   word-break: break-all;
   user-select: text;
 }
-
-.log-line { padding: 1px 0; }
-.log-line.stderr { color: #ff8a8a; }
-.log-line.exit   { color: var(--amber); border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }

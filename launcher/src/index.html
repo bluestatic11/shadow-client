@@ -13,7 +13,7 @@
       <div class="brand-mark">S</div>
       <div class="brand-text">
         <div class="brand-name"><span class="accent">SHADOW</span> CLIENT</div>
-        <div class="brand-sub">v0.1.0</div>
+        <div class="brand-sub">v0.2.0</div>
       </div>
     </div>
     <nav class="tabs">
@@ -23,23 +23,13 @@
       <button class="tab" data-tab="mods">
         <span class="tab-icon">▦</span> Mods
       </button>
-      <button class="tab" data-tab="cosmetics">
-        <span class="tab-icon">★</span> Cosmetics
-      </button>
       <button class="tab" data-tab="settings">
         <span class="tab-icon">⚙</span> Settings
       </button>
-      <button class="tab" data-tab="logs">
-        <span class="tab-icon">≡</span> Logs
-      </button>
     </nav>
     <div class="sidebar-foot">
-      <div class="account" id="account">
-        <div class="account-avatar">?</div>
-        <div class="account-info">
-          <div class="account-name" id="account-name">Not signed in</div>
-          <div class="account-status" id="account-status">Click to sign in</div>
-        </div>
+      <div class="version-blurb">
+        <div class="version-pill">1.21.11 · Fabric</div>
       </div>
     </div>
   </aside>
@@ -47,26 +37,47 @@
   <!-- ───── Main panel ────────────────────────────────────────────── -->
   <main class="main">
 
-    <!-- Home tab — big PLAY button -->
+    <!-- Home tab — big PLAY button + everything you need to launch -->
     <section class="page active" id="page-home">
-      <div class="hero">
-        <h1>Ready to play.</h1>
-        <p class="hero-sub" id="hero-status">Loading…</p>
-        <button class="play-btn" id="play-btn" disabled>
+      <div class="play-card">
+
+        <!-- Account row: shows MS account if signed in, otherwise an offline placeholder + sign-in CTA. -->
+        <div class="account-row" id="account-row">
+          <div class="avatar" id="avatar">?</div>
+          <div class="account-info">
+            <div class="account-name" id="account-name">Not signed in</div>
+            <div class="account-mode" id="account-mode">Playing in offline mode</div>
+          </div>
+          <button class="ms-btn" id="ms-btn">
+            <span class="ms-icon">⊞</span>
+            <span>Sign in</span>
+          </button>
+        </div>
+
+        <!-- Offline username (only shown when not signed in) -->
+        <div class="username-row" id="username-row">
+          <label for="username-input">Username</label>
+          <input type="text" id="username-input" placeholder="Player" maxlength="16" value="Player">
+        </div>
+
+        <!-- The big play button -->
+        <button class="play-btn" id="play-btn">
           <span class="play-icon">▶</span>
           <span class="play-text">PLAY</span>
         </button>
-        <div class="hero-version">
-          <select id="version-select">
-            <option value="1.21.11">1.21.11 (Fabric)</option>
-          </select>
+
+        <!-- Inline status (replaces the old "switch to Logs tab" behavior) -->
+        <div class="status-line" id="status-line">Checking install…</div>
+        <div class="progress" id="progress" hidden>
+          <div class="progress-fill" id="progress-fill"></div>
         </div>
-      </div>
-      <div class="hero-bench">
-        <div class="bench-row">
-          <span class="bench-num accent">600 FPS</span>
-          <span class="bench-label">measured on Cosmos MC, 1.21.11, 16-chunk</span>
-        </div>
+
+        <!-- Expandable detail log (closed by default — no jarring tab switch) -->
+        <button class="details-toggle" id="details-toggle">
+          <span class="caret">▸</span> Show details
+        </button>
+        <div class="log-view collapsed" id="log-view"></div>
+
       </div>
     </section>
 
@@ -77,33 +88,23 @@
         <button class="btn-sm" id="refresh-mods">Refresh</button>
         <button class="btn-sm primary" id="update-mods">Update perf stack</button>
       </div>
+      <p class="page-blurb">The perf stack — Sodium, Lithium, FerriteCore, ImmediatelyFast, EntityCulling, ScalableLux, ThreadTweak, Krypton, Iris, Bobby — is installed and updated automatically. You don't need to touch this unless something's broken.</p>
       <div class="mod-list" id="mod-list">
         <div class="empty">No mods scanned yet</div>
       </div>
     </section>
 
-    <!-- Cosmetics placeholder -->
-    <section class="page" id="page-cosmetics">
-      <div class="placeholder">
-        <h2>Cosmetics</h2>
-        <p>Capes, wings, halos, glint customization — all configured in-game via the Shadow HUD menu (Right Shift).</p>
-        <p class="dim">A browser for unlocking new cosmetics will live here in a later release.</p>
-      </div>
-    </section>
-
-    <!-- Settings tab -->
+    <!-- Settings tab — advanced/optional knobs only -->
     <section class="page" id="page-settings">
       <div class="page-head">
         <h2>Settings</h2>
       </div>
+      <p class="page-blurb">These are advanced knobs. Defaults are fine for most people.</p>
       <div class="settings-grid">
         <div class="setting">
-          <label>Username (offline mode)</label>
-          <input type="text" id="opt-username" placeholder="Player">
-        </div>
-        <div class="setting">
-          <label>RAM allocation (MB)</label>
+          <label>RAM allocation</label>
           <input type="number" id="opt-heap" min="1024" max="32768" step="512" value="4096">
+          <div class="setting-hint">MB. 4096 is recommended for 1.21.11 with the perf stack.</div>
         </div>
         <div class="setting">
           <label>Garbage collector</label>
@@ -112,22 +113,13 @@
             <option value="zgc">ZGC (low pause, needs more RAM)</option>
             <option value="safe">Safe (no flags, troubleshooting)</option>
           </select>
+          <div class="setting-hint">Only change this if you know what you're doing.</div>
         </div>
         <div class="setting full">
-          <button class="btn-sm" id="setup-btn">Run first-time setup</button>
-          <button class="btn-sm" id="login-btn">Microsoft sign-in</button>
-          <span class="hint">Project path: <code id="proj-path">…</code></span>
+          <label>Install location</label>
+          <code id="proj-path" class="code-block">…</code>
         </div>
       </div>
-    </section>
-
-    <!-- Logs tab -->
-    <section class="page" id="page-logs">
-      <div class="page-head">
-        <h2>Process output</h2>
-        <button class="btn-sm" id="clear-logs">Clear</button>
-      </div>
-      <div class="log-view" id="log-view"></div>
     </section>
 
   </main>

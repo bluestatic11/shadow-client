@@ -1,0 +1,90 @@
+# ===== Sensitive — CONTAINS AUTH TOKENS =====
+# This file has your Microsoft OAuth refresh token. Never commit.
+game_dir/mc-client-account.json
+**/mc-client-account.json
+*.token
+credentials*.json
+
+# ===== User-private =====
+game_dir/saves/
+game_dir/screenshots/
+game_dir/logs/
+game_dir/options.txt
+game_dir/optionsof.txt
+game_dir/usercache.json
+game_dir/usernamecache.json
+game_dir/realms_persistence.json
+game_dir/servers.dat*
+game_dir/hotbar.nbt
+
+# ===== Huge / redistributable-only =====
+game_dir/versions/
+game_dir/libraries/
+game_dir/assets/
+game_dir/.fabric/
+game_dir/resourcepacks/
+game_dir/shaderpacks/
+
+# ===== Bobby chunk cache — REVEALS which servers + bases you've visited =====
+game_dir/.bobby/
+# Crash reports may contain stack traces with file paths
+game_dir/crash-reports/
+# Launch logs include your username + system info
+game_dir/launch.log
+game_dir/last-launch-cmd.log
+game_dir/command_history.txt
+game_dir/debug-profile.json
+# Mod downloader cache — huge, regenerated on demand
+game_dir/downloads/
+# Per-user mod state
+game_dir/sodium-options.json
+game_dir/data/
+
+# ===== User-installed mods folder (will be reinstalled by client.py setup) =====
+# Comment this out if you DO want to ship a pre-configured mod set.
+game_dir/mods/*.jar
+game_dir/mods/*.jar.disabled
+game_dir/mods/*.jar.new
+
+# ===== Mod configs may contain server addresses / private prefs =====
+game_dir/config/
+
+# ===== Bundled tooling — too big to ship, downloaded by setup script =====
+jdk-25/
+jdk-21*/
+jdk21-portable/
+jdk-portable*/
+gradle-portable*/
+gradle-9*/
+
+# ===== Build artifacts =====
+__pycache__/
+*.pyc
+*.pyo
+branding/hud_mod/build/
+branding/hud_mod/build-deps/
+*.class
+
+# ===== Installed launcher state (per-machine) =====
+installed.json
+
+# ===== Tauri / Node =====
+launcher/node_modules/
+launcher/package-lock.json
+launcher/src-tauri/target/
+launcher/src-tauri/gen/
+launcher/Cargo.lock
+launcher/dist/
+
+# ===== Editor / OS =====
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.swp
+
+# ===== Python venvs =====
+.venv/
+venv/
+env/

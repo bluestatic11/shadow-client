@@ -1,0 +1,18 @@
+# Node
+node_modules/
+package-lock.json
+
+# Rust
+src-tauri/target/
+src-tauri/gen/
+Cargo.lock
+
+# Editor
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Build outputs
+dist/
+*.app/

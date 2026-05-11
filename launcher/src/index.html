@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
+  <title>Shadow Client</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- ───── Side rail ──────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">S</div>
+      <div class="brand-text">
+        <div class="brand-name"><span class="accent">SHADOW</span> CLIENT</div>
+        <div class="brand-sub">v0.1.0</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="home">
+        <span class="tab-icon">▶</span> Play
+      </button>
+      <button class="tab" data-tab="mods">
+        <span class="tab-icon">▦</span> Mods
+      </button>
+      <button class="tab" data-tab="cosmetics">
+        <span class="tab-icon">★</span> Cosmetics
+      </button>
+      <button class="tab" data-tab="settings">
+        <span class="tab-icon">⚙</span> Settings
+      </button>
+      <button class="tab" data-tab="logs">
+        <span class="tab-icon">≡</span> Logs
+      </button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="account" id="account">
+        <div class="account-avatar">?</div>
+        <div class="account-info">
+          <div class="account-name" id="account-name">Not signed in</div>
+          <div class="account-status" id="account-status">Click to sign in</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ───── Main panel ────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Home tab — big PLAY button -->
+    <section class="page active" id="page-home">
+      <div class="hero">
+        <h1>Ready to play.</h1>
+        <p class="hero-sub" id="hero-status">Loading…</p>
+        <button class="play-btn" id="play-btn" disabled>
+          <span class="play-icon">▶</span>
+          <span class="play-text">PLAY</span>
+        </button>
+        <div class="hero-version">
+          <select id="version-select">
+            <option value="1.21.11">1.21.11 (Fabric)</option>
+          </select>
+        </div>
+      </div>
+      <div class="hero-bench">
+        <div class="bench-row">
+          <span class="bench-num accent">600 FPS</span>
+          <span class="bench-label">measured on Cosmos MC, 1.21.11, 16-chunk</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Mods tab -->
+    <section class="page" id="page-mods">
+      <div class="page-head">
+        <h2>Installed mods</h2>
+        <button class="btn-sm" id="refresh-mods">Refresh</button>
+        <button class="btn-sm primary" id="update-mods">Update perf stack</button>
+      </div>
+      <div class="mod-list" id="mod-list">
+        <div class="empty">No mods scanned yet</div>
+      </div>
+    </section>
+
+    <!-- Cosmetics placeholder -->
+    <section class="page" id="page-cosmetics">
+      <div class="placeholder">
+        <h2>Cosmetics</h2>
+        <p>Capes, wings, halos, glint customization — all configured in-game via the Shadow HUD menu (Right Shift).</p>
+        <p class="dim">A browser for unlocking new cosmetics will live here in a later release.</p>
+      </div>
+    </section>
+
+    <!-- Settings tab -->
+    <section class="page" id="page-settings">
+      <div class="page-head">
+        <h2>Settings</h2>
+      </div>
+      <div class="settings-grid">
+        <div class="setting">
+          <label>Username (offline mode)</label>
+          <input type="text" id="opt-username" placeholder="Player">
+        </div>
+        <div class="setting">
+          <label>RAM allocation (MB)</label>
+          <input type="number" id="opt-heap" min="1024" max="32768" step="512" value="4096">
+        </div>
+        <div class="setting">
+          <label>Garbage collector</label>
+          <select id="opt-gc">
+            <option value="g1">G1GC (default, battle-tested)</option>
+            <option value="zgc">ZGC (low pause, needs more RAM)</option>
+            <option value="safe">Safe (no flags, troubleshooting)</option>
+          </select>
+        </div>
+        <div class="setting full">
+          <button class="btn-sm" id="setup-btn">Run first-time setup</button>
+          <button class="btn-sm" id="login-btn">Microsoft sign-in</button>
+          <span class="hint">Project path: <code id="proj-path">…</code></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Logs tab -->
+    <section class="page" id="page-logs">
+      <div class="page-head">
+        <h2>Process output</h2>
+        <button class="btn-sm" id="clear-logs">Clear</button>
+      </div>
+      <div class="log-view" id="log-view"></div>
+    </section>
+
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>

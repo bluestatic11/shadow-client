@@ -1,0 +1,399 @@
+/* Shadow Client launcher — matches the in-mod brand. Dark navy + brand red. */
+
+:root {
+  --bg:       #0d1117;
+  --bg-2:     #161a24;
+  --bg-3:     #1a1f2a;
+  --card:     #1a1216;
+  --card-on:  #2a1217;
+  --line:     #2a2a35;
+  --text:     #e8e8ec;
+  --text-dim: #98989e;
+  --text-mute:#5a5a66;
+  --accent:   #af121a;
+  --accent-2: #ff2030;
+  --green:    #22dd55;
+  --amber:    #d8c75a;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  background: radial-gradient(ellipse at top left, #1a0a0e 0%, var(--bg) 70%);
+}
+
+.accent { color: var(--accent-2); }
+
+/* ───── Sidebar ──────────────────────────────────────────────── */
+.sidebar {
+  width: 220px;
+  background: rgba(13, 17, 23, 0.6);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px;
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 18px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  background: var(--accent);
+  color: white;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 18px;
+  box-shadow: 0 0 12px rgba(175, 18, 26, 0.5);
+}
+
+.brand-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.brand-sub {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 1px;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s;
+}
+
+.tab:hover { background: var(--bg-2); color: var(--text); }
+
+.tab.active {
+  background: linear-gradient(90deg, rgba(175, 18, 26, 0.25), transparent);
+  color: var(--text);
+  border-left: 2px solid var(--accent-2);
+  padding-left: 10px;
+}
+
+.tab-icon {
+  display: inline-block;
+  width: 18px;
+  text-align: center;
+  color: var(--accent-2);
+}
+
+.sidebar-foot {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.account:hover { background: var(--bg-2); }
+
+.account-avatar {
+  width: 28px;
+  height: 28px;
+  background: var(--bg-3);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-mute);
+}
+
+.account-name { font-size: 13px; font-weight: 600; }
+.account-status { font-size: 11px; color: var(--text-mute); }
+
+/* ───── Main panel ───────────────────────────────────────────── */
+.main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 40px;
+}
+
+.page { display: none; }
+.page.active { display: block; }
+
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.page-head h2 {
+  font-size: 24px;
+  font-weight: 700;
+  flex: 1;
+}
+
+/* ───── Home (Play) ──────────────────────────────────────────── */
+.hero {
+  text-align: center;
+  margin-top: 60px;
+}
+
+.hero h1 {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 6px;
+}
+
+.hero-sub {
+  color: var(--text-dim);
+  font-size: 15px;
+  margin-bottom: 40px;
+}
+
+.play-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 80px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  cursor: pointer;
+  box-shadow: 0 0 32px rgba(175, 18, 26, 0.4);
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.play-btn:hover:not(:disabled) {
+  background: #c8161e;
+  transform: translateY(-1px);
+  box-shadow: 0 0 48px rgba(255, 32, 48, 0.6);
+}
+
+.play-btn:disabled {
+  background: var(--bg-3);
+  color: var(--text-mute);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.play-icon { font-size: 18px; }
+
+.hero-version {
+  margin-top: 18px;
+}
+
+.hero-version select {
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hero-bench {
+  margin-top: 80px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.bench-row { display: inline-flex; align-items: baseline; gap: 12px; }
+.bench-num { font-size: 18px; font-weight: 700; font-family: 'Consolas', monospace; }
+.bench-label { color: var(--text-mute); font-size: 12px; }
+
+/* ───── Generic buttons ──────────────────────────────────────── */
+.btn-sm {
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 7px 14px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.btn-sm:hover { border-color: var(--accent-2); color: var(--accent-2); }
+
+.btn-sm.primary {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.btn-sm.primary:hover { background: #c8161e; color: white; }
+
+/* ───── Mods list ────────────────────────────────────────────── */
+.mod-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mod-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-2);
+  border-radius: 5px;
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+}
+
+.mod-row:hover { background: var(--bg-3); }
+
+.mod-row.disabled {
+  opacity: 0.5;
+}
+
+.mod-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.mod-row.disabled .mod-status { background: var(--text-mute); }
+
+.empty {
+  text-align: center;
+  color: var(--text-mute);
+  padding: 60px;
+  background: var(--bg-2);
+  border-radius: 8px;
+  border: 1px dashed var(--line);
+}
+
+.placeholder {
+  text-align: center;
+  padding: 80px 40px;
+}
+
+.placeholder h2 { font-size: 28px; margin-bottom: 12px; }
+.placeholder p { color: var(--text-dim); margin: 8px 0; }
+.placeholder .dim { color: var(--text-mute); font-size: 13px; }
+
+/* ───── Settings ─────────────────────────────────────────────── */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.setting {
+  background: var(--bg-2);
+  padding: 14px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.setting.full { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
+
+.setting label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.setting input, .setting select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.setting input:focus, .setting select:focus {
+  outline: none;
+  border-color: var(--accent-2);
+}
+
+.hint {
+  color: var(--text-mute);
+  font-size: 12px;
+}
+
+.hint code {
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+/* ───── Logs ─────────────────────────────────────────────────── */
+.log-view {
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  background: #050709;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px;
+  height: calc(100vh - 180px);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.log-line { padding: 1px 0; }
+.log-line.stderr { color: #ff8a8a; }
+.log-line.exit   { color: var(--amber); border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }

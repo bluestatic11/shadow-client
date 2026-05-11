@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "shadowhud",
+  "version": "1.0.0",
+  "name": "Shadow HUD",
+  "description": "Compact top-left overlay showing FPS, coordinates, facing, and current biome.",
+  "authors": ["Edison"],
+  "contributors": ["Edison"],
+  "license": "All Rights Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["shadowhud.ShadowHud"]
+  },
+  "mixins": [
+    "shadowhud.mixins.json"
+  ],
+  "depends": {
+    "fabricloader":  ">=0.14.0",
+    "minecraft":     ">=1.20",
+    "fabric-api":    "*",
+    "java":          ">=17"
+  },
+  "custom": {
+    "modmenu": {
+      "badges": ["library"]
+    }
+  }
+}

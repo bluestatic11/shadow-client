@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shadow Client — Minecraft, faster.</title>
+  <meta name="description" content="Shadow Client is a free Minecraft 1.21.11 client with 130+ HUD modules, the full Sodium performance stack pre-bundled, and Lunar-grade visual polish.">
+  <meta property="og:title" content="Shadow Client">
+  <meta property="og:description" content="3× the FPS of Lunar Client on the same hardware. Free, open-source, 130+ HUD modules.">
+  <meta property="og:image" content="/assets/og-card.png">
+  <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="/">
+      <span class="brand-mark">S</span>
+      <span class="brand-text"><span class="accent">SHADOW</span> CLIENT</span>
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/Bluestatic11/shadow-client-launcher" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+
+  <main>
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-text">
+        <h1>
+          Minecraft,<br>
+          <span class="accent">3× faster.</span>
+        </h1>
+        <p class="hero-sub">
+          A free open-source Minecraft 1.21 client with 130+ HUD modules,
+          the full performance-mod stack pre-bundled, and Lunar-grade visual polish.
+        </p>
+        <div class="hero-cta">
+          <a href="#download" class="btn btn-primary">
+            <span class="btn-icon">▼</span>
+            Download for Windows
+          </a>
+          <a href="#features" class="btn btn-secondary">See features</a>
+        </div>
+        <div class="hero-meta">
+          <span>● Free forever</span>
+          <span>● 1.21.11 supported</span>
+          <span>● Open source</span>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <!-- Inline SVG mock of the in-game HUD card stack -->
+        <div class="hud-mock">
+          <div class="hud-card"><div class="hud-dot"></div>FPS <span class="green">617</span></div>
+          <div class="hud-card"><div class="hud-dot"></div>HP <span class="green">20</span>/<span class="dim">20</span></div>
+          <div class="hud-card"><div class="hud-dot"></div>XYZ <span class="dim">12 / 64 / -128</span></div>
+          <div class="hud-card"><div class="hud-dot"></div>Ping <span class="green">23ms</span></div>
+          <div class="hud-card"><div class="hud-dot"></div>Killstreak <span class="amber">7</span></div>
+          <div class="hud-card"><div class="hud-dot"></div>AutoTotem <span class="green">✓</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BENCHMARKS -->
+    <section id="benchmarks" class="benchmarks">
+      <h2>Real-world benchmarks</h2>
+      <p class="sub">Cosmos MC · 1.21.11 · same hardware · 16-chunk render distance</p>
+      <div class="bench-grid">
+        <div class="bench-card">
+          <div class="bench-label">Lunar Client</div>
+          <div class="bench-value dim">150–170</div>
+          <div class="bench-unit">FPS</div>
+        </div>
+        <div class="bench-card winner">
+          <div class="bench-label">Shadow Client</div>
+          <div class="bench-value accent">600</div>
+          <div class="bench-unit">FPS · 3.7× faster</div>
+        </div>
+      </div>
+      <p class="bench-note">
+        Sodium 0.8.7 + Lithium + ImmediatelyFast + EntityCulling + ScalableLux + ThreadTweak +
+        FerriteCore + Krypton + Iris + Bobby pre-bundled. No driver tricks — just the right mods.
+      </p>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features" class="features">
+      <h2>What's inside</h2>
+      <div class="feature-grid">
+        <div class="feature">
+          <div class="feature-icon">⚡</div>
+          <h3>Performance stack pre-bundled</h3>
+          <p>Sodium, Lithium, ImmediatelyFast, EntityCulling, ScalableLux, ThreadTweak, FerriteCore, Krypton, Iris, Bobby — installed and tuned for you.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">▦</div>
+          <h3>130+ HUD modules</h3>
+          <p>FPS, HP, coords, ping, combat tracking, kill streaks, totem counts, friend lists, server timers — all configurable, all draggable, all themed.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">✎</div>
+          <h3>Drag-to-position HUD editor</h3>
+          <p>Open the menu, click ✎ EDIT HUD, drag the card stack anywhere on screen. Scroll wheel resizes. Esc saves.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">⚙</div>
+          <h3>Every module is configurable</h3>
+          <p>Click the gear on any card. Pick colors, anchor points, scales, behaviors. Save snapshots, switch profiles.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">★</div>
+          <h3>Cosmetics</h3>
+          <p>Textured capes, solid 3D dragon wings, halo, fairies, footstep trails, bow trails — all customizable.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">☷</div>
+          <h3>Discord RPC + Shulker tooltips</h3>
+          <p>Show off what you're playing. Hover any shulker box in inventory to see its contents without opening it.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- DOWNLOAD -->
+    <section id="download" class="download">
+      <h2>Download</h2>
+      <p class="sub">Single-file installer. Microsoft account sign-in. First launch downloads the right version automatically.</p>
+      <div class="download-grid">
+        <a href="#" class="download-card primary" data-platform="windows">
+          <div class="dl-os">Windows</div>
+          <div class="dl-version">v0.1.0</div>
+          <div class="dl-btn">Download .exe</div>
+          <div class="dl-size">~12 MB · Windows 10 / 11</div>
+        </a>
+        <a href="#" class="download-card" data-platform="mac">
+          <div class="dl-os">macOS</div>
+          <div class="dl-version">soon</div>
+          <div class="dl-btn">.dmg coming</div>
+          <div class="dl-size">macOS 12+</div>
+        </a>
+        <a href="#" class="download-card" data-platform="linux">
+          <div class="dl-os">Linux</div>
+          <div class="dl-version">soon</div>
+          <div class="dl-btn">.AppImage coming</div>
+          <div class="dl-size">x86_64</div>
+        </a>
+      </div>
+      <p class="dl-note">
+        On first launch, Windows may show a SmartScreen warning since the installer isn't yet code-signed.
+        Click <strong>More info → Run anyway</strong>. The launcher is open source — verify it on
+        <a href="https://github.com/Bluestatic11/shadow-client-launcher" target="_blank" rel="noopener">GitHub</a>.
+      </p>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="brand-mark small">S</span>
+          <span><span class="accent">SHADOW</span> CLIENT</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/Bluestatic11/shadow-client-launcher" target="_blank" rel="noopener">GitHub</a>
+          <a href="#">Discord (soon)</a>
+          <a href="mailto:contact@example.com">Contact</a>
+        </div>
+        <div class="footer-copy">
+          © 2026 Edison. Not affiliated with Mojang or Microsoft.
+          Minecraft is a trademark of Mojang Studios.
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    // Auto-detect OS for the download button and bring it to focus.
+    // Falls back to Windows if undetected.
+    (function() {
+      const ua = navigator.userAgent.toLowerCase();
+      let os = 'windows';
+      if (ua.includes('mac')) os = 'mac';
+      else if (ua.includes('linux')) os = 'linux';
+      document.querySelectorAll('.download-card').forEach(card => {
+        if (card.dataset.platform === os) card.classList.add('primary');
+      });
+    })();
+  </script>
+</body>
+</html>

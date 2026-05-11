@@ -3215,7 +3215,17 @@ public final class ShadowHud implements ClientModInitializer {
             //      the wireframe path. Use cosmSolidLayer (1×1 white texture)
             //      with vertex-color modulation. Failures are logged once
             //      but don't disturb the wireframe / particle paths.
-            if (wantWingsSolid && cosmSolidLayer != null
+            //
+            //      We also run the solid path for the PLAIN Wings / AngelWings
+            //      modules. The wireframe line path is fragile on 1.21.11
+            //      (Sodium can return a null buffer for cosmLineLayer; the
+            //      VertexConsumer normal() variants moved around), so without
+            //      this fallback the user could enable AngelWings and see
+            //      absolutely nothing. With it, the solid mesh always renders
+            //      whenever the layer + vertex handles resolved — and if the
+            //      wireframe DOES render, the line overlay just sits on top
+            //      (barely visible against the filled surface, no harm done).
+            if ((wantWingsSolid || wantWings) && cosmSolidLayer != null
                     && cosmGetBuffer != null && cosmVtxPos != null
                     && cosmVtxTexture != null && cosmVtxColor != null) {
                 try {
@@ -3230,7 +3240,7 @@ public final class ShadowHud implements ClientModInitializer {
                     }
                 } catch (Throwable t) { logOnce("WingsSolid", t); }
             }
-            if (wantAngelSolid && cosmSolidLayer != null
+            if ((wantAngelSolid || wantAngel) && cosmSolidLayer != null
                     && cosmGetBuffer != null && cosmVtxPos != null
                     && cosmVtxTexture != null && cosmVtxColor != null) {
                 try {
@@ -3244,6 +3254,31 @@ public final class ShadowHud implements ClientModInitializer {
                         shadowhud$flushLayer(provider, cosmSolidLayer);
                     }
                 } catch (Throwable t) { logOnce("AngelWingsSolid", t); }
+            }
+            // Solid-cape fallback: regardless of whether the textured cape
+            // path resolves (cosmCapeLayer1/2 + cosmVtxTexture) we also
+            // render the cape silhouette as a filled polygon on
+            // cosmSolidLayer. The textured cape layers occasionally don't
+            // come back from Sodium's VCP, and the wireframe line fallback
+            // is invisible against most backgrounds (8/5/8 RGB). This way
+            // the user always sees a brand-red cape when Cape is on, even
+            // if every other path is broken. If the textured path DID
+            // resolve, both render and the texture sits on top (the solid
+            // is hidden behind the textured quad — same z, identical shape).
+            if (wantCape && cosmSolidLayer != null
+                    && cosmGetBuffer != null && cosmVtxPos != null
+                    && cosmVtxTexture != null && cosmVtxColor != null) {
+                try {
+                    Object solidBuf = cosmGetBuffer.invoke(provider, cosmSolidLayer);
+                    if (solidBuf != null) {
+                        float sway = (float) (Math.sin(now / 720.0) * 0.18);
+                        cosmDrawSolidPolygon(solidBuf, vertexArg, normalArg,
+                            CAPE_3D_SHAPE, false,
+                            (float) Math.cos(sway), (float) Math.sin(sway),
+                            SHOULDER_PIVOT, yawC, yawS, dx, dy, dz, 175, 18, 26);
+                        shadowhud$flushLayer(provider, cosmSolidLayer);
+                    }
+                } catch (Throwable t) { logOnce("CapeSolid", t); }
             }
             if (wantCape) {
                 float sway = (float) (Math.sin(now / 720.0) * 0.18);

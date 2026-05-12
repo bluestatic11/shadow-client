@@ -9,30 +9,91 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 // ───── Supported Minecraft versions ─────────────────────────────
-// Mojang's release sequence: 1.21 → 1.21.1 … → 1.21.11 → 26.1.
-// They switched to a year-based versioning scheme after 1.21.11, so
-// there's no 1.22 / 1.23 / 1.24 / 1.25 / 1.26 — 26.1 is the direct
-// successor. client.py asks Mojang's manifest at setup time and resolves
-// each picked string to the real release JSON.
-const SUPPORTED_VERSIONS = [
-  // Year-based scheme
-  '26.1',
-  // 1.21.x — older but still commonly requested for mod compatibility
-  '1.21.11',
-  '1.21.10',
-  '1.21.9',
-  '1.21.8',
-  '1.21.7',
-  '1.21.6',
-  '1.21.5',
-  '1.21.4',
-  '1.21.3',
-  '1.21.2',
-  '1.21.1',
-  '1.21',
+// We fetch Mojang's version manifest at boot and filter to every release
+// >= 1.21 (covers both the 1.21.x line AND the year-based 26.x line they
+// switched to after 1.21.11). The list refreshes every 24h via localStorage,
+// so new Mojang releases appear in the picker automatically — no launcher
+// update needed.
+//
+// FALLBACK_VERSIONS is the offline / first-launch backup: if the manifest
+// fetch fails (no internet, Mojang's CDN down, CSP blocked), we render this
+// hardcoded list instead. Keep it newest-first so latest is on top.
+const MANIFEST_URLS = [
+  'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json',
+  'https://launchermeta.mojang.com/mc/game/version_manifest.json',
 ];
-const DEFAULT_VERSION = '26.1';
-const SAVED_VERSION_KEY = 'shadowclient.version';
+const FALLBACK_VERSIONS = [
+  '26.1',
+  '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6',
+  '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+];
+const SAVED_VERSION_KEY    = 'shadowclient.version';
+const MANIFEST_CACHE_KEY   = 'shadowclient.mojangManifest';
+const MANIFEST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24 hours
+
+// Runtime list populated by populateVersionPicker(). DEFAULT_VERSION is
+// always the first entry (i.e. the newest version per Mojang's chronological
+// ordering after filtering to releases).
+let SUPPORTED_VERSIONS = [...FALLBACK_VERSIONS];
+let DEFAULT_VERSION    = FALLBACK_VERSIONS[0];
+
+/** True if the version id is 1.21 or newer.
+ *
+ *  Mojang historically used semver-ish "1.X.Y", then jumped to a year-based
+ *  scheme ("26.1") after 1.21.11. Both lines should appear in the picker; we
+ *  treat any major >= 22 as "year-based and therefore newer than 1.21",
+ *  which leaves safe headroom if Mojang releases 1.22 somehow.
+ */
+function isVersionAtLeast121(id) {
+  const m = String(id).match(/^(\d+)\.(\d+)(?:\.\d+)?$/);
+  if (!m) return false;
+  const major = parseInt(m[1], 10);
+  const minor = parseInt(m[2], 10);
+  if (major >= 22) return true;                  // year-based: 26.1, 27.x, …
+  if (major === 1 && minor >= 21) return true;   // 1.21, 1.21.1, …, 1.21.11
+  return false;
+}
+
+/** Pull Mojang's version manifest, filter to releases >= 1.21, and cache for
+ *  24h. Falls back to FALLBACK_VERSIONS on any failure (offline, CSP, JSON
+ *  parse error, etc.) so the launcher always boots into a usable picker.
+ */
+async function fetchSupportedVersions() {
+  // Cached?
+  try {
+    const c = JSON.parse(localStorage.getItem(MANIFEST_CACHE_KEY) || 'null');
+    if (c && c.ts && Date.now() - c.ts < MANIFEST_CACHE_TTL_MS
+        && Array.isArray(c.versions) && c.versions.length > 0) {
+      return c.versions;
+    }
+  } catch (_) { /* corrupt cache — fall through and refetch */ }
+
+  for (const url of MANIFEST_URLS) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 8000);
+      const r = await fetch(url, { signal: controller.signal });
+      clearTimeout(t);
+      if (!r.ok) continue;
+      const data = await r.json();
+      // Mojang lists newest first; keeping that order means the dropdown
+      // shows latest at the top with no further sorting.
+      const versions = (data.versions || [])
+        .filter(v => v.type === 'release')
+        .map(v => v.id)
+        .filter(isVersionAtLeast121);
+      if (versions.length > 0) {
+        localStorage.setItem(MANIFEST_CACHE_KEY,
+          JSON.stringify({ ts: Date.now(), versions }));
+        return versions;
+      }
+    } catch (e) {
+      console.warn(`[shadow] manifest fetch failed at ${url}:`, e);
+    }
+  }
+  console.warn('[shadow] all manifest fetches failed — using offline fallback list');
+  return FALLBACK_VERSIONS;
+}
 
 // ───── DOM refs (resolved on DOMContentLoaded) ──────────────────
 const $ = (id) => document.getElementById(id);
@@ -440,5 +501,19 @@ usernameInput.addEventListener('keydown', (e) => {
 });
 
 // ───── Boot ─────────────────────────────────────────────────────
-populateVersionPicker();
-loadState();
+// Pull the manifest first so the picker is correct on initial render
+// (avoids a flash of fallback-list then re-render to the real list).
+async function boot() {
+  try {
+    const versions = await fetchSupportedVersions();
+    if (versions.length > 0) {
+      SUPPORTED_VERSIONS = versions;
+      DEFAULT_VERSION    = versions[0];
+    }
+  } catch (e) {
+    console.warn('[shadow] boot manifest fetch failed:', e);
+  }
+  populateVersionPicker();
+  loadState();
+}
+boot();

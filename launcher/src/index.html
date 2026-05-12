@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https://*.mojang.com">
   <title>Shadow Client</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,7 +14,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" aria-label="version">v0.2.4</span>
+      <span class="brand-sub" aria-label="version">v0.2.5</span>
     </h1>
     <button class="icon-btn" id="open-settings" type="button"
             aria-label="Open settings">

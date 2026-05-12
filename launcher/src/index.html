@@ -7,122 +7,164 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- ───── Side rail ──────────────────────────────────────────────── -->
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="brand-mark">S</div>
-      <div class="brand-text">
-        <div class="brand-name"><span class="accent">SHADOW</span> CLIENT</div>
-        <div class="brand-sub">v0.2.0</div>
+  <a class="skip-link" href="#play-btn">Skip to play button</a>
+
+  <!-- ───── Top bar (always visible) ──────────────────────────────── -->
+  <header class="topbar">
+    <h1 class="brand">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
+      <span class="brand-sub" aria-label="version">v0.2.1</span>
+    </h1>
+    <button class="icon-btn" id="open-settings" type="button"
+            aria-label="Open settings">
+      <span aria-hidden="true">⚙</span>
+    </button>
+  </header>
+
+  <!-- ───── Home — one screen, one decision ──────────────────────── -->
+  <main class="main" id="main">
+
+    <div class="play-card">
+
+      <!-- Username (only shown when not signed in to Microsoft) -->
+      <div class="username-row" id="username-row">
+        <label for="username-input" class="visually-hidden">Username</label>
+        <input type="text" id="username-input" placeholder="Username" maxlength="16"
+               value="Player" autocomplete="username" autocapitalize="off"
+               spellcheck="false">
       </div>
+
+      <!-- Version picker: any 1.21.x. Populated by main.js. -->
+      <div class="version-row">
+        <label for="version-select" class="visually-hidden">Minecraft version</label>
+        <span class="version-icon" aria-hidden="true">◆</span>
+        <select id="version-select" aria-label="Minecraft version">
+          <!-- options injected at runtime -->
+        </select>
+      </div>
+
+      <!-- The one big button. Press Enter to fire it from anywhere on the page. -->
+      <button class="play-btn" id="play-btn" type="button"
+              aria-describedby="status-line"
+              aria-keyshortcuts="Enter">
+        <span class="play-icon" aria-hidden="true">▶</span>
+        <span class="play-text">PLAY</span>
+      </button>
+
+      <!-- Sign-in / sign-out lives below as a small link, NOT a competing CTA. -->
+      <button class="link-btn" id="ms-btn" type="button">
+        Sign in with Microsoft
+      </button>
+
+      <!-- Status — empty by default, only shows during setup / launch. The
+           polite live region means screen readers announce changes without
+           interrupting the user. -->
+      <div class="status-line" id="status-line"
+           role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="progress" id="progress" hidden
+           role="progressbar"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+           aria-label="Setup progress">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+
     </div>
-    <nav class="tabs">
-      <button class="tab active" data-tab="home">
-        <span class="tab-icon">▶</span> Play
-      </button>
-      <button class="tab" data-tab="mods">
-        <span class="tab-icon">▦</span> Mods
-      </button>
-      <button class="tab" data-tab="settings">
-        <span class="tab-icon">⚙</span> Settings
-      </button>
-    </nav>
-    <div class="sidebar-foot">
-      <div class="version-blurb">
-        <div class="version-pill">1.21.11 · Fabric</div>
-      </div>
-    </div>
-  </aside>
-
-  <!-- ───── Main panel ────────────────────────────────────────────── -->
-  <main class="main">
-
-    <!-- Home tab — big PLAY button + everything you need to launch -->
-    <section class="page active" id="page-home">
-      <div class="play-card">
-
-        <!-- Account row: shows MS account if signed in, otherwise an offline placeholder + sign-in CTA. -->
-        <div class="account-row" id="account-row">
-          <div class="avatar" id="avatar">?</div>
-          <div class="account-info">
-            <div class="account-name" id="account-name">Not signed in</div>
-            <div class="account-mode" id="account-mode">Playing in offline mode</div>
-          </div>
-          <button class="ms-btn" id="ms-btn">
-            <span class="ms-icon">⊞</span>
-            <span>Sign in</span>
-          </button>
-        </div>
-
-        <!-- Offline username (only shown when not signed in) -->
-        <div class="username-row" id="username-row">
-          <label for="username-input">Username</label>
-          <input type="text" id="username-input" placeholder="Player" maxlength="16" value="Player">
-        </div>
-
-        <!-- The big play button -->
-        <button class="play-btn" id="play-btn">
-          <span class="play-icon">▶</span>
-          <span class="play-text">PLAY</span>
-        </button>
-
-        <!-- Inline status (replaces the old "switch to Logs tab" behavior) -->
-        <div class="status-line" id="status-line">Checking install…</div>
-        <div class="progress" id="progress" hidden>
-          <div class="progress-fill" id="progress-fill"></div>
-        </div>
-
-        <!-- Expandable detail log (closed by default — no jarring tab switch) -->
-        <button class="details-toggle" id="details-toggle">
-          <span class="caret">▸</span> Show details
-        </button>
-        <div class="log-view collapsed" id="log-view"></div>
-
-      </div>
-    </section>
-
-    <!-- Mods tab -->
-    <section class="page" id="page-mods">
-      <div class="page-head">
-        <h2>Installed mods</h2>
-        <button class="btn-sm" id="refresh-mods">Refresh</button>
-        <button class="btn-sm primary" id="update-mods">Update perf stack</button>
-      </div>
-      <p class="page-blurb">The perf stack — Sodium, Lithium, FerriteCore, ImmediatelyFast, EntityCulling, ScalableLux, ThreadTweak, Krypton, Iris, Bobby — is installed and updated automatically. You don't need to touch this unless something's broken.</p>
-      <div class="mod-list" id="mod-list">
-        <div class="empty">No mods scanned yet</div>
-      </div>
-    </section>
-
-    <!-- Settings tab — advanced/optional knobs only -->
-    <section class="page" id="page-settings">
-      <div class="page-head">
-        <h2>Settings</h2>
-      </div>
-      <p class="page-blurb">These are advanced knobs. Defaults are fine for most people.</p>
-      <div class="settings-grid">
-        <div class="setting">
-          <label>RAM allocation</label>
-          <input type="number" id="opt-heap" min="1024" max="32768" step="512" value="4096">
-          <div class="setting-hint">MB. 4096 is recommended for 1.21.11 with the perf stack.</div>
-        </div>
-        <div class="setting">
-          <label>Garbage collector</label>
-          <select id="opt-gc">
-            <option value="g1">G1GC (default, battle-tested)</option>
-            <option value="zgc">ZGC (low pause, needs more RAM)</option>
-            <option value="safe">Safe (no flags, troubleshooting)</option>
-          </select>
-          <div class="setting-hint">Only change this if you know what you're doing.</div>
-        </div>
-        <div class="setting full">
-          <label>Install location</label>
-          <code id="proj-path" class="code-block">…</code>
-        </div>
-      </div>
-    </section>
-
   </main>
+
+  <!-- ───── Settings dialog (everything power-user lives here) ───── -->
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="icon-btn" id="close-settings" type="button" aria-label="Close settings">
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
+
+    <div class="dialog-tabs" role="tablist" aria-label="Settings sections">
+      <button class="dlg-tab active" data-tab="general"
+              role="tab" id="dtab-general"
+              aria-selected="true" aria-controls="dpage-general" tabindex="0">
+        General
+      </button>
+      <button class="dlg-tab" data-tab="mods"
+              role="tab" id="dtab-mods"
+              aria-selected="false" aria-controls="dpage-mods" tabindex="-1">
+        Mods
+      </button>
+      <button class="dlg-tab" data-tab="logs"
+              role="tab" id="dtab-logs"
+              aria-selected="false" aria-controls="dpage-logs" tabindex="-1">
+        Logs
+      </button>
+      <button class="dlg-tab" data-tab="keys"
+              role="tab" id="dtab-keys"
+              aria-selected="false" aria-controls="dpage-keys" tabindex="-1">
+        Shortcuts
+      </button>
+    </div>
+
+    <div class="dialog-body">
+
+      <!-- General -->
+      <section class="dlg-page active" id="dpage-general"
+               role="tabpanel" aria-labelledby="dtab-general" tabindex="0">
+        <div class="settings-grid">
+          <div class="setting">
+            <label for="opt-heap">RAM allocation</label>
+            <input type="number" id="opt-heap" min="1024" max="32768" step="512" value="4096">
+            <div class="setting-hint">MB. 4096 is fine for 1.21.11.</div>
+          </div>
+          <div class="setting">
+            <label for="opt-gc">Garbage collector</label>
+            <select id="opt-gc">
+              <option value="g1">G1GC (default)</option>
+              <option value="zgc">ZGC (low pause)</option>
+              <option value="safe">Safe (no flags)</option>
+            </select>
+            <div class="setting-hint">Leave on G1GC unless you know what you need.</div>
+          </div>
+          <div class="setting full">
+            <label for="proj-path">Install location</label>
+            <code id="proj-path" class="code-block">…</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mods -->
+      <section class="dlg-page" id="dpage-mods"
+               role="tabpanel" aria-labelledby="dtab-mods" tabindex="0" hidden>
+        <p class="page-blurb">The perf mod stack is installed and updated automatically.</p>
+        <div class="page-actions">
+          <button class="btn-sm" id="refresh-mods" type="button">Refresh</button>
+          <button class="btn-sm primary" id="update-mods" type="button">Update perf stack</button>
+        </div>
+        <ul class="mod-list" id="mod-list" aria-label="Installed mods">
+          <li class="empty">No mods scanned yet</li>
+        </ul>
+      </section>
+
+      <!-- Logs -->
+      <section class="dlg-page" id="dpage-logs"
+               role="tabpanel" aria-labelledby="dtab-logs" tabindex="0" hidden>
+        <p class="page-blurb">Live output from setup / launch. Open this if something fails.</p>
+        <div class="log-view" id="log-view"
+             role="log" aria-live="polite" aria-label="Process output"></div>
+      </section>
+
+      <!-- Keyboard shortcuts -->
+      <section class="dlg-page" id="dpage-keys"
+               role="tabpanel" aria-labelledby="dtab-keys" tabindex="0" hidden>
+        <ul class="shortcut-list">
+          <li><kbd>Enter</kbd> — Launch the game</li>
+          <li><kbd>Ctrl</kbd> + <kbd>,</kbd> — Open settings</li>
+          <li><kbd>Esc</kbd> — Close settings</li>
+          <li><kbd>Tab</kbd> — Move focus to the next button</li>
+        </ul>
+      </section>
+
+    </div>
+  </dialog>
 
   <script src="main.js"></script>
 </body>

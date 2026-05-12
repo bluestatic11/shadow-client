@@ -1,46 +1,80 @@
 // Shadow Client launcher — front-end glue.
 //
-// Design goal: a fresh user opens the app, clicks PLAY once, and the
-// game launches. We do not require them to find a "Run first-time
-// setup" button in some other tab — the PLAY button itself notices
-// nothing is installed yet and runs setup → launch back-to-back.
+// Design goal: a fresh user opens the app, sees ONE input (username), ONE
+// button (PLAY), and a small version picker. Click PLAY → game launches.
+// Everything else (RAM, GC, mods list, logs, shortcuts) lives behind the
+// gear icon in the top bar.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-// ───── DOM refs ─────────────────────────────────────────────────
-const playBtn        = document.getElementById('play-btn');
+// ───── Supported Minecraft versions ─────────────────────────────
+// Hardcoded list of 1.21+ versions. The user picks one; setup downloads
+// whichever they pick. Newest first so the dropdown defaults to latest.
+const SUPPORTED_VERSIONS = [
+  '1.21.11',
+  '1.21.10',
+  '1.21.9',
+  '1.21.8',
+  '1.21.7',
+  '1.21.6',
+  '1.21.5',
+  '1.21.4',
+  '1.21.3',
+  '1.21.2',
+  '1.21.1',
+  '1.21',
+];
+const DEFAULT_VERSION = '1.21.11';
+const SAVED_VERSION_KEY = 'shadowclient.version';
+
+// ───── DOM refs (resolved on DOMContentLoaded) ──────────────────
+const $ = (id) => document.getElementById(id);
+
+const playBtn        = $('play-btn');
 const playText       = playBtn.querySelector('.play-text');
 const playIcon       = playBtn.querySelector('.play-icon');
-const statusLine     = document.getElementById('status-line');
-const progress       = document.getElementById('progress');
-const progressFill   = document.getElementById('progress-fill');
-const detailsToggle  = document.getElementById('details-toggle');
-const logView        = document.getElementById('log-view');
-const accountRow     = document.getElementById('account-row');
-const accountName    = document.getElementById('account-name');
-const accountMode    = document.getElementById('account-mode');
-const avatar         = document.getElementById('avatar');
-const msBtn          = document.getElementById('ms-btn');
-const usernameInput  = document.getElementById('username-input');
+const statusLine     = $('status-line');
+const progress       = $('progress');
+const progressFill   = $('progress-fill');
+const usernameInput  = $('username-input');
+const msBtn          = $('ms-btn');
+const openSettings   = $('open-settings');
+const closeSettings  = $('close-settings');
+const settingsDialog = $('settings-dialog');
 
-// ───── Tab switching ────────────────────────────────────────────
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('page-' + tab.dataset.tab).classList.add('active');
-    if (tab.dataset.tab === 'mods') refreshMods();
-  });
-});
-
-// ───── State + status helpers ───────────────────────────────────
+// ───── State ────────────────────────────────────────────────────
 let installed = null;
 let busy = false;
+let signedIn = false;
 
+function getPickedVersion() {
+  const sel = $('version-select');
+  if (sel && sel.value) return sel.value;
+  return localStorage.getItem(SAVED_VERSION_KEY) || DEFAULT_VERSION;
+}
+
+function populateVersionPicker() {
+  const sel = $('version-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (const v of SUPPORTED_VERSIONS) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v === DEFAULT_VERSION ? `${v} (latest)` : v;
+    sel.appendChild(opt);
+  }
+  const saved = localStorage.getItem(SAVED_VERSION_KEY) || DEFAULT_VERSION;
+  sel.value = SUPPORTED_VERSIONS.includes(saved) ? saved : DEFAULT_VERSION;
+  sel.addEventListener('change', () => {
+    localStorage.setItem(SAVED_VERSION_KEY, sel.value);
+    renderState();
+  });
+}
+
+// ───── Status helpers ───────────────────────────────────────────
 function setStatus(text, kind) {
-  statusLine.textContent = text;
+  statusLine.textContent = text || '';
   statusLine.classList.remove('ok', 'error', 'working');
   if (kind) statusLine.classList.add(kind);
 }
@@ -48,15 +82,19 @@ function setStatus(text, kind) {
 function setProgress(pct /* null = indeterminate, 0..100 = bar, -1 = hidden */) {
   if (pct === -1) {
     progress.hidden = true;
+    progress.setAttribute('aria-valuenow', '0');
     return;
   }
   progress.hidden = false;
   if (pct === null) {
     progressFill.classList.add('indeterminate');
     progressFill.style.width = '';
+    progress.removeAttribute('aria-valuenow');
   } else {
     progressFill.classList.remove('indeterminate');
-    progressFill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+    const n = Math.min(100, Math.max(0, Math.round(pct)));
+    progressFill.style.width = n + '%';
+    progress.setAttribute('aria-valuenow', String(n));
   }
 }
 
@@ -81,45 +119,53 @@ async function loadState() {
   renderState();
   try {
     const path = await invoke('project_path');
-    document.getElementById('proj-path').textContent = path;
+    const el = $('proj-path');
+    if (el) el.textContent = path;
   } catch (_) { /* ignore */ }
 }
 
 function renderState() {
-  if (installed && installed.mc_version) {
-    setStatus(
-      `Ready to play — Minecraft ${installed.mc_version}, ${(installed.installed_mods || []).length} mods`,
-      'ok'
-    );
-    setProgress(-1);
+  const picked = getPickedVersion();
+  // Friendly default-state: only message we want to surface is "this
+  // version isn't installed yet" — otherwise leave status empty so the
+  // home screen stays clean.
+  if (installed && installed.mc_version === picked) {
+    setStatus('', null);
+  } else if (installed && installed.mc_version) {
+    setStatus(`First launch of ${picked} — click PLAY (~200 MB)`, null);
   } else {
-    setStatus('First launch — click PLAY to download Minecraft (~200 MB, takes 2–3 min)', null);
-    setProgress(-1);
+    setStatus(`First launch — click PLAY to download ${picked}`, null);
   }
+  setProgress(-1);
 }
 
 // ───── The smart PLAY button ────────────────────────────────────
 // One click flow:
-//   1. If installed.json missing → run `client.py setup` → wait → run `launch`
-//   2. If installed.json present → run `launch` directly
+//   1. If installed.mc_version !== pickedVersion → run setup → wait
+//   2. Then run launch
 playBtn.addEventListener('click', async () => {
   if (busy) return;
+  await playFlow();
+});
 
+async function playFlow() {
   const username = (usernameInput.value || '').trim() || 'Player';
-  const heap = parseInt(document.getElementById('opt-heap').value || '4096', 10);
-  const gc = document.getElementById('opt-gc').value;
+  const version = getPickedVersion();
+  const heap = parseInt(($('opt-heap')?.value) || '4096', 10);
+  const gc = ($('opt-gc')?.value) || 'g1';
 
   clearLog();
 
   // Phase 1: setup if needed
-  if (!installed || !installed.mc_version) {
+  const needsSetup = !installed || installed.mc_version !== version;
+  if (needsSetup) {
     setBusy(true, 'SETTING UP…');
-    setStatus('Downloading Minecraft + perf mods — please wait', 'working');
-    setProgress(null); // indeterminate
+    setStatus(`Downloading Minecraft ${version} — please wait`, 'working');
+    setProgress(null);
     try {
-      const code = await invoke('setup_client', { username, version: '1.21.11' });
+      const code = await invoke('setup_client', { username, version });
       if (code !== 0) {
-        setStatus(`Setup failed (exit ${code}) — click Show details for the log`, 'error');
+        setStatus(`Setup failed (exit ${code}) — open Settings → Logs`, 'error');
         setBusy(false);
         setProgress(-1);
         return;
@@ -130,7 +176,6 @@ playBtn.addEventListener('click', async () => {
       setProgress(-1);
       return;
     }
-    // Refresh state so the launch phase knows we're installed now
     try { installed = await invoke('read_state'); } catch (_) {}
   }
 
@@ -144,20 +189,17 @@ playBtn.addEventListener('click', async () => {
     if (code === 0) {
       setStatus('Game closed cleanly.', 'ok');
     } else {
-      setStatus(`Game exited with code ${code} — click Show details`, 'error');
+      setStatus(`Game exited with code ${code} — Settings → Logs`, 'error');
     }
   } catch (e) {
     setStatus('Launch failed: ' + e, 'error');
     setProgress(-1);
   }
   setBusy(false);
-});
+}
 
 // ───── Friendly status parsing ──────────────────────────────────
-// Map common client.py log lines to short user-facing status strings.
-// Anything we don't recognize, we leave the previous status in place.
 function friendlyStatusFor(line) {
-  const s = line.toLowerCase();
   if (/download(ing)?\s+(mc|minecraft|vanilla|version)/i.test(line)) return 'Downloading Minecraft…';
   if (/download(ing)?\s+asset/i.test(line))                          return 'Downloading game assets…';
   if (/download(ing)?\s+librar/i.test(line))                          return 'Downloading libraries…';
@@ -172,7 +214,6 @@ function friendlyStatusFor(line) {
 }
 
 function tryParseProgress(line) {
-  // Match "37/126" style fraction or "37%" style percent
   let m = line.match(/(\d+)\s*\/\s*(\d+)/);
   if (m) {
     const cur = parseInt(m[1], 10), tot = parseInt(m[2], 10);
@@ -186,7 +227,6 @@ function tryParseProgress(line) {
   return null;
 }
 
-// Stream Python output → log + friendly status
 listen('python-output', (event) => {
   const { kind, line } = event.payload;
   appendLog(line, kind);
@@ -197,8 +237,11 @@ listen('python-output', (event) => {
   if (pct !== null) setProgress(pct);
 });
 
-// ───── Logs ─────────────────────────────────────────────────────
+// ───── Logs (inside Settings → Logs tab) ────────────────────────
+const logView = $('log-view');
+
 function appendLog(line, kind) {
+  if (!logView) return;
   const div = document.createElement('div');
   div.className = 'log-line ' + (kind || 'stdout');
   div.textContent = line;
@@ -207,35 +250,34 @@ function appendLog(line, kind) {
 }
 
 function clearLog() {
-  logView.innerHTML = '';
+  if (logView) logView.innerHTML = '';
 }
-
-detailsToggle.addEventListener('click', () => {
-  const open = logView.classList.toggle('collapsed') === false;
-  detailsToggle.classList.toggle('open', open);
-  detailsToggle.querySelector('.caret').textContent = open ? '▾' : '▸';
-  detailsToggle.lastChild.textContent = ' ' + (open ? 'Hide details' : 'Show details');
-});
 
 // ───── Microsoft sign-in ────────────────────────────────────────
 msBtn.addEventListener('click', async () => {
   if (busy) return;
+  if (signedIn) {
+    // Click again to sign out — minimal flow: clear UI state. Real token
+    // revocation would need a backend command; for now just reset the UI.
+    signedIn = false;
+    msBtn.classList.remove('signed-in');
+    msBtn.textContent = 'Sign in with Microsoft';
+    usernameInput.disabled = false;
+    return;
+  }
   setBusy(true, 'SIGNING IN…');
   setStatus('A browser tab will open — sign in there, then come back', 'working');
   setProgress(null);
   try {
     const code = await invoke('microsoft_login');
     if (code === 0) {
-      // The Python side writes mc-client-account.json with the resolved
-      // profile. We don't have a dedicated read-account command yet, so
-      // we just flip the UI to a generic "signed in" state.
-      accountRow.classList.add('signed-in');
-      accountName.textContent = 'Signed in';
-      accountMode.textContent = 'Microsoft account (online)';
-      avatar.textContent = '✓';
+      signedIn = true;
+      msBtn.classList.add('signed-in');
+      msBtn.textContent = '✓ Signed in — click to sign out';
+      usernameInput.disabled = true;
       setStatus('Signed in. Click PLAY to launch.', 'ok');
     } else {
-      setStatus('Sign-in cancelled or failed (exit ' + code + ')', 'error');
+      setStatus('Sign-in cancelled or failed', 'error');
     }
   } catch (e) {
     setStatus('Sign-in failed: ' + e, 'error');
@@ -244,36 +286,86 @@ msBtn.addEventListener('click', async () => {
   setBusy(false);
 });
 
-// ───── Mods tab ─────────────────────────────────────────────────
+// ───── Settings dialog open/close ───────────────────────────────
+openSettings.addEventListener('click', () => {
+  settingsDialog.showModal();
+  // When opening the Mods tab, refresh the list
+  if (document.querySelector('.dlg-tab[aria-selected="true"]')?.dataset.tab === 'mods') {
+    refreshMods();
+  }
+});
+
+closeSettings.addEventListener('click', () => {
+  settingsDialog.close();
+});
+
+// Close when clicking the backdrop (outside the dialog content)
+settingsDialog.addEventListener('click', (e) => {
+  if (e.target === settingsDialog) settingsDialog.close();
+});
+
+// ───── Dialog tabs (ARIA tabs pattern) ──────────────────────────
+const dialogTabs = Array.from(document.querySelectorAll('.dlg-tab'));
+
+function activateDialogTab(tab) {
+  dialogTabs.forEach(t => {
+    const active = (t === tab);
+    t.classList.toggle('active', active);
+    t.setAttribute('aria-selected', active ? 'true' : 'false');
+    t.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll('.dlg-page').forEach(p => {
+    const active = (p.id === 'dpage-' + tab.dataset.tab);
+    p.classList.toggle('active', active);
+    p.hidden = !active;
+  });
+  if (tab.dataset.tab === 'mods') refreshMods();
+}
+
+dialogTabs.forEach(tab => {
+  tab.addEventListener('click', () => activateDialogTab(tab));
+  tab.addEventListener('keydown', (e) => {
+    const i = dialogTabs.indexOf(tab);
+    let target = null;
+    if (e.key === 'ArrowRight') target = dialogTabs[(i + 1) % dialogTabs.length];
+    else if (e.key === 'ArrowLeft') target = dialogTabs[(i - 1 + dialogTabs.length) % dialogTabs.length];
+    else if (e.key === 'Home') target = dialogTabs[0];
+    else if (e.key === 'End') target = dialogTabs[dialogTabs.length - 1];
+    if (target) { e.preventDefault(); target.focus(); activateDialogTab(target); }
+  });
+});
+
+// ───── Mods list ────────────────────────────────────────────────
 async function refreshMods() {
-  const list = document.getElementById('mod-list');
-  list.innerHTML = '<div class="empty">Scanning…</div>';
+  const list = $('mod-list');
+  if (!list) return;
+  list.innerHTML = '<li class="empty">Scanning…</li>';
   try {
     const mods = await invoke('list_mods');
     if (!mods.length) {
-      list.innerHTML = '<div class="empty">No mods installed yet. Click PLAY on the home tab to set up.</div>';
+      list.innerHTML = '<li class="empty">No mods installed yet. Press PLAY on the home screen.</li>';
       return;
     }
     list.innerHTML = '';
     for (const name of mods) {
-      const row = document.createElement('div');
+      const row = document.createElement('li');
       const disabled = name.endsWith('.disabled');
       row.className = 'mod-row' + (disabled ? ' disabled' : '');
       row.innerHTML = `
-        <span class="mod-status"></span>
+        <span class="mod-status" aria-hidden="true"></span>
         <span class="mod-name">${name}</span>
       `;
       list.appendChild(row);
     }
   } catch (e) {
-    list.innerHTML = '<div class="empty">Error: ' + e + '</div>';
+    list.innerHTML = '<li class="empty">Error: ' + e + '</li>';
   }
 }
 
-document.getElementById('refresh-mods').addEventListener('click', refreshMods);
-document.getElementById('update-mods').addEventListener('click', async () => {
+$('refresh-mods')?.addEventListener('click', refreshMods);
+$('update-mods')?.addEventListener('click', async () => {
   if (busy) return;
-  setBusy(true, 'UPDATING MODS…');
+  setBusy(true, 'UPDATING…');
   setStatus('Refreshing performance mod stack…', 'working');
   setProgress(null);
   try {
@@ -287,5 +379,36 @@ document.getElementById('update-mods').addEventListener('click', async () => {
   setBusy(false);
 });
 
+// ───── Global keyboard shortcuts ────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  // Enter on the home screen (not inside the dialog, not in the username
+  // input — the user might still be typing) fires PLAY.
+  if (e.key === 'Enter' && !settingsDialog.open) {
+    const tag = document.activeElement?.tagName;
+    if (tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA') {
+      e.preventDefault();
+      if (!busy) playFlow();
+    }
+  }
+  // Ctrl+, opens settings (matches macOS / VS Code convention)
+  if (e.key === ',' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    if (settingsDialog.open) settingsDialog.close();
+    else settingsDialog.showModal();
+  }
+  // Esc closes settings (native <dialog> already does this, but explicit
+  // for symmetry with the kbd shortcut list)
+});
+
+// Username input: Enter also launches
+usernameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !busy && !settingsDialog.open) {
+    e.preventDefault();
+    playBtn.focus();
+    playFlow();
+  }
+});
+
 // ───── Boot ─────────────────────────────────────────────────────
+populateVersionPicker();
 loadState();

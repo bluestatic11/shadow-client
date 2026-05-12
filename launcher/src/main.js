@@ -108,10 +108,20 @@ const usernameInput  = $('username-input');
 const openSettings   = $('open-settings');
 const closeSettings  = $('close-settings');
 const settingsDialog = $('settings-dialog');
+// Account widget (top-right corner)
+const accountBtn     = $('account-btn');
+const accountAvatar  = $('account-avatar');
+const accountLabel   = $('account-label');
+const accountMenu    = $('account-menu');
+const accountAction  = $('account-action');
+const accountMenuName= $('account-menu-name');
+const accountMenuMode= $('account-menu-mode');
 
 // ───── State ────────────────────────────────────────────────────
 let installed = null;
 let busy = false;
+let account = null;   // { username, uuid, user_type } | null
+let signedIn = false;
 
 function getPickedVersion() {
   const sel = $('version-select');
@@ -339,16 +349,132 @@ function clearLog() {
   if (logView) logView.innerHTML = '';
 }
 
-// ───── Authentication ──────────────────────────────────────────
-// Intentionally none in the UI. Shadow Client is an offline-mode launcher
-// from the user's perspective — pick a name, click PLAY. The auth.py /
-// `client.py login` plumbing still exists in the backend for the small
-// number of users who explicitly want online-mode multiplayer via a
-// command-line login, but the launcher never asks for credentials and
-// never opens a Microsoft sign-in page. This matters because (a) most
-// Minecraft clients targeted at younger players have been associated
-// with credential-phishing scams that imitate the official MS sign-in
-// page, and (b) we want zero trust friction at first run.
+// ───── Account widget (top-right corner) ───────────────────────
+// Feather-style: small pill that defaults to "Sign in". Clicking it
+// opens a dropdown menu with the sign-in action and a sign-out option
+// once authenticated. We never push MS sign-in onto users — they have
+// to deliberately click the corner widget for the prompt to appear.
+// This dodges the "looks like a phishing popup on first launch"
+// problem without taking online-mode multiplayer away from users who
+// actually want it.
+
+async function loadAccount() {
+  try {
+    account = await invoke('read_account');
+  } catch (_) { account = null; }
+  renderAccount();
+}
+
+function renderAccount() {
+  const isMsa = !!(account && account.user_type === 'msa' && account.username);
+  signedIn = isMsa;
+  if (isMsa) {
+    accountBtn.classList.add('signed-in');
+    accountAvatar.textContent = account.username.charAt(0).toUpperCase();
+    accountLabel.textContent  = account.username;
+    accountMenuName.textContent = account.username;
+    accountMenuMode.textContent = 'Microsoft account · online play enabled';
+    accountAction.textContent   = 'Sign out';
+    accountAction.classList.add('danger');
+    // Auto-fill the visible username field but don't lock it — the user
+    // can still type a different name if they want to play offline mode
+    // ad-hoc. The signed-in cache takes precedence at launch though.
+    if (usernameInput && !usernameInput.dataset.userEdited) {
+      usernameInput.value = account.username;
+    }
+  } else {
+    accountBtn.classList.remove('signed-in');
+    accountAvatar.textContent = '?';
+    accountLabel.textContent  = 'Sign in';
+    accountMenuName.textContent = 'Not signed in';
+    accountMenuMode.textContent = 'Playing in offline mode';
+    accountAction.textContent   = 'Sign in with Microsoft';
+    accountAction.classList.remove('danger');
+  }
+}
+
+// Menu toggle
+function setAccountMenuOpen(open) {
+  accountBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  accountMenu.hidden = !open;
+}
+
+accountBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = accountBtn.getAttribute('aria-expanded') !== 'true';
+  setAccountMenuOpen(open);
+});
+
+// Click-outside dismiss + Esc dismiss for keyboard users
+document.addEventListener('click', (e) => {
+  if (!accountMenu.hidden && !accountMenu.contains(e.target) && e.target !== accountBtn) {
+    setAccountMenuOpen(false);
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !accountMenu.hidden) setAccountMenuOpen(false);
+});
+
+// The single action in the menu does double duty: sign in if not signed
+// in, sign out if you are.
+accountAction.addEventListener('click', async () => {
+  if (busy) return;
+  setAccountMenuOpen(false);
+  if (signedIn) {
+    await doSignOut();
+  } else {
+    await doSignIn();
+  }
+});
+
+async function doSignIn() {
+  setBusy(true, 'SIGNING IN…');
+  setStatus('A browser tab will open — sign in with your Microsoft account there, then come back', 'working');
+  setProgress(null);
+  try {
+    const code = await invoke('microsoft_login');
+    if (code === 0) {
+      await loadAccount();
+      if (signedIn && account?.username) {
+        setStatus(`Signed in as ${account.username}.`, 'ok');
+      } else {
+        setStatus('Signed in.', 'ok');
+      }
+    } else {
+      setStatus('Sign-in cancelled or failed', 'error');
+    }
+  } catch (e) {
+    setStatus('Sign-in failed: ' + e, 'error');
+  }
+  setProgress(-1);
+  setBusy(false);
+}
+
+async function doSignOut() {
+  setBusy(true, 'SIGNING OUT…');
+  setStatus('Signing out…', 'working');
+  setProgress(null);
+  const fallbackName = (usernameInput.value || '').trim() || 'Player';
+  try {
+    const code = await invoke('logout_account', { username: fallbackName });
+    if (code === 0) {
+      await loadAccount();
+      setStatus('Signed out.', 'ok');
+    } else {
+      setStatus(`Sign-out failed (exit ${code})`, 'error');
+    }
+  } catch (e) {
+    setStatus('Sign-out failed: ' + e, 'error');
+  }
+  setProgress(-1);
+  setBusy(false);
+}
+
+// Track whether the user has touched the username field directly so we
+// don't overwrite their typed name with the MS account name on re-render.
+usernameInput?.addEventListener('input', () => {
+  usernameInput.dataset.userEdited = '1';
+});
 
 // ───── Settings dialog open/close ───────────────────────────────
 openSettings.addEventListener('click', () => {
@@ -490,6 +616,8 @@ async function boot() {
     console.warn('[shadow] boot manifest fetch failed:', e);
   }
   populateVersionPicker();
-  await loadState();
+  // Two parallel reads — account info (for the corner widget) doesn't
+  // depend on the install state and vice versa.
+  await Promise.all([loadAccount(), loadState()]);
 }
 boot();

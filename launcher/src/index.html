@@ -14,12 +14,44 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" aria-label="version">v0.2.7</span>
+      <span class="brand-sub" aria-label="version">v0.2.8</span>
     </h1>
-    <button class="icon-btn" id="open-settings" type="button"
-            aria-label="Open settings">
-      <span aria-hidden="true">⚙</span>
-    </button>
+
+    <div class="topbar-actions">
+
+      <!-- Account widget — Feather-style corner pill. Default state is an
+           unobtrusive "Sign in" badge; only escalates to a dropdown after
+           the user clicks it. The home screen never auto-asks for credentials. -->
+      <div class="account-widget" id="account-widget">
+        <button class="account-btn" id="account-btn" type="button"
+                aria-haspopup="menu" aria-expanded="false"
+                aria-controls="account-menu"
+                aria-label="Account">
+          <span class="account-avatar" id="account-avatar" aria-hidden="true">?</span>
+          <span class="account-label" id="account-label">Sign in</span>
+          <span class="account-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="account-menu" id="account-menu" role="menu" hidden>
+          <div class="account-menu-row">
+            <div class="account-menu-name" id="account-menu-name">Not signed in</div>
+            <div class="account-menu-mode" id="account-menu-mode">Playing in offline mode</div>
+          </div>
+          <button class="account-menu-action" id="account-action" type="button" role="menuitem">
+            Sign in with Microsoft
+          </button>
+          <p class="account-menu-foot">
+            Only needed for online-mode multiplayer (Hypixel, etc.).
+            Singleplayer + offline servers work without it.
+          </p>
+        </div>
+      </div>
+
+      <button class="icon-btn" id="open-settings" type="button"
+              aria-label="Open settings">
+        <span aria-hidden="true">⚙</span>
+      </button>
+
+    </div>
   </header>
 
   <!-- ───── Home — one screen, one decision ──────────────────────── -->

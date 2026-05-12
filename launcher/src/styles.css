@@ -188,6 +188,12 @@ a:focus-visible,
   border: 1px solid var(--line);
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .icon-btn {
   width: 38px;
   height: 38px;
@@ -212,6 +218,157 @@ a:focus-visible,
 }
 
 .icon-btn:active { transform: translateY(0); }
+
+/* ───── Account widget (top-right corner pill) ──────────────────
+   Feather-style: unobtrusive in the chrome, opens a small dropdown
+   menu on click. Never auto-prompts for credentials. */
+.account-widget {
+  position: relative;
+}
+
+.account-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 38px;
+  transition: all 0.15s ease;
+}
+
+.account-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-2);
+  background: rgba(var(--accent-glow), 0.08);
+}
+
+.account-btn[aria-expanded="true"] {
+  background: var(--bg-3);
+  border-color: var(--accent-2);
+  color: var(--text);
+}
+
+.account-avatar {
+  width: 26px;
+  height: 26px;
+  background: var(--bg-3);
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 12px;
+  color: var(--text-mute);
+  flex-shrink: 0;
+}
+
+.account-btn.signed-in .account-avatar {
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  color: white;
+  box-shadow: 0 0 8px rgba(var(--accent-glow), 0.4);
+}
+
+.account-btn.signed-in {
+  color: var(--text);
+}
+
+.account-label {
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-caret {
+  font-size: 9px;
+  color: var(--text-mute);
+  margin-left: 2px;
+  transition: transform 0.15s;
+}
+
+.account-btn[aria-expanded="true"] .account-caret {
+  transform: rotate(180deg);
+}
+
+/* Dropdown menu — positioned below the button, dismisses on click-out. */
+.account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 280px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.02);
+  z-index: 200;
+  animation: menuDrop 0.14s ease-out;
+}
+
+@keyframes menuDrop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.account-menu-row {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.account-menu-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.account-menu-mode {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 3px;
+}
+
+.account-menu-action {
+  width: 100%;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.account-menu-action:hover {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  background: rgba(var(--accent-glow), 0.1);
+}
+
+.account-menu-action.danger:hover {
+  border-color: #ff8a8a;
+  color: #ff8a8a;
+  background: rgba(255, 138, 138, 0.08);
+}
+
+.account-menu-foot {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 10px;
+  line-height: 1.4;
+}
 
 /* ───── Main panel (centered) ────────────────────────────────── */
 .main {

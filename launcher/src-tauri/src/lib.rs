@@ -40,11 +40,26 @@ fn project_root() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+/// One profile's worth of installed state, as written by `client.py setup`.
+/// Matches the dict shape stored under `installed.json -> profiles -> <name>`.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ProfileState {
+    pub mc_version: Option<String>,
+    pub fabric_loader: Option<String>,
+    pub installed_mods: Vec<String>,
+}
+
+/// Returned to the front-end. Carries the per-profile detail for the version
+/// the UI asked about, plus the list of every profile the user has set up so
+/// the version picker can mark them visually.
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct InstalledState {
     pub mc_version: Option<String>,
     pub fabric_loader: Option<String>,
     pub installed_mods: Vec<String>,
+    /// Names of every profile present in installed.json (= every MC version
+    /// the user has previously set up).
+    pub installed_profiles: Vec<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -126,6 +141,7 @@ async fn launch_game(
     heap_mb: u32,
     gc: String,
     username: Option<String>,
+    version: Option<String>,
 ) -> Result<i32, String> {
     let mut args = vec![
         "launch".into(),
@@ -135,6 +151,12 @@ async fn launch_game(
     if let Some(u) = username {
         args.push("--username".into());
         args.push(u);
+    }
+    // Tell client.py which per-version profile to launch. If we don't pass
+    // this, it falls back to last_used (still correct, just less explicit).
+    if let Some(v) = version {
+        args.push("--profile".into());
+        args.push(v);
     }
     run_python(&app, args, busy)
 }
@@ -151,7 +173,14 @@ async fn setup_client(
         "--username".into(), username,
     ];
     if let Some(v) = version {
+        // Pass it as both --version (which MC version to download) AND
+        // --profile (where to store this version's mods/saves). client.py
+        // defaults --profile to the resolved version when omitted, but we
+        // pass it explicitly so a user picking "1.21" vs "1.21.0" both land
+        // in a profile named exactly what they picked.
         args.push("--version".into());
+        args.push(v.clone());
+        args.push("--profile".into());
         args.push(v);
     }
     run_python(&app, args, busy)
@@ -169,29 +198,94 @@ async fn microsoft_login(
 async fn update_mods(
     app: tauri::AppHandle,
     busy: State<'_, AppState>,
+    version: Option<String>,
 ) -> Result<i32, String> {
-    run_python(&app, vec!["update-mods".into()], busy)
+    let mut args: Vec<String> = vec!["update-mods".into()];
+    if let Some(v) = version {
+        args.push("--profile".into());
+        args.push(v);
+    }
+    run_python(&app, args, busy)
 }
 
 #[tauri::command]
-fn read_state() -> Result<Option<InstalledState>, String> {
+fn read_state(version: Option<String>) -> Result<Option<InstalledState>, String> {
     let root = project_root();
     let state_file = root.join("installed.json");
     if !state_file.exists() {
         return Ok(None);
     }
-    let s = std::fs::read_to_string(&state_file).map_err(|e| e.to_string())?;
-    let st: InstalledState = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+    let raw = std::fs::read_to_string(&state_file).map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+
+    // Two on-disk shapes are valid:
+    //   1. New: { "profiles": { "1.21.11": {...}, "1.21.10": {...} }, "last_used": "1.21.11" }
+    //   2. Old: { "mc_version": "1.21.11", ..., "installed_mods": [...] }
+    // We want to expose a uniform InstalledState for the UI.
+    let (profiles_map, last_used) = if let Some(profiles) = json.get("profiles").and_then(|p| p.as_object()) {
+        (profiles.clone(), json.get("last_used").and_then(|v| v.as_str()).map(String::from))
+    } else if json.get("mc_version").is_some() {
+        // Legacy single-profile shape — synthesise a one-entry map.
+        let legacy_name = json.get("mc_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("__legacy__")
+            .to_string();
+        let mut map = serde_json::Map::new();
+        map.insert(legacy_name.clone(), json.clone());
+        (map, Some(legacy_name))
+    } else {
+        return Ok(None);
+    };
+
+    // Pick which profile the caller wants to know about.
+    let pick = version
+        .as_deref()
+        .or(last_used.as_deref())
+        .map(String::from);
+    let profile_obj = pick.as_ref().and_then(|name| profiles_map.get(name));
+
+    let installed_profiles: Vec<String> = profiles_map.keys().cloned().collect();
+
+    let st = match profile_obj {
+        Some(p) => {
+            let ps: ProfileState = serde_json::from_value(p.clone()).unwrap_or_default();
+            InstalledState {
+                mc_version:         ps.mc_version,
+                fabric_loader:      ps.fabric_loader,
+                installed_mods:     ps.installed_mods,
+                installed_profiles,
+            }
+        }
+        // The requested version isn't installed — return None for it but
+        // still surface the list of profiles the user DOES have, so the UI
+        // can render them in the picker.
+        None => InstalledState {
+            mc_version:     None,
+            fabric_loader:  None,
+            installed_mods: Vec::new(),
+            installed_profiles,
+        },
+    };
     Ok(Some(st))
 }
 
 #[tauri::command]
-fn list_mods() -> Result<Vec<String>, String> {
+fn list_mods(version: Option<String>) -> Result<Vec<String>, String> {
     let root = project_root();
-    let mods_dir = root.join("game_dir").join("mods");
-    if !mods_dir.exists() {
+    // Try the per-version profile dir first. Fall back to the legacy
+    // game_dir/mods/ if no profile is set up yet (or if the user came from
+    // an older install).
+    let candidate_dirs: Vec<std::path::PathBuf> = match version.as_deref() {
+        Some(v) => vec![
+            root.join("game_dir").join("profiles").join(v).join("mods"),
+            root.join("game_dir").join("mods"),
+        ],
+        None => vec![root.join("game_dir").join("mods")],
+    };
+    let mods_dir = candidate_dirs.into_iter().find(|p| p.exists());
+    let Some(mods_dir) = mods_dir else {
         return Ok(vec![]);
-    }
+    };
     let entries = std::fs::read_dir(&mods_dir).map_err(|e| e.to_string())?;
     let mut out: Vec<String> = entries
         .flatten()

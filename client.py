@@ -37,9 +37,36 @@ import mods
 import mojang
 
 HERE = Path(__file__).resolve().parent
-GAME_DIR = HERE / "game_dir"
-ACCOUNT_FILE = GAME_DIR / "mc-client-account.json"
+# SHARED_DIR holds everything that's version-keyed by name and safe to share
+# across MC versions: vanilla JARs, libraries (hash-named), assets (hash-named),
+# the .fabric cache, and the single Microsoft account file.
+SHARED_DIR = HERE / "game_dir"
+# Each MC version gets its own profile dir under here: mods/, saves/,
+# options.txt, screenshots/, config/. Switching versions in the launcher
+# switches the active profile so mod conflicts can't happen.
+PROFILES_DIR = SHARED_DIR / "profiles"
+# Back-compat alias — older code paths referenced GAME_DIR directly. New code
+# should call `resolve_dirs(profile)` to get a (profile_dir, shared_dir) tuple.
+GAME_DIR = SHARED_DIR
+ACCOUNT_FILE = SHARED_DIR / "mc-client-account.json"
 STATE_FILE = HERE / "installed.json"
+
+
+def resolve_dirs(profile: str | None) -> tuple[Path, Path]:
+    """Return ``(profile_dir, shared_dir)``.
+
+    Per-version files (mods, saves, options.txt, screenshots, config) live in
+    ``profile_dir``. Per-name files (vanilla JARs, libraries, assets) live in
+    ``shared_dir`` so multiple profiles can share them. If ``profile`` is
+    ``None`` we fall back to the legacy single-folder layout — both paths
+    become ``SHARED_DIR`` — so users running ``client.py`` from a shell
+    without ``--profile`` keep their old install working.
+    """
+    if not profile:
+        return SHARED_DIR, SHARED_DIR
+    pd = PROFILES_DIR / profile
+    pd.mkdir(parents=True, exist_ok=True)
+    return pd, SHARED_DIR
 
 # Java autodetect. Prefer the newest bundled JDK in the project so mods that
 # demand Java 22+ (e.g. c2me's native-math sub-module) always get what they
@@ -130,15 +157,101 @@ def filter_args_for_java(args: list[str], java_major: int) -> list[str]:
     return out
 
 
+def _migrate_legacy_files(profile_name: str) -> None:
+    """Move single-folder-install files into ``game_dir/profiles/<profile>/``.
+
+    Runs the first time a user upgrades to the per-version-profiles layout.
+    Shared, name/hash-keyed dirs (versions/, libraries/, assets/, .fabric/)
+    stay at SHARED_DIR. Per-user-state dirs (mods, saves, screenshots etc.)
+    move into the named profile.
+
+    Uses ``Path.rename`` — atomic on the same filesystem and silent if the
+    file is already at its destination. Failures of individual files are
+    logged but never abort the migration.
+    """
+    new_dir = PROFILES_DIR / profile_name
+    new_dir.mkdir(parents=True, exist_ok=True)
+    subdirs = ["mods", "saves", "config", "screenshots", "resourcepacks",
+               "shaderpacks", "logs", "crash-reports"]
+    files = ["options.txt", "optionsof.txt", "servers.dat",
+             "usercache.json", "usernamecache.json", "realms_persistence.json",
+             "hotbar.nbt", "command_history.txt"]
+    moved = 0
+    for sub in subdirs:
+        old = SHARED_DIR / sub
+        new = new_dir / sub
+        if old.exists() and not new.exists():
+            try:
+                old.rename(new)
+                print(f"[migrate] {sub} → profiles/{profile_name}/")
+                moved += 1
+            except OSError as e:
+                print(f"[migrate] could not move {sub}: {e}")
+    for f in files:
+        old = SHARED_DIR / f
+        new = new_dir / f
+        if old.exists() and not new.exists():
+            try:
+                old.rename(new)
+                moved += 1
+            except OSError:
+                pass
+    if moved:
+        print(f"[migrate] moved {moved} item(s) into profile '{profile_name}'")
+
+
 def _state_load() -> dict:
+    """Load installed.json. Always returns the new ``profiles``-keyed schema.
+
+    Older single-version state files (top-level ``mc_version``, ``client_jar``)
+    trigger a one-shot migration: the user's existing mods/saves/options
+    move into ``game_dir/profiles/<mc_version>/`` and installed.json is
+    rewritten in the new shape. Idempotent — subsequent loads see the new
+    schema and skip the migration.
+    """
     if not STATE_FILE.exists():
-        return {}
+        return {"profiles": {}, "last_used": None}
     try:
-        return json.loads(STATE_FILE.read_text())
+        s = json.loads(STATE_FILE.read_text())
     except (json.JSONDecodeError, OSError) as e:
         print(f"[state] {STATE_FILE.name} corrupt ({e}); treating as empty. "
               f"Re-run `setup` to rebuild.")
-        return {}
+        return {"profiles": {}, "last_used": None}
+    # Old schema: top-level mc_version → migrate files + rewrite state.
+    if "mc_version" in s and "profiles" not in s:
+        legacy_name = s.get("mc_version") or "__legacy__"
+        print(f"[migrate] upgrading to per-version profiles "
+              f"(legacy install → '{legacy_name}')")
+        _migrate_legacy_files(legacy_name)
+        new_state = {
+            "profiles": {legacy_name: {
+                "mc_version":         s.get("mc_version"),
+                "fabric_loader":      s.get("fabric_loader"),
+                "version_id":         s.get("version_id"),
+                "vanilla_version_id": s.get("vanilla_version_id"),
+                "client_jar":         s.get("client_jar"),
+                "installed_mods":     s.get("installed_mods", []),
+            }},
+            "last_used": legacy_name,
+        }
+        _state_save(new_state)
+        return new_state
+    s.setdefault("profiles", {})
+    s.setdefault("last_used", None)
+    return s
+
+
+def _resolve_profile(state: dict, requested: str | None) -> str | None:
+    """Pick which profile to operate on.
+
+    1. Explicit ``--profile`` wins.
+    2. Otherwise reuse ``last_used`` from state.
+    3. Otherwise return None (caller decides — e.g. setup uses the resolved
+       MC version as the new profile name).
+    """
+    if requested:
+        return requested
+    return state.get("last_used")
 
 
 def _atomic_write(path: Path, content: str, *, encoding: str = "utf-8") -> None:
@@ -158,15 +271,22 @@ def _state_save(state: dict) -> None:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    GAME_DIR.mkdir(parents=True, exist_ok=True)
+    SHARED_DIR.mkdir(parents=True, exist_ok=True)
 
     print("[setup] fetching Mojang version manifest…")
     manifest = mojang.fetch_manifest()
     vanilla_entry = mojang.resolve_version(manifest, args.version)
     mc_version = vanilla_entry["id"]
-    print(f"[setup] target MC version: {mc_version}")
 
-    vanilla = mojang.fetch_version_json(vanilla_entry, GAME_DIR)
+    # Profile defaults to the resolved MC version, so each version gets its
+    # own isolated mods/saves folder automatically. Users who explicitly pass
+    # --profile can name their profile whatever they like.
+    profile = args.profile or mc_version
+    profile_dir, shared_dir = resolve_dirs(profile)
+    print(f"[setup] target MC version: {mc_version}")
+    print(f"[setup] profile: {profile}  → {profile_dir.relative_to(HERE)}")
+
+    vanilla = mojang.fetch_version_json(vanilla_entry, shared_dir)
 
     if not args.no_fabric:
         loader_v = fabric.latest_loader(mc_version)
@@ -177,48 +297,97 @@ def cmd_setup(args: argparse.Namespace) -> int:
         version = vanilla
         loader_v = None
 
-    mojang.download_libraries(version, GAME_DIR)
-    mojang.download_client_jar(vanilla, GAME_DIR)
-    mojang.download_assets(vanilla, GAME_DIR)
+    # All three of these are version- or hash-keyed inside SHARED_DIR, so they
+    # naturally share across profiles without conflict.
+    mojang.download_libraries(version, shared_dir)
+    mojang.download_client_jar(vanilla, shared_dir)
+    mojang.download_assets(vanilla, shared_dir)
 
     # Persist the resolved merged version JSON so `launch` doesn't refetch Fabric.
-    version_json_path = GAME_DIR / "versions" / version["id"] / f"{version['id']}.json"
+    version_json_path = shared_dir / "versions" / version["id"] / f"{version['id']}.json"
     _atomic_write(version_json_path, json.dumps(version, indent=2))
 
+    # Mods go into the per-version profile — that's the whole point of
+    # profiles, so the 1.21.11 mod set never collides with the 1.21.5 set.
     installed_mods: list[str] = []
     if not args.no_mods and not args.no_fabric:
-        print("[setup] installing performance mods…")
-        installed_mods, _ = mods.install_mods(GAME_DIR / "mods", mc_version)
+        print(f"[setup] installing performance mods into profile '{profile}'…")
+        installed_mods, _ = mods.install_mods(profile_dir / "mods", mc_version)
 
-    # Seed options.txt if absent
-    opts = GAME_DIR / "options.txt"
+    # Per-profile options.txt — different versions can have different
+    # Sodium / Iris graphics settings without stepping on each other.
+    opts = profile_dir / "options.txt"
     if not opts.exists():
         _atomic_write(opts, jvm.OPTIONS_TXT)
-        print("[setup] wrote default options.txt")
+        print(f"[setup] wrote default options.txt into profile '{profile}'")
 
-    _state_save({
+    # Per-profile state. Existing entries for OTHER profiles are preserved so
+    # the user doesn't lose their 1.21.5 install just because they re-set-up
+    # 1.21.11.
+    state = _state_load()
+    state["profiles"][profile] = {
         "mc_version": mc_version,
         "fabric_loader": loader_v,
         "version_id": version["id"],
         "vanilla_version_id": vanilla["id"],
-        "client_jar": str((GAME_DIR / "versions" / vanilla["id"] / f"{vanilla['id']}.jar").resolve()),
+        "client_jar": str((shared_dir / "versions" / vanilla["id"] / f"{vanilla['id']}.jar").resolve()),
         "installed_mods": installed_mods,
-    })
-    print(f"[setup] done — {len(installed_mods)} mods installed")
+    }
+    state["last_used"] = profile
+    _state_save(state)
+    print(f"[setup] done — profile '{profile}' has {len(installed_mods)} mods, "
+          f"{len(state['profiles'])} profile(s) total")
 
+    # Account is shared across profiles — one Microsoft sign-in covers them all.
     if not ACCOUNT_FILE.exists():
         acct = auth.offline(args.username)
         acct.save(ACCOUNT_FILE)
         print(f"[setup] created offline account for '{args.username}' — run `login` for online play")
 
-    # Auto-build the Shadow HUD mod — best-effort; don't fail setup if javac absent.
+    # Auto-build the Shadow HUD mod — best-effort. The build script drops the
+    # jar at SHARED_DIR/mods/shadowhud-1.0.0.jar (legacy location); we mirror
+    # it into the active profile's mods folder so the loader picks it up.
     build_py = HERE / "branding" / "hud_mod" / "build.py"
     if build_py.exists():
         print("[setup] compiling Shadow HUD…")
         rc = subprocess.call([sys.executable, str(build_py)])
         if rc != 0:
             print("[setup] Shadow HUD compile skipped (JDK or build-deps missing)")
+        _sync_hud_into_profile(profile_dir, shared_dir)
     return 0
+
+
+def _sync_hud_into_profile(profile_dir: Path, shared_dir: Path) -> None:
+    """Mirror the freshly built Shadow HUD jar from the legacy SHARED_DIR/mods/
+    location into the active profile's mods folder. Idempotent + safe to run
+    every launch. If MC is currently holding the destination file open we
+    stage as .jar.new and let ``_promote_staged_mods`` swap it in next time."""
+    if profile_dir == shared_dir:
+        return  # legacy layout — HUD already lives in the right place
+    src = shared_dir / "mods" / "shadowhud-1.0.0.jar"
+    if not src.exists():
+        return
+    dst_dir = profile_dir / "mods"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / src.name
+    # Only re-copy if the source is newer (avoids rewriting every launch when
+    # nothing changed).
+    if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
+        return
+    try:
+        if dst.exists():
+            dst.unlink()
+        shutil.copy2(src, dst)
+        print(f"[setup] HUD synced → {dst.relative_to(HERE)}")
+    except PermissionError:
+        # MC has the destination open — stage and let _promote_staged_mods
+        # swap it on next launch.
+        staged = dst.with_suffix(dst.suffix + ".new")
+        try:
+            shutil.copy2(src, staged)
+            print(f"[setup] HUD staged at {staged.name} (MC holds the active jar)")
+        except OSError as e:
+            print(f"[setup] HUD sync failed: {e}")
 
 
 def cmd_login(args: argparse.Namespace) -> int:
@@ -260,7 +429,7 @@ def cmd_build_hud(args: argparse.Namespace) -> int:
 
 
 def cmd_update_mods(args: argparse.Namespace) -> int:
-    """Refresh only the launcher-managed performance mods.
+    """Refresh only the launcher-managed performance mods for the active profile.
 
     Scoped deletion — we only remove jars whose *filename* starts with the slug
     of a mod we installed previously. User-dropped mods, Hacker Mode imports,
@@ -268,37 +437,40 @@ def cmd_update_mods(args: argparse.Namespace) -> int:
     alone.
     """
     state = _state_load()
-    if not state:
+    profile = _resolve_profile(state, getattr(args, "profile", None))
+    if not profile or profile not in state.get("profiles", {}):
         raise SystemExit("Run `setup` first")
-    mods_dir = GAME_DIR / "mods"
+    profile_dir, _ = resolve_dirs(profile)
+    p_state = state["profiles"][profile]
+    mods_dir = profile_dir / "mods"
     mods_dir.mkdir(parents=True, exist_ok=True)
 
     # Delete only jars whose filename heuristically belongs to a previously-
     # managed slug. Never rmtree the whole directory.
     removed = 0
-    prev_slugs = [s.lower() for s in state.get("installed_mods", [])]
+    prev_slugs = [s.lower() for s in p_state.get("installed_mods", [])]
     for jar in list(mods_dir.glob("*.jar")):
         name_lc = jar.name.lower()
         if any(name_lc.startswith(slug) for slug in prev_slugs):
             jar.unlink()
             removed += 1
 
-    installed, skipped = mods.install_mods(mods_dir, state["mc_version"])
-    state["installed_mods"] = installed
+    installed, skipped = mods.install_mods(mods_dir, p_state["mc_version"])
+    p_state["installed_mods"] = installed
     _state_save(state)
-    print(f"[update-mods] removed={removed}  installed={len(installed)}  skipped={len(skipped)}")
+    print(f"[update-mods] profile={profile}  removed={removed}  "
+          f"installed={len(installed)}  skipped={len(skipped)}")
     print(f"[update-mods] user-added mods preserved: "
           f"{len(list(mods_dir.glob('*.jar'))) - len(installed)} jars")
     return 0
 
 
-def _promote_staged_mods() -> None:
+def _promote_staged_mods(mods_dir: Path) -> None:
     """Replace mods with their sibling `.jar.new` build artifacts if any exist.
 
     Happens when the HUD (or any mod) was rebuilt while MC held a handle on
     the previous jar. This pass runs right before launch, so restarts just work.
     """
-    mods_dir = GAME_DIR / "mods"
     if not mods_dir.exists():
         return
     for staged in mods_dir.glob("*.jar.new"):
@@ -313,13 +485,30 @@ def _promote_staged_mods() -> None:
 
 
 def cmd_launch(args: argparse.Namespace) -> int:
-    _promote_staged_mods()
     state = _state_load()
-    if not state:
+    profile = _resolve_profile(state, getattr(args, "profile", None))
+    if not profile or profile not in state.get("profiles", {}):
         raise SystemExit("Run `setup` first")
+    profile_dir, shared_dir = resolve_dirs(profile)
+    p_state = state["profiles"][profile]
 
-    version_id = state["version_id"]
-    version_json = GAME_DIR / "versions" / version_id / f"{version_id}.json"
+    # Pre-launch hygiene for the active profile:
+    #  1) sync the HUD from the legacy build location (user may have rebuilt
+    #     it via `python branding/hud_mod/build.py` without re-running setup).
+    #  2) swap in any .jar.new builds that couldn't overwrite a held jar.
+    _sync_hud_into_profile(profile_dir, shared_dir)
+    _promote_staged_mods(profile_dir / "mods")
+
+    # Remember which profile we just launched, so the next `launch` with no
+    # --profile arg reuses the same one.
+    if state.get("last_used") != profile:
+        state["last_used"] = profile
+        _state_save(state)
+
+    print(f"[launch] profile: {profile}  ({profile_dir.relative_to(HERE)})")
+
+    version_id = p_state["version_id"]
+    version_json = shared_dir / "versions" / version_id / f"{version_id}.json"
     version = json.loads(version_json.read_text())
 
     # Rebuild classpath from libraries already on disk
@@ -331,12 +520,12 @@ def cmd_launch(args: argparse.Namespace) -> int:
         artifact = lib.get("downloads", {}).get("artifact")
         if not artifact:
             continue
-        jar = GAME_DIR / "libraries" / artifact["path"]
+        jar = shared_dir / "libraries" / artifact["path"]
         if jar.exists():
             classpath.append(jar)
 
-    natives_dir = GAME_DIR / "versions" / version_id / "natives"
-    client_jar = Path(state["client_jar"])
+    natives_dir = shared_dir / "versions" / version_id / "natives"
+    client_jar = Path(p_state["client_jar"])
 
     # Account
     acct_obj = auth.Account.load(ACCOUNT_FILE)
@@ -370,8 +559,11 @@ def cmd_launch(args: argparse.Namespace) -> int:
         uuid=acct_obj.uuid,
         access_token=acct_obj.access_token,
         user_type=acct_obj.user_type,
-        game_dir=GAME_DIR,
-        assets_dir=GAME_DIR / "assets",
+        # MC's gameDir = the profile dir, so mods/saves/options.txt all
+        # resolve to the per-version folder. Assets are name/hash-keyed and
+        # stay in the shared dir so we don't redownload ~300 MB per version.
+        game_dir=profile_dir,
+        assets_dir=shared_dir / "assets",
         natives_dir=natives_dir,
         classpath=classpath,
         client_jar=client_jar,
@@ -391,14 +583,14 @@ def cmd_launch(args: argparse.Namespace) -> int:
 
     jmaj = java_major_version(java)
     if jmaj < required:
-        raise SystemExit(f"Java {jmaj} can't run MC {state['mc_version']} (needs {required}).")
+        raise SystemExit(f"Java {jmaj} can't run MC {p_state['mc_version']} (needs {required}).")
     all_args = filter_args_for_java(all_args, jmaj)
     cmd = [str(java), *all_args]
     print(f"[launch] {java}  (Java {jmaj})")
     print(f"[launch] main: {main_class}")
     print(f"[launch] heap: {args.heap}M  gc: {args.gc}")
     print(f"[launch] user: {acct_obj.username} ({acct_obj.user_type})")
-    print(f"[launch] mods: {len(state.get('installed_mods', []))} installed")
+    print(f"[launch] mods: {len(p_state.get('installed_mods', []))} installed")
 
     # Persist the java command for diagnostics, with the access token redacted
     # so the log file can be shared without leaking multiplayer auth.
@@ -416,23 +608,27 @@ def cmd_launch(args: argparse.Namespace) -> int:
             redacted.append("--accessToken=<redacted>")
         else:
             redacted.append(tok)
-    cmd_log = GAME_DIR / "last-launch-cmd.log"
+    # Per-profile diagnostics. Crash reports, last-launch-cmd.log and
+    # launch.log all live next to the profile's mods/ so support stuff
+    # never crosses versions.
+    cmd_log = profile_dir / "last-launch-cmd.log"
     cmd_log.write_text("\n".join(redacted), encoding="utf-8")
     print(f"[launch] command logged: {cmd_log}")
     print("[launch] Minecraft is starting — first boot can take 30-60s…")
     print("-" * 60)
 
     # Tee Java's output to both console and a log file so silent crashes leave
-    # a trail. Runs with cwd=game_dir so MC's relative paths resolve there.
+    # a trail. Runs with cwd=profile_dir so MC's relative paths (saves/,
+    # screenshots/, crash-reports/) resolve into the per-version folder.
     # HIGH_PRIORITY_CLASS (=0x80) nudges the Windows scheduler to prefer our
     # Java process when there's CPU contention with background stuff.
     creationflags = 0
     if platform.system() == "Windows":
         creationflags = 0x80  # HIGH_PRIORITY_CLASS
-    log_path = GAME_DIR / "launch.log"
+    log_path = profile_dir / "launch.log"
     with log_path.open("w", encoding="utf-8", errors="replace") as log:
         proc = subprocess.Popen(
-            cmd, cwd=GAME_DIR,
+            cmd, cwd=profile_dir,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", bufsize=1,
             creationflags=creationflags,
@@ -459,6 +655,10 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("setup", help="download Minecraft + install Fabric + mods")
     s.add_argument("--username", default="Player")
     s.add_argument("--version", default="latest", help='Minecraft version or "latest"')
+    s.add_argument("--profile", default=None,
+                   help="Per-version profile name (mods/saves go to "
+                        "game_dir/profiles/<profile>/). Defaults to the MC "
+                        "version so each version gets its own isolated profile.")
     s.add_argument("--no-fabric", action="store_true")
     s.add_argument("--no-mods", action="store_true")
 
@@ -467,7 +667,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="'prism' (default) reuses your PrismLauncher token; "
                          "'microsoft' runs the device-code flow (may fail if the "
                          "public client ID is disabled)")
-    sub.add_parser("update-mods", help="redownload the performance mod stack")
+
+    um = sub.add_parser("update-mods", help="redownload the performance mod stack")
+    um.add_argument("--profile", default=None,
+                    help="Which profile to update. Defaults to last_used.")
+
     sub.add_parser("build-hud",   help="compile + install the Shadow HUD mod (FPS/coords/biome overlay)")
 
     l = sub.add_parser("launch", help="launch Minecraft")
@@ -476,6 +680,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="GC profile; 'safe' = bare minimum flags for troubleshooting")
     l.add_argument("--java", help="path to java / javaw executable")
     l.add_argument("--username")
+    l.add_argument("--profile", default=None,
+                   help="Which version's profile to launch. Defaults to last_used.")
 
     args = p.parse_args(argv)
     return {"setup": cmd_setup, "login": cmd_login, "launch": cmd_launch,

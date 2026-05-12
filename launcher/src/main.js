@@ -54,21 +54,27 @@ function getPickedVersion() {
   return localStorage.getItem(SAVED_VERSION_KEY) || DEFAULT_VERSION;
 }
 
-function populateVersionPicker() {
+function populateVersionPicker(installedSet) {
   const sel = $('version-select');
   if (!sel) return;
   sel.innerHTML = '';
   for (const v of SUPPORTED_VERSIONS) {
     const opt = document.createElement('option');
     opt.value = v;
-    opt.textContent = v === DEFAULT_VERSION ? `${v} (latest)` : v;
+    // ✓ marker if the user has already set up this version, so the picker
+    // doubles as a "what's installed" indicator.
+    const installed = installedSet && installedSet.has(v);
+    const installedMark = installed ? ' ✓' : '';
+    opt.textContent = v === DEFAULT_VERSION
+      ? `${v} (latest)${installedMark}`
+      : `${v}${installedMark}`;
     sel.appendChild(opt);
   }
   const saved = localStorage.getItem(SAVED_VERSION_KEY) || DEFAULT_VERSION;
   sel.value = SUPPORTED_VERSIONS.includes(saved) ? saved : DEFAULT_VERSION;
   sel.addEventListener('change', () => {
     localStorage.setItem(SAVED_VERSION_KEY, sel.value);
-    renderState();
+    loadState();   // re-resolve "is this version installed?" for the new pick
   });
 }
 
@@ -113,9 +119,24 @@ function setBusy(on, label) {
 
 // ───── Initial state load ───────────────────────────────────────
 async function loadState() {
+  const picked = getPickedVersion();
   try {
-    installed = await invoke('read_state');
+    installed = await invoke('read_state', { version: picked });
   } catch (_) { installed = null; }
+
+  // Refresh picker labels with ✓ markers for installed versions.
+  const installedSet = new Set(installed?.installed_profiles || []);
+  const sel = $('version-select');
+  if (sel) {
+    Array.from(sel.options).forEach(opt => {
+      const v = opt.value;
+      const mark = installedSet.has(v) ? ' ✓' : '';
+      opt.textContent = v === DEFAULT_VERSION
+        ? `${v} (latest)${mark}`
+        : `${v}${mark}`;
+    });
+  }
+
   renderState();
   try {
     const path = await invoke('project_path');
@@ -126,15 +147,11 @@ async function loadState() {
 
 function renderState() {
   const picked = getPickedVersion();
-  // Friendly default-state: only message we want to surface is "this
-  // version isn't installed yet" — otherwise leave status empty so the
-  // home screen stays clean.
-  if (installed && installed.mc_version === picked) {
+  const isInstalled = installed && installed.mc_version === picked;
+  if (isInstalled) {
     setStatus('', null);
-  } else if (installed && installed.mc_version) {
-    setStatus(`First launch of ${picked} — click PLAY (~200 MB)`, null);
   } else {
-    setStatus(`First launch — click PLAY to download ${picked}`, null);
+    setStatus(`First launch of ${picked} — click PLAY (~200 MB, takes 2–3 min)`, null);
   }
   setProgress(-1);
 }
@@ -156,11 +173,14 @@ async function playFlow() {
 
   clearLog();
 
-  // Phase 1: setup if needed
-  const needsSetup = !installed || installed.mc_version !== version;
+  // Phase 1: setup if this version's profile isn't installed yet. Each
+  // version has its own isolated profile dir, so switching versions just
+  // means "set up that version once". Re-picking a previously installed
+  // version is free.
+  const needsSetup = !(installed?.installed_profiles || []).includes(version);
   if (needsSetup) {
     setBusy(true, 'SETTING UP…');
-    setStatus(`Downloading Minecraft ${version} — please wait`, 'working');
+    setStatus(`Downloading Minecraft ${version} into its own profile…`, 'working');
     setProgress(null);
     try {
       const code = await invoke('setup_client', { username, version });
@@ -176,15 +196,16 @@ async function playFlow() {
       setProgress(-1);
       return;
     }
-    try { installed = await invoke('read_state'); } catch (_) {}
+    try { installed = await invoke('read_state', { version }); } catch (_) {}
   }
 
-  // Phase 2: launch
+  // Phase 2: launch — pass version through so client.py routes to the right
+  // per-version profile (mods/saves/options come from that profile).
   setBusy(true, 'LAUNCHING…');
-  setStatus('Starting Minecraft…', 'working');
+  setStatus(`Starting Minecraft ${version}…`, 'working');
   setProgress(null);
   try {
-    const code = await invoke('launch_game', { heapMb: heap, gc, username });
+    const code = await invoke('launch_game', { heapMb: heap, gc, username, version });
     setProgress(-1);
     if (code === 0) {
       setStatus('Game closed cleanly.', 'ok');
@@ -341,9 +362,11 @@ async function refreshMods() {
   if (!list) return;
   list.innerHTML = '<li class="empty">Scanning…</li>';
   try {
-    const mods = await invoke('list_mods');
+    // Always scope to the currently picked version's profile so the user
+    // sees the mods for whatever they're about to play.
+    const mods = await invoke('list_mods', { version: getPickedVersion() });
     if (!mods.length) {
-      list.innerHTML = '<li class="empty">No mods installed yet. Press PLAY on the home screen.</li>';
+      list.innerHTML = '<li class="empty">No mods installed yet for ' + getPickedVersion() + '. Press PLAY on the home screen.</li>';
       return;
     }
     list.innerHTML = '';
@@ -365,11 +388,12 @@ async function refreshMods() {
 $('refresh-mods')?.addEventListener('click', refreshMods);
 $('update-mods')?.addEventListener('click', async () => {
   if (busy) return;
+  const version = getPickedVersion();
   setBusy(true, 'UPDATING…');
-  setStatus('Refreshing performance mod stack…', 'working');
+  setStatus(`Refreshing mod stack for ${version}…`, 'working');
   setProgress(null);
   try {
-    const code = await invoke('update_mods');
+    const code = await invoke('update_mods', { version });
     setStatus(code === 0 ? 'Mods updated.' : `Update failed (exit ${code})`, code === 0 ? 'ok' : 'error');
     await refreshMods();
   } catch (e) {

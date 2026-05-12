@@ -417,6 +417,20 @@ def cmd_login(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_logout(args: argparse.Namespace) -> int:
+    """Sign out of the Microsoft account.
+
+    Replaces the cached account file with an offline-mode record using the
+    requested username. The Microsoft refresh_token + access_token are thrown
+    away, so next launch is offline-mode unless the user signs in again.
+    """
+    SHARED_DIR.mkdir(parents=True, exist_ok=True)
+    acct = auth.offline(args.username or "Player")
+    acct.save(ACCOUNT_FILE)
+    print(f"[logout] reverted to offline account '{acct.username}'")
+    return 0
+
+
 def cmd_build_hud(args: argparse.Namespace) -> int:
     """Compile + install the Shadow HUD mod (top-left FPS/coords/biome overlay)."""
     build_py = HERE / "branding" / "hud_mod" / "build.py"
@@ -672,6 +686,10 @@ def main(argv: list[str] | None = None) -> int:
     um.add_argument("--profile", default=None,
                     help="Which profile to update. Defaults to last_used.")
 
+    lo = sub.add_parser("logout", help="sign out of the Microsoft account (back to offline)")
+    lo.add_argument("--username", default="Player",
+                    help="Offline username to revert to after sign-out.")
+
     sub.add_parser("build-hud",   help="compile + install the Shadow HUD mod (FPS/coords/biome overlay)")
 
     l = sub.add_parser("launch", help="launch Minecraft")
@@ -684,8 +702,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="Which version's profile to launch. Defaults to last_used.")
 
     args = p.parse_args(argv)
-    return {"setup": cmd_setup, "login": cmd_login, "launch": cmd_launch,
-            "update-mods": cmd_update_mods, "build-hud": cmd_build_hud}[args.cmd](args)
+    return {"setup": cmd_setup, "login": cmd_login, "logout": cmd_logout,
+            "launch": cmd_launch, "update-mods": cmd_update_mods,
+            "build-hud": cmd_build_hud}[args.cmd](args)
 
 
 if __name__ == "__main__":

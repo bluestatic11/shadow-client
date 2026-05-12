@@ -307,6 +307,60 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+/// Public profile info exposed to the front-end after Microsoft sign-in.
+///
+/// Deliberately does NOT include `access_token` / `refresh_token` — those
+/// are Minecraft Services credentials and should never leave the Rust/Python
+/// process. The launcher's UI only needs to render the player's name + avatar;
+/// the token gets read directly by `client.py launch` when it fires off Java.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct AccountInfo {
+    pub username: Option<String>,
+    pub uuid: Option<String>,
+    /// "msa" for Microsoft-signed-in, "legacy" for offline. Anything else
+    /// surfaces as the literal value so future schema additions don't break
+    /// the front-end.
+    pub user_type: Option<String>,
+}
+
+/// Read the cached account file written by `auth.py` after a successful
+/// `client.py login`. Used by the UI to (a) detect on boot that the user is
+/// already signed in from a previous session, and (b) show the resolved
+/// Mojang username after a fresh sign-in.
+#[tauri::command]
+fn read_account() -> Result<Option<AccountInfo>, String> {
+    let root = project_root();
+    let account_file = root.join("game_dir").join("mc-client-account.json");
+    if !account_file.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&account_file).map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    Ok(Some(AccountInfo {
+        username:  json.get("username").and_then(|v| v.as_str()).map(String::from),
+        uuid:      json.get("uuid").and_then(|v| v.as_str()).map(String::from),
+        user_type: json.get("user_type").and_then(|v| v.as_str()).map(String::from),
+    }))
+}
+
+/// Sign out: clear the Microsoft tokens and replace the cached account with
+/// a deterministic offline account for the requested username. We invoke
+/// `client.py logout` rather than rewriting the JSON directly so the same
+/// auth.offline() helper that `setup` uses produces the file — keeps the
+/// schema in one place.
+#[tauri::command]
+async fn logout_account(
+    app: tauri::AppHandle,
+    busy: State<'_, AppState>,
+    username: String,
+) -> Result<i32, String> {
+    run_python(
+        &app,
+        vec!["logout".into(), "--username".into(), username],
+        busy,
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -316,8 +370,10 @@ pub fn run() {
             launch_game,
             setup_client,
             microsoft_login,
+            logout_account,
             update_mods,
             read_state,
+            read_account,
             list_mods,
             project_path,
         ])

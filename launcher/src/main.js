@@ -114,6 +114,7 @@ const settingsDialog = $('settings-dialog');
 let installed = null;
 let busy = false;
 let signedIn = false;
+let account = null;   // AccountInfo | null — populated by loadAccount()
 
 function getPickedVersion() {
   const sel = $('version-select');
@@ -181,6 +182,34 @@ function setBusy(on, label) {
   } else {
     playText.textContent = 'PLAY';
     playIcon.textContent = '▶';
+  }
+}
+
+// ───── Account loading ──────────────────────────────────────────
+// Reads username/uuid/user_type from the cached account file. The access
+// token itself stays Python-side — Rust deliberately doesn't surface it,
+// so we never have to worry about it landing in DevTools or the renderer
+// process. The launch flow still uses the token correctly because
+// client.py launch reads the same file directly.
+async function loadAccount() {
+  try {
+    account = await invoke('read_account');
+  } catch (_) { account = null; }
+  renderAccount();
+}
+
+function renderAccount() {
+  const isMsa = !!(account && account.user_type === 'msa' && account.username);
+  signedIn = isMsa;
+  if (isMsa) {
+    msBtn.classList.add('signed-in');
+    msBtn.textContent = `✓ Signed in as ${account.username} — click to sign out`;
+    usernameInput.value = account.username;
+    usernameInput.disabled = true;
+  } else {
+    msBtn.classList.remove('signed-in');
+    msBtn.textContent = 'Sign in with Microsoft';
+    usernameInput.disabled = false;
   }
 }
 
@@ -341,29 +370,52 @@ function clearLog() {
   if (logView) logView.innerHTML = '';
 }
 
-// ───── Microsoft sign-in ────────────────────────────────────────
+// ───── Microsoft sign-in / sign-out ─────────────────────────────
 msBtn.addEventListener('click', async () => {
   if (busy) return;
+
+  // Sign out path: replace the cached MS account with an offline one so
+  // the next launch uses offline mode. The username we fall back to is
+  // whatever the user previously typed (or "Player").
   if (signedIn) {
-    // Click again to sign out — minimal flow: clear UI state. Real token
-    // revocation would need a backend command; for now just reset the UI.
-    signedIn = false;
-    msBtn.classList.remove('signed-in');
-    msBtn.textContent = 'Sign in with Microsoft';
-    usernameInput.disabled = false;
+    setBusy(true, 'SIGNING OUT…');
+    setStatus('Signing out of Microsoft…', 'working');
+    setProgress(null);
+    const fallbackName = (usernameInput.value || '').trim() || 'Player';
+    try {
+      const code = await invoke('logout_account', { username: fallbackName });
+      if (code === 0) {
+        await loadAccount();   // re-render UI from the now-offline file
+        setStatus('Signed out.', 'ok');
+      } else {
+        setStatus(`Sign-out failed (exit ${code})`, 'error');
+      }
+    } catch (e) {
+      setStatus('Sign-out failed: ' + e, 'error');
+    }
+    setProgress(-1);
+    setBusy(false);
     return;
   }
+
+  // Sign in path: device-code flow runs in the user's browser, then
+  // client.py writes the resolved Mojang profile (username, uuid,
+  // access_token, refresh_token) to the cached account file. We re-read
+  // it afterwards to surface the real username in the UI.
   setBusy(true, 'SIGNING IN…');
   setStatus('A browser tab will open — sign in there, then come back', 'working');
   setProgress(null);
   try {
     const code = await invoke('microsoft_login');
     if (code === 0) {
-      signedIn = true;
-      msBtn.classList.add('signed-in');
-      msBtn.textContent = '✓ Signed in — click to sign out';
-      usernameInput.disabled = true;
-      setStatus('Signed in. Click PLAY to launch.', 'ok');
+      await loadAccount();
+      if (signedIn && account?.username) {
+        setStatus(`Signed in as ${account.username}. Click PLAY to launch.`, 'ok');
+      } else {
+        // login claimed success but the file doesn't look right — odd,
+        // surface a softer message so the user can retry.
+        setStatus('Signed in. Click PLAY to launch.', 'ok');
+      }
     } else {
       setStatus('Sign-in cancelled or failed', 'error');
     }
@@ -514,6 +566,9 @@ async function boot() {
     console.warn('[shadow] boot manifest fetch failed:', e);
   }
   populateVersionPicker();
-  loadState();
+  // Two parallel reads — neither depends on the other. loadAccount fills
+  // in the MS username/signed-in state; loadState resolves what's
+  // installed for the currently picked version.
+  await Promise.all([loadAccount(), loadState()]);
 }
 boot();

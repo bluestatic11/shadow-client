@@ -9,9 +9,17 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 // ───── Supported Minecraft versions ─────────────────────────────
-// Hardcoded list of 1.21+ versions. The user picks one; setup downloads
-// whichever they pick. Newest first so the dropdown defaults to latest.
+// Hardcoded list of 1.21+ releases. Newest first so the dropdown defaults
+// to latest. client.py asks Mojang's version manifest at setup time and
+// will error gracefully if any of these isn't (yet) on Mojang's CDN.
 const SUPPORTED_VERSIONS = [
+  // 1.26+ (latest major)
+  '1.26',
+  '1.25',
+  '1.24',
+  '1.23',
+  '1.22',
+  // 1.21.x — older but commonly requested for mod compatibility
   '1.21.11',
   '1.21.10',
   '1.21.9',
@@ -25,7 +33,7 @@ const SUPPORTED_VERSIONS = [
   '1.21.1',
   '1.21',
 ];
-const DEFAULT_VERSION = '1.21.11';
+const DEFAULT_VERSION = '1.26';
 const SAVED_VERSION_KEY = 'shadowclient.version';
 
 // ───── DOM refs (resolved on DOMContentLoaded) ──────────────────

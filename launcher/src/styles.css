@@ -373,33 +373,6 @@ a:focus-visible,
 
 .play-icon { font-size: 18px; }
 
-/* "Sign in with Microsoft" — small text link below */
-.link-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-mute);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  padding: 6px;
-  text-align: center;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: var(--line);
-  transition: color 0.15s;
-}
-
-.link-btn:hover {
-  color: var(--text);
-  text-decoration-color: var(--accent-2);
-}
-
-.link-btn.signed-in {
-  color: var(--green);
-  text-decoration: none;
-  font-weight: 600;
-}
-
 /* Status + progress — invisible when empty, no jitter */
 .status-line {
   text-align: center;

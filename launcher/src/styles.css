@@ -148,17 +148,32 @@ a:focus-visible,
   background: rgba(80, 16, 22, 0.96);
 }
 
+/* Blue "Update available" variant — visually distinct from the red error
+   banner so users learn "blue = informational, red = blocking". */
+.startup-banner.update {
+  background: rgba(14, 40, 64, 0.96);
+  border-color: #3a9eda;
+}
+
 .startup-banner-title {
   font-weight: 700;
   font-size: 14px;
-  color: #ffdcd6;
   margin-bottom: 6px;
+  color: #ffdcd6;
+}
+
+.startup-banner.update .startup-banner-title {
+  color: #d3eaff;
 }
 
 .startup-banner-body {
   font-size: 13px;
   color: #ffd5cf;
   line-height: 1.5;
+}
+
+.startup-banner.update .startup-banner-body {
+  color: #c8dfee;
 }
 
 .startup-banner-body a {
@@ -168,6 +183,66 @@ a:focus-visible,
 }
 
 .startup-banner-body a:hover { color: #fff5f2; }
+
+.startup-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.banner-action-primary {
+  background: #3a9eda;
+  color: white;
+  border: 1px solid #3a9eda;
+  padding: 7px 14px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.banner-action-primary:hover {
+  background: #4eb3ef;
+  border-color: #4eb3ef;
+}
+
+.banner-action-secondary {
+  background: transparent;
+  color: #c8dfee;
+  border: 1px solid #3a5570;
+  padding: 7px 14px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.banner-action-secondary:hover {
+  color: white;
+  border-color: #3a9eda;
+}
+
+.banner-action-dismiss {
+  background: transparent;
+  border: none;
+  color: #c8dfee;
+  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-left: auto;
+  transition: background 0.12s;
+}
+
+.banner-action-dismiss:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
 
 /* ───── Top bar ──────────────────────────────────────────────── */
 .topbar {

@@ -670,6 +670,12 @@ loadAccount();
   }
 })();
 
+// Step 5 (async): check GitHub Releases for a newer launcher version. If
+// one's out, render a small blue "Update available" banner with a one-click
+// download. Spares users having to remember the website URL every time
+// we ship a fix.
+checkForLauncherUpdate();
+
 function showPythonBanner(probeResult) {
   const banner = document.createElement('div');
   banner.className = 'startup-banner error';
@@ -685,4 +691,109 @@ function showPythonBanner(probeResult) {
     </div>
   `;
   document.body.appendChild(banner);
+}
+
+// ───── Launcher self-update check ──────────────────────────────
+// Reads our own version from the brand label in the topbar (single source
+// of truth — bumped in sync with package.json + Cargo.toml + tauri.conf.json
+// on every release). Compares against the latest GitHub release; if newer,
+// shows a banner with a one-click download.
+const CURRENT_LAUNCHER_VERSION = ($('version-label')?.textContent || '').replace(/^v/, '').trim();
+const LAUNCHER_UPDATE_URL = 'https://api.github.com/repos/bluestatic11/shadow-client/releases/latest';
+
+async function checkForLauncherUpdate() {
+  if (!CURRENT_LAUNCHER_VERSION) return;
+  try {
+    const r = await fetch(LAUNCHER_UPDATE_URL);
+    if (!r.ok) return;
+    const data = await r.json();
+    const latest = (data.tag_name || '').replace(/^v/, '').trim();
+    if (!latest) return;
+    if (compareSemver(latest, CURRENT_LAUNCHER_VERSION) <= 0) return;
+
+    // Find the right platform installer in the release assets.
+    const ua = navigator.userAgent.toLowerCase();
+    const platform = ua.includes('mac') ? 'mac'
+                  : ua.includes('linux') ? 'linux'
+                  : 'windows';
+    const patterns = {
+      windows: /x64-setup\.exe$/i,
+      mac:     /universal\.dmg$/i,
+      linux:   /amd64\.AppImage$/i,
+    };
+    const asset = (data.assets || []).find(a => patterns[platform].test(a.name));
+    if (!asset) return;
+
+    showUpdateBanner(latest, asset.browser_download_url, data.html_url);
+  } catch (e) {
+    console.warn('[shadow] update check failed:', e);
+  }
+}
+
+/** Compare "1.2.3" vs "1.2.4"-style version strings. Returns >0 if a>b,
+ *  <0 if a<b, 0 if equal. Tolerates missing parts ("1.2" == "1.2.0"). */
+function compareSemver(a, b) {
+  const parse = s => s.split('.').map(p => parseInt(p, 10) || 0);
+  const ap = parse(a), bp = parse(b);
+  const len = Math.max(ap.length, bp.length);
+  for (let i = 0; i < len; i++) {
+    const av = ap[i] || 0;
+    const bv = bp[i] || 0;
+    if (av !== bv) return av - bv;
+  }
+  return 0;
+}
+
+function showUpdateBanner(latest, downloadUrl, releaseUrl) {
+  const banner = document.createElement('div');
+  banner.className = 'startup-banner update';
+  banner.setAttribute('role', 'status');
+  banner.innerHTML = `
+    <div class="startup-banner-title">▲ Update available: v${latest}</div>
+    <div class="startup-banner-body">
+      You're on v${CURRENT_LAUNCHER_VERSION}. Click below to grab the new
+      installer — your settings, mods, and saves stay where they are.
+    </div>
+    <div class="startup-banner-actions">
+      <button class="banner-action-primary" id="banner-update-btn" type="button">
+        Update now
+      </button>
+      <button class="banner-action-secondary" id="banner-release-btn" type="button">
+        See what's new
+      </button>
+      <button class="banner-action-dismiss" id="banner-dismiss-btn" type="button"
+              aria-label="Dismiss">×</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+
+  // "Update now" — open the installer URL in the user's default browser via
+  // Tauri's shell plugin. The browser downloads the .exe and shows the
+  // standard "Save / Run" prompt — gives the user a chance to verify the
+  // source (github.com/bluestatic11/...) before running anything.
+  document.getElementById('banner-update-btn').addEventListener('click', () => {
+    openExternal(downloadUrl);
+  });
+  document.getElementById('banner-release-btn').addEventListener('click', () => {
+    openExternal(releaseUrl);
+  });
+  document.getElementById('banner-dismiss-btn').addEventListener('click', () => {
+    banner.remove();
+  });
+}
+
+async function openExternal(url) {
+  try {
+    // Tauri 2 shell.open opens the URL in the OS default browser.
+    if (tauriGlobal?.shell?.open) {
+      await tauriGlobal.shell.open(url);
+      return;
+    }
+    // Fallback: open the URL — Tauri's webview should intercept and route
+    // to the system browser. If that fails too, the navigation just stays
+    // inside the launcher window (ugly but not broken).
+    window.open(url, '_blank');
+  } catch (e) {
+    console.warn('[shadow] openExternal failed:', e);
+  }
 }

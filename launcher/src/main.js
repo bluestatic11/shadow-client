@@ -174,6 +174,7 @@ function populateVersionPicker(installedSet) {
     sel.addEventListener('change', () => {
       localStorage.setItem(SAVED_VERSION_KEY, sel.value);
       loadState();
+      refreshStats();   // version determines profile → render distance → FPS estimate
     });
   }
 }
@@ -617,6 +618,20 @@ async function refreshStats() {
     }
   } catch (_) {}
 
+  // FPS estimate — combines CPU core count (proxy for CPU tier), the
+  // active profile's render distance from options.txt, and the launcher's
+  // heap setting. Result is a single number like 420 → rendered as "420+"
+  // because the real number can swing ±30% on scene complexity alone.
+  try {
+    const heap = parseInt(($('opt-heap')?.value) || '4096', 10);
+    const fps = await invoke('estimate_fps', {
+      version: getPickedVersion(),
+      heapMb: heap,
+    });
+    const el = document.getElementById('stat-fps');
+    if (el) el.textContent = `${fps}+`;
+  } catch (_) { /* leave dash */ }
+
   updateFooter();
 }
 
@@ -663,6 +678,15 @@ document.getElementById('action-folder')?.addEventListener('click', async () => 
   } catch (e) {
     setStatus('Couldn\'t open folder: ' + e, 'error');
   }
+});
+
+// When the user changes the RAM allocation in Settings, the FPS estimate
+// shifts (low heap = stutter penalty). Re-pull stats. Debounced so we
+// don't fire IPC on every keystroke while they're typing.
+let heapInputTimer = null;
+$('opt-heap')?.addEventListener('input', () => {
+  clearTimeout(heapInputTimer);
+  heapInputTimer = setTimeout(refreshStats, 400);
 });
 
 // ───── Settings dialog open/close ───────────────────────────────
@@ -921,7 +945,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.8';
+const HARDCODED_VERSION = '0.3.9';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

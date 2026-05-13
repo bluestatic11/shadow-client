@@ -353,6 +353,95 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+/// Best-effort FPS estimate based on the user's CPU + render distance + heap.
+///
+/// The exact number isn't meant to be authoritative — actual FPS depends on
+/// GPU, mod stack, scene complexity, monitor refresh rate, OS scheduling,
+/// and a hundred other things we can't measure from inside the launcher.
+/// But "600+" hardcoded was misleading for laptop / low-end users, and
+/// "300" hardcoded would be insulting to a Ryzen 9 user. A rough
+/// estimate that reacts to the user's actual config is a meaningful upgrade.
+///
+/// Inputs:
+///   - CPU core count via std::thread::available_parallelism (cheap proxy
+///     for "CPU tier" — modern high-core-count CPUs ≈ better single-thread
+///     perf too, since Minecraft is largely single-threaded in the render
+///     path)
+///   - Render distance from the active profile's options.txt (defaults to
+///     the vanilla 16 if the file's missing or malformed)
+///   - RAM heap from the JS-side setting (we receive it as a parameter)
+///
+/// Returns a single number (e.g. 420) suitable for displaying as "420+".
+#[tauri::command]
+fn estimate_fps(version: Option<String>, heap_mb: Option<u32>) -> u32 {
+    // Cores → "CPU tier" baseline. Empirical-ish: modern desktop Ryzen 9
+    // (16 cores / 32 threads) hits ~1000+ FPS on 16-chunk Sodium 1.21+.
+    // A 4-core laptop i5 might do 150-200. The ladder roughly matches
+    // common consumer chips.
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get() as u32)
+        .unwrap_or(4);
+    let base: u32 = match cores {
+        c if c >= 24 => 1100,   // Threadripper / dual-CPU
+        c if c >= 16 => 800,    // Ryzen 9 / i9
+        c if c >= 12 => 550,    // Ryzen 7 / i7
+        c if c >= 8  => 380,    // Ryzen 5 / i5 mid
+        c if c >= 6  => 260,    // older i5 / mobile Ryzen 5
+        c if c >= 4  => 170,    // i3 / low-end / laptop dual-with-HT
+        _            => 90,     // very old / netbook
+    };
+
+    // Render distance multiplier. MC FPS scales roughly inversely with the
+    // square root of view radius — 32 chunks is ~70% the FPS of 16, 8 is
+    // ~140%. We round to whole-percent factors for readability.
+    let rd = read_render_distance_for(&version);
+    let rd_factor: f32 = match rd {
+        0..=6   => 1.7,
+        7..=10  => 1.35,
+        11..=14 => 1.10,
+        15..=18 => 1.0,
+        19..=24 => 0.75,
+        25..=32 => 0.55,
+        33..=48 => 0.35,
+        _       => 0.20,
+    };
+
+    // Heap penalty if the user gave Java less than ~3 GB — they'll get
+    // GC stutter that drops steady-state FPS even if peak is high. Above
+    // 4 GB, more heap doesn't help (MC doesn't allocate that much).
+    let heap_factor: f32 = match heap_mb.unwrap_or(4096) {
+        h if h < 2048 => 0.7,
+        h if h < 3072 => 0.85,
+        h if h < 4096 => 0.95,
+        _             => 1.0,
+    };
+
+    ((base as f32) * rd_factor * heap_factor).round() as u32
+}
+
+fn read_render_distance_for(version: &Option<String>) -> u32 {
+    let here = project_root();
+    let candidates: Vec<std::path::PathBuf> = match version {
+        Some(v) => vec![
+            here.join("game_dir").join("profiles").join(v).join("options.txt"),
+            here.join("game_dir").join("options.txt"),
+        ],
+        None => vec![here.join("game_dir").join("options.txt")],
+    };
+    for path in candidates {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            for line in content.lines() {
+                if let Some(value) = line.strip_prefix("renderDistance:") {
+                    if let Ok(n) = value.trim().parse::<u32>() {
+                        return n;
+                    }
+                }
+            }
+        }
+    }
+    16  // Mojang's default
+}
+
 /// Recursive size of game_dir, in megabytes. Used by the home-screen stat
 /// tile ("Cached: 1.5 GB"). Walks the tree on a tokio blocking thread so
 /// big installs (~1.5+ GB across multiple version profiles) don't freeze
@@ -592,6 +681,7 @@ pub fn run() {
             sweep_update_temp,
             disk_usage_mb,
             open_folder,
+            estimate_fps,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

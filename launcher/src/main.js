@@ -652,6 +652,98 @@ function updateFooter() {
   footerText.textContent = parts.join('  ·  ');
 }
 
+// ───── Latest updates / release-notes card ─────────────────────
+const UPDATES_LIST_URL =
+  'https://api.github.com/repos/bluestatic11/shadow-client/releases?per_page=5';
+const updatesListEl = $('updates-list');
+
+async function fetchLatestUpdates() {
+  if (!updatesListEl) return;
+  try {
+    const r = await fetch(UPDATES_LIST_URL);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const releases = await r.json();
+    renderUpdates(releases || []);
+  } catch (e) {
+    console.warn('[shadow] release fetch failed:', e);
+    const empty = $('updates-empty') || document.createElement('li');
+    empty.className = 'updates-empty';
+    empty.textContent = 'Updates unavailable (offline?).';
+    if (!updatesListEl.contains(empty)) updatesListEl.appendChild(empty);
+  }
+}
+
+function renderUpdates(releases) {
+  if (!updatesListEl) return;
+  updatesListEl.innerHTML = '';
+  if (!releases.length) {
+    const empty = document.createElement('li');
+    empty.className = 'updates-empty';
+    empty.textContent = 'No releases published yet.';
+    updatesListEl.appendChild(empty);
+    return;
+  }
+  for (const rel of releases.slice(0, 5)) {
+    updatesListEl.appendChild(buildUpdateCard(rel));
+  }
+}
+
+function buildUpdateCard(rel) {
+  const card = document.createElement('li');
+  card.className = 'update-card';
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+
+  const head = document.createElement('div');
+  head.className = 'update-card-head';
+  const ver = document.createElement('span');
+  ver.className = 'update-version';
+  ver.textContent = rel.tag_name || rel.name || '?';
+  const date = document.createElement('span');
+  date.className = 'update-date';
+  date.textContent = relativeReleaseTime(rel.published_at);
+  head.appendChild(ver);
+  head.appendChild(date);
+  card.appendChild(head);
+
+  // Pick the first non-empty line of the release body as the summary.
+  // Strip leading bullet/heading markers so it reads cleanly.
+  const body = (rel.body || '').trim();
+  const summary = document.createElement('div');
+  summary.className = 'update-summary';
+  summary.textContent = body || '(no release notes)';
+
+  const toggle = document.createElement('div');
+  toggle.className = 'update-card-toggle';
+  toggle.textContent = body ? 'Click to expand' : '';
+
+  card.appendChild(summary);
+  if (body) card.appendChild(toggle);
+
+  // Click / Enter / Space toggles the full body inline.
+  const flip = () => {
+    const expanded = card.classList.toggle('expanded');
+    toggle.textContent = expanded ? 'Click to collapse' : 'Click to expand';
+  };
+  card.addEventListener('click', flip);
+  card.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
+  });
+  return card;
+}
+
+function relativeReleaseTime(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const diff = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diff < 60)        return 'just now';
+  if (diff < 3600)      return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400)     return `${Math.floor(diff / 3600)} h ago`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 // ───── Friends list ─────────────────────────────────────────────
 const friendsListEl = $('friends-list');
 const friendsCountEl = $('friends-count');
@@ -1107,6 +1199,9 @@ setTimeout(() => {
 
   // Self-update check.
   checkForLauncherUpdate();
+
+  // Pull recent release notes for the home-screen "Latest updates" list.
+  fetchLatestUpdates();
 }, 200);
 
 function showPythonBanner(probeResult) {
@@ -1133,7 +1228,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.11';
+const HARDCODED_VERSION = '0.3.12';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

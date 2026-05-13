@@ -14,7 +14,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.11</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.12</span>
     </h1>
 
     <div class="topbar-actions">
@@ -169,6 +169,14 @@
           <span class="action-label">Open folder</span>
         </button>
       </div>
+
+      <!-- Latest updates — pulled from GitHub Releases on boot. Each card
+           shows version + relative date + first line of release notes.
+           Click to expand the full body inline. -->
+      <h3 class="section-title">Latest updates</h3>
+      <ul class="updates-list" id="updates-list" aria-label="Recent releases">
+        <li class="updates-empty" id="updates-empty">Checking for updates…</li>
+      </ul>
 
       <!-- Expandable detail log (closed by default — no jarring tab switch) -->
       <button class="details-toggle" id="details-toggle" type="button"

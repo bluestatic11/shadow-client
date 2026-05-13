@@ -825,13 +825,18 @@ body {
 }
 
 .greeting-name {
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 800;
+  letter-spacing: -0.8px;
   color: var(--text);
-  background: linear-gradient(120deg, var(--text) 0%, #d8dce5 100%);
+  background: linear-gradient(120deg,
+    #ffffff 0%,
+    #c8ccd5 50%,
+    var(--accent-2) 110%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  line-height: 1.15;
 }
 
 /* ───── Play area (centered horizontally) ──────────────────── */
@@ -868,15 +873,37 @@ body {
 .stat-tile {
   background: linear-gradient(135deg,
     var(--bg-2) 0%,
-    rgba(28, 34, 48, 0.85) 100%);
+    rgba(28, 34, 48, 0.7) 100%);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 14px 16px;
   text-align: center;
-  transition: border-color 0.15s, background 0.15s;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
 
-.stat-tile:hover { border-color: var(--text-mute); }
+/* Subtle inner top-highlight — gives each tile a touch of depth. */
+.stat-tile::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 100%);
+}
+
+.stat-tile:hover {
+  border-color: var(--accent-2);
+  background: linear-gradient(135deg,
+    rgba(var(--accent-glow), 0.06) 0%,
+    var(--bg-2) 100%);
+  transform: translateY(-1px);
+}
 
 .stat-value {
   font-size: 22px;
@@ -956,6 +983,123 @@ body {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.3px;
+}
+
+/* ───── Latest updates list ────────────────────────────────── */
+.updates-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-card {
+  background: linear-gradient(135deg,
+    var(--bg-2) 0%,
+    rgba(28, 34, 48, 0.7) 100%);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 12px 14px;
+  transition: border-color 0.15s, transform 0.15s, background 0.15s;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.update-card:hover {
+  border-color: var(--accent-2);
+  transform: translateY(-1px);
+}
+
+/* Brand-red glow accent on the left edge — same vibe as the home-accent
+   bar but per-card to tie the updates list to the rest of the theme. */
+.update-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.update-card:hover::before { opacity: 1; }
+
+.update-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.update-version {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: white;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: 'Consolas', monospace;
+}
+
+.update-date {
+  font-size: 11px;
+  color: var(--text-mute);
+  font-family: 'Consolas', monospace;
+}
+
+.update-summary {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  margin: 4px 0 0;
+}
+
+.update-card.expanded .update-summary {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: pre-wrap;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: 'Consolas', monospace;
+  background: var(--bg);
+  padding: 10px 12px;
+  border-radius: 5px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.update-card-toggle {
+  font-size: 10px;
+  color: var(--accent-2);
+  margin-top: 6px;
+  user-select: none;
+  font-weight: 600;
+}
+
+.updates-empty {
+  list-style: none;
+  padding: 16px;
+  text-align: center;
+  color: var(--text-mute);
+  font-size: 12px;
+  background: var(--bg-2);
+  border-radius: 8px;
+  border: 1px dashed var(--line);
 }
 
 /* ───── Status footer ──────────────────────────────────────── */

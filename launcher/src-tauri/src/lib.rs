@@ -168,11 +168,14 @@ async fn launch_game(
         // Emit a "mc-started" event so the front-end can flip the "You" row
         // in the friends panel to a "Playing X" state. The corresponding
         // "mc-exited" fires after child.wait() returns below.
+        //
+        // Clone first so the moved-into-json! one doesn't deny us a copy
+        // for the exit event later.
+        let version_for_exit = version_for_event.clone();
         let _ = app.emit("mc-started", serde_json::json!({
             "version": version_for_event,
         }));
         let app_for_exit = app.clone();
-        let version_for_exit = version_for_event.clone();
 
         let code = tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Builder::new_current_thread()

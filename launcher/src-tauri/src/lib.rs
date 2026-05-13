@@ -156,22 +156,36 @@ async fn launch_game(
 ) -> Result<i32, String> {
     let here = project_root();
     let state_file = here.join("installed.json");
-    let profile = version;
+    let profile = version.clone();
+    let version_for_event = version.unwrap_or_else(|| "unknown".into());
 
     with_busy(app, busy, |app| async move {
         let app1 = app.clone();
         let progress = move |line: String| emit_line(&app1, "stdout", line);
         let app2 = app.clone();
         let on_line = move |kind: String, line: String| emit_line(&app2, &kind, line);
+
+        // Emit a "mc-started" event so the front-end can flip the "You" row
+        // in the friends panel to a "Playing X" state. The corresponding
+        // "mc-exited" fires after child.wait() returns below.
+        let _ = app.emit("mc-started", serde_json::json!({
+            "version": version_for_event,
+        }));
+        let app_for_exit = app.clone();
+        let version_for_exit = version_for_event.clone();
+
         let code = tokio::task::spawn_blocking(move || {
-            // launch shells out to Java synchronously — keep it on a blocking
-            // thread so we don't stall the tokio runtime.
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all().build().unwrap();
             rt.block_on(setup::launch(
                 here, state_file, profile, heap_mb, gc, username, progress, on_line,
             ))
         }).await.map_err(|e| anyhow::anyhow!(e))??;
+
+        let _ = app_for_exit.emit("mc-exited", serde_json::json!({
+            "version": version_for_exit,
+            "code": code,
+        }));
         Ok(code)
     }).await
 }
@@ -366,6 +380,18 @@ pub struct Friend {
     /// Epoch seconds when added. Used to sort the list with newest first.
     #[serde(default)]
     pub added_at: u64,
+    /// Presence-status fields. All optional and only populated when a
+    /// real presence service is wired up in a future release. The shape
+    /// is locked in now so older friends.json files migrate forward
+    /// without losing user data.
+    #[serde(default)]
+    pub status: Option<String>,      // "online" | "playing" | "in_menu" | None=offline
+    #[serde(default)]
+    pub server: Option<String>,      // e.g. "hypixel.net" / "Singleplayer"
+    #[serde(default)]
+    pub version: Option<String>,     // e.g. "26.1.2"
+    #[serde(default)]
+    pub last_seen: Option<u64>,      // epoch seconds (None = never seen)
 }
 
 fn friends_file() -> PathBuf {

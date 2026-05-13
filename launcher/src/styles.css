@@ -613,15 +613,88 @@ body {
   box-shadow: 0 0 6px rgba(var(--accent-glow), 0.35);
 }
 
-.friend-name {
+.friend-info {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.friend-name {
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
+
+/* Inline "you" tag next to the user's own name in the friends list. */
+.friend-self-tag {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: white;
+  background: var(--accent);
+  padding: 1px 5px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+/* Status line under the friend name — "Playing 26.1.2 · hypixel.net" etc. */
+.friend-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-mute);
+  overflow: hidden;
+}
+
+.friend-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-mute);
+  flex-shrink: 0;
+}
+
+.friend-status.playing .status-dot {
+  background: var(--green);
+  box-shadow: 0 0 5px rgba(34, 221, 85, 0.55);
+}
+.friend-status.playing { color: var(--green); }
+
+.friend-status.online .status-dot {
+  background: var(--accent-2);
+  box-shadow: 0 0 5px rgba(var(--accent-glow), 0.5);
+}
+.friend-status.online { color: var(--text-dim); }
+
+.friend-status.offline .status-dot { background: var(--text-mute); }
+
+/* "You" row highlight — slightly brighter background, accent border on left
+   so it visually sits apart from the friends below. */
+.friend-row.you-row {
+  background: linear-gradient(90deg,
+    rgba(var(--accent-glow), 0.10) 0%,
+    var(--bg-2) 100%);
+  border-left: 2px solid var(--accent-2);
+  padding-left: 8px;
+}
+
+.friend-row.you-row .friend-remove { display: none; }
 
 .friend-remove {
   background: transparent;
@@ -690,6 +763,16 @@ body {
   background: rgba(255, 138, 138, 0.06);
 }
 .friends-add input.error::placeholder { color: #ff8a8a; }
+
+/* Caption at the bottom of the friends panel explaining the Shadow-Client
+   prerequisite for the "Playing" status. */
+.friends-note {
+  margin-top: 10px;
+  font-size: 10px;
+  color: var(--text-mute);
+  line-height: 1.45;
+  text-align: center;
+}
 
 .friends-add-btn {
   width: 34px;

@@ -223,6 +223,9 @@ function setBusy(on, label) {
     refreshStats();
   }
   updateFooter();
+  // Re-render so the "You" row in the friends panel reflects the new
+  // busy/idle state.
+  renderFriends(cachedFriends);
 }
 
 // ───── Initial state load ───────────────────────────────────────
@@ -489,6 +492,7 @@ function renderAccount() {
     accountAction.classList.remove('danger');
   }
   renderGreeting();  // greeting tracks the same name shown in the corner
+  renderFriends(cachedFriends);  // "You" row tracks the same name too
 }
 
 // Menu toggle
@@ -664,47 +668,149 @@ async function refreshFriends() {
   }
 }
 
+// Tracks whether the user's MC process is currently running. Set true on
+// the "mc-started" Tauri event, false on "mc-exited". Drives the "You"
+// row in the friends list.
+let mcRunning = false;
+let cachedFriends = [];
+
 function renderFriends(friends) {
   if (!friendsListEl) return;
+  cachedFriends = friends || [];
   friendsListEl.innerHTML = '';
-  if (friendsCountEl) friendsCountEl.textContent = String(friends.length);
-  if (!friends.length) {
+  if (friendsCountEl) friendsCountEl.textContent = String(cachedFriends.length);
+
+  // Always show the "You" row at the top so the user can see their own
+  // live status side-by-side with their friends.
+  friendsListEl.appendChild(buildYouRow());
+
+  if (!cachedFriends.length) {
     const empty = document.createElement('li');
     empty.className = 'friends-empty';
     empty.textContent = 'No friends added yet';
     friendsListEl.appendChild(empty);
     return;
   }
-  for (const f of friends) {
-    const row = document.createElement('li');
-    row.className = 'friend-row';
-    const avatar = document.createElement('div');
-    avatar.className = 'friend-avatar';
-    avatar.setAttribute('aria-hidden', 'true');
-    avatar.textContent = f.username.charAt(0).toUpperCase();
-    const name = document.createElement('div');
-    name.className = 'friend-name';
-    name.textContent = f.username;
-    name.title = f.username;
-    const remove = document.createElement('button');
-    remove.className = 'friend-remove';
-    remove.type = 'button';
-    remove.setAttribute('aria-label', `Remove ${f.username}`);
-    remove.textContent = '×';
-    remove.addEventListener('click', async () => {
-      try {
-        const updated = await invoke('friends_remove', { username: f.username });
-        renderFriends(updated);
-      } catch (e) {
-        console.warn('[shadow] friends_remove failed:', e);
-      }
-    });
-    row.appendChild(avatar);
-    row.appendChild(name);
-    row.appendChild(remove);
-    friendsListEl.appendChild(row);
+  for (const f of cachedFriends) {
+    friendsListEl.appendChild(buildFriendRow(f));
   }
 }
+
+function buildFriendRow(f) {
+  const row = document.createElement('li');
+  row.className = 'friend-row';
+  row.appendChild(makeAvatar(f.username));
+
+  const info = document.createElement('div');
+  info.className = 'friend-info';
+  const name = document.createElement('div');
+  name.className = 'friend-name';
+  name.textContent = f.username;
+  name.title = f.username;
+  info.appendChild(name);
+  info.appendChild(makeStatusLine(f));
+  row.appendChild(info);
+
+  const remove = document.createElement('button');
+  remove.className = 'friend-remove';
+  remove.type = 'button';
+  remove.setAttribute('aria-label', `Remove ${f.username}`);
+  remove.textContent = '×';
+  remove.addEventListener('click', async () => {
+    try {
+      const updated = await invoke('friends_remove', { username: f.username });
+      renderFriends(updated);
+    } catch (e) {
+      console.warn('[shadow] friends_remove failed:', e);
+    }
+  });
+  row.appendChild(remove);
+  return row;
+}
+
+function buildYouRow() {
+  const row = document.createElement('li');
+  row.className = 'friend-row you-row';
+  const username = (signedIn && account?.username) ||
+    (usernameInput?.value || '').trim() || 'Player';
+
+  row.appendChild(makeAvatar(username));
+
+  const info = document.createElement('div');
+  info.className = 'friend-info';
+  const name = document.createElement('div');
+  name.className = 'friend-name';
+  name.innerHTML = `${username} <span class="friend-self-tag">you</span>`;
+  info.appendChild(name);
+
+  // Live status from the launcher's own state.
+  let status, text;
+  if (mcRunning) {
+    status = 'playing';
+    text = `Playing ${getPickedVersion()}`;
+  } else if (busy) {
+    status = 'online';
+    text = 'In launcher · working';
+  } else {
+    status = 'online';
+    text = 'In launcher';
+  }
+  info.appendChild(makeStatusLineRaw(status, text));
+  row.appendChild(info);
+  return row;
+}
+
+function makeAvatar(username) {
+  const a = document.createElement('div');
+  a.className = 'friend-avatar';
+  a.setAttribute('aria-hidden', 'true');
+  a.textContent = username.charAt(0).toUpperCase();
+  return a;
+}
+
+function makeStatusLine(f) {
+  if (f.status === 'playing') {
+    const text = `Playing ${f.version || 'Minecraft'}`
+      + (f.server ? ` · ${f.server}` : '');
+    return makeStatusLineRaw('playing', text);
+  }
+  if (f.status === 'online' || f.status === 'in_menu') {
+    return makeStatusLineRaw('online', 'Online');
+  }
+  // Offline / unknown.
+  const text = f.last_seen
+    ? `Offline · ${formatRelativeTime(f.last_seen)}`
+    : 'Offline · needs Shadow Client';
+  return makeStatusLineRaw('offline', text);
+}
+
+function makeStatusLineRaw(klass, text) {
+  const line = document.createElement('div');
+  line.className = 'friend-status ' + klass;
+  const dot = document.createElement('span');
+  dot.className = 'status-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  const t = document.createElement('span');
+  t.className = 'friend-status-text';
+  t.textContent = text;
+  line.appendChild(dot);
+  line.appendChild(t);
+  return line;
+}
+
+function formatRelativeTime(epochSecs) {
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - epochSecs);
+  if (diff < 60)       return 'just now';
+  if (diff < 3600)     return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400)    return `${Math.floor(diff / 3600)} h ago`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} d ago`;
+  return new Date(epochSecs * 1000).toLocaleDateString();
+}
+
+// Listen for MC start/exit events so the "You" row re-renders to reflect
+// the actual running state without polling.
+listen('mc-started', () => { mcRunning = true;  renderFriends(cachedFriends); });
+listen('mc-exited',  () => { mcRunning = false; renderFriends(cachedFriends); });
 
 friendsAddForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1027,7 +1133,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.10';
+const HARDCODED_VERSION = '0.3.11';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

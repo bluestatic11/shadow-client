@@ -481,15 +481,44 @@ body {
   line-height: 1.4;
 }
 
-/* ───── Main panel (centered) ────────────────────────────────── */
+/* ───── Main panel ─────────────────────────────────────────────
+   New layout: vertical brand-red accent bar on the left edge,
+   then content (greeting, play area, stat tiles, quick actions),
+   then a status footer pinned to the bottom of the window. */
 .main {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto;
   overflow-y: auto;
   animation: fadeUp 0.4s ease-out;
+}
+
+/* Vertical accent bar — runs full height of main, ~4px wide, brand red
+   with a subtle vertical gradient so it doesn't look flat. */
+.home-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg,
+    var(--accent-2) 0%,
+    var(--accent) 50%,
+    rgba(175, 18, 26, 0.3) 100%);
+  box-shadow: 0 0 12px rgba(var(--accent-glow), 0.4);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.home-content {
+  padding: 32px 48px 24px 48px;
+  max-width: 920px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 @keyframes fadeUp {
@@ -497,6 +526,177 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ───── Greeting ────────────────────────────────────────────── */
+.greeting {
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.greeting-time {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.greeting-name {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--text);
+  background: linear-gradient(120deg, var(--text) 0%, #d8dce5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ───── Play area (centered horizontally) ──────────────────── */
+.play-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+}
+
+.play-area .play-btn {
+  max-width: 460px;
+}
+
+.play-area .version-row {
+  max-width: 280px;
+  width: auto;
+}
+
+.play-area .status-line,
+.play-area .progress {
+  max-width: 460px;
+  width: 100%;
+}
+
+/* ───── Stat tiles ─────────────────────────────────────────── */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.stat-tile {
+  background: linear-gradient(135deg,
+    var(--bg-2) 0%,
+    rgba(28, 34, 48, 0.85) 100%);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.stat-tile:hover { border-color: var(--text-mute); }
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+/* Make the FPS tile pop with brand red to match the "max-FPS" theme. */
+#stat-fps-tile .stat-value {
+  background: linear-gradient(120deg, var(--accent-3), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ───── Section title ──────────────────────────────────────── */
+.section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 8px;
+  margin-bottom: -4px;
+}
+
+/* ───── Quick action tiles ─────────────────────────────────── */
+.action-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.action-tile {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-family: inherit;
+  color: var(--text-dim);
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 80px;
+}
+
+.action-tile:hover {
+  border-color: var(--accent-2);
+  color: var(--text);
+  background: linear-gradient(135deg,
+    rgba(var(--accent-glow), 0.12) 0%,
+    var(--bg-2) 100%);
+  transform: translateY(-1px);
+}
+
+.action-tile:active { transform: translateY(0); }
+
+.action-icon {
+  font-size: 22px;
+  color: var(--accent-2);
+}
+
+.action-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* ───── Status footer ──────────────────────────────────────── */
+.status-footer {
+  border-top: 1px solid var(--line);
+  background: rgba(13, 17, 23, 0.6);
+  padding: 8px 24px 8px 52px;   /* 52 = 48 content padding + 4 accent bar */
+  font-size: 11px;
+  color: var(--text-mute);
+  font-family: 'Consolas', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ───── Responsive: collapse stat/action rows on narrow windows ─ */
+@media (max-width: 720px) {
+  .home-content { padding: 24px 24px 16px 24px; }
+  .stat-row, .action-row { grid-template-columns: repeat(2, 1fr); }
+  .greeting-name { font-size: 24px; }
+}
+
+/* Legacy .play-card kept for back-compat; new layout uses .play-area. */
 .play-card {
   width: 100%;
   max-width: 420px;
@@ -506,7 +706,39 @@ body {
   gap: 14px;
 }
 
-/* Username — clean single input, centered text */
+/* Username row inside account-menu dropdown — small inline field. */
+.account-menu-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.account-menu-field-label {
+  font-size: 11px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.account-menu-field input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.account-menu-field input:focus {
+  outline: none;
+  border-color: var(--accent-focus);
+}
+
+/* Original .username-row (no longer in DOM but keep selector defined so
+   any straggling reference doesn't lay out weirdly) */
 .username-row input {
   width: 100%;
   background: var(--bg-2);

@@ -216,7 +216,12 @@ function setBusy(on, label) {
   } else {
     playText.textContent = 'PLAY';
     playIcon.textContent = '▶';
+    // After a long-running task finishes (setup downloaded mods, launch
+    // unpacked a JDK, etc.) re-pull the stats so the tiles + footer
+    // reflect the new on-disk reality.
+    refreshStats();
   }
+  updateFooter();
 }
 
 // ───── Initial state load ───────────────────────────────────────
@@ -410,6 +415,36 @@ function clearLog() {
   if (logView) logView.innerHTML = '';
 }
 
+// ───── Time-of-day greeting (uses the user's local timezone) ─
+// Date.getHours() returns the hour in the user's local timezone, so this
+// works automatically — no opt-in required, no IP geolocation API call.
+function getTimeGreeting() {
+  const h = new Date().getHours();
+  if (h >= 5  && h < 12) return 'Good morning,';
+  if (h >= 12 && h < 17) return 'Good afternoon,';
+  if (h >= 17 && h < 22) return 'Good evening,';
+  return 'Up late,';   // 22:00 – 04:59
+}
+
+function renderGreeting() {
+  const timeEl = document.getElementById('greeting-time');
+  const nameEl = document.getElementById('greeting-name');
+  if (timeEl) timeEl.textContent = getTimeGreeting();
+  if (nameEl) {
+    // Prefer the signed-in MS username; fall back to whatever's in the
+    // offline username input; finally fall back to a generic "Player".
+    const name =
+      (account && account.user_type === 'msa' && account.username) ||
+      (usernameInput && usernameInput.value && usernameInput.value.trim()) ||
+      'Player';
+    nameEl.textContent = name;
+  }
+}
+// Re-render greeting once per minute so it transitions correctly if the
+// user has the launcher open across an hour boundary (e.g. they opened
+// at 4:59 PM and it should flip to "Good evening" at 5:00).
+setInterval(renderGreeting, 60_000);
+
 // ───── Account widget (top-right corner) ───────────────────────
 // Feather-style: small pill that defaults to "Sign in". Clicking it
 // opens a dropdown menu with the sign-in action and a sign-out option
@@ -437,21 +472,22 @@ function renderAccount() {
     accountMenuMode.textContent = 'Microsoft account · online play enabled';
     accountAction.textContent   = 'Sign out';
     accountAction.classList.add('danger');
-    // Auto-fill the visible username field but don't lock it — the user
-    // can still type a different name if they want to play offline mode
-    // ad-hoc. The signed-in cache takes precedence at launch though.
     if (usernameInput && !usernameInput.dataset.userEdited) {
       usernameInput.value = account.username;
     }
   } else {
+    // Offline-mode display shows the user's chosen offline name instead
+    // of a generic "Sign in" so the corner widget feels personalised.
+    const offlineName = (usernameInput?.value || 'Player').trim() || 'Player';
     accountBtn.classList.remove('signed-in');
-    accountAvatar.textContent = '?';
-    accountLabel.textContent  = 'Sign in';
-    accountMenuName.textContent = 'Not signed in';
-    accountMenuMode.textContent = 'Playing in offline mode';
+    accountAvatar.textContent = offlineName.charAt(0).toUpperCase();
+    accountLabel.textContent  = offlineName;
+    accountMenuName.textContent = offlineName;
+    accountMenuMode.textContent = 'Offline mode';
     accountAction.textContent   = 'Sign in with Microsoft';
     accountAction.classList.remove('danger');
   }
+  renderGreeting();  // greeting tracks the same name shown in the corner
 }
 
 // Menu toggle
@@ -533,8 +569,100 @@ async function doSignOut() {
 
 // Track whether the user has touched the username field directly so we
 // don't overwrite their typed name with the MS account name on re-render.
+// Also re-render the greeting + corner widget when the name changes so
+// they stay in sync with what the user typed.
 usernameInput?.addEventListener('input', () => {
   usernameInput.dataset.userEdited = '1';
+  if (!signedIn) {
+    renderAccount();   // updates the corner pill + greeting in one shot
+  } else {
+    renderGreeting();
+  }
+});
+
+// ───── Stat tiles + status footer ──────────────────────────────
+async function refreshStats() {
+  // Mod count — scoped to the currently-picked version's profile.
+  try {
+    const mods = await invoke('list_mods', { version: getPickedVersion() });
+    const el = document.getElementById('stat-mods');
+    if (el) el.textContent = String(mods.length || 0);
+  } catch (_) { /* leave dash */ }
+
+  // Java major + distribution. Uses diagnostics' java_major; the
+  // distribution name is best-effort guess from the path.
+  try {
+    const d = await invoke('diagnostics');
+    const el = document.getElementById('stat-java');
+    if (el) {
+      if (d.java_major > 0) {
+        el.textContent = `Java ${d.java_major}`;
+      } else {
+        el.textContent = 'none';
+      }
+    }
+  } catch (_) {}
+
+  // Disk usage — runs on a tokio blocking thread Rust-side so it doesn't
+  // freeze the UI when game_dir is ~1 GB.
+  try {
+    const mb = await invoke('disk_usage_mb');
+    const el = document.getElementById('stat-disk');
+    if (el) {
+      if (mb < 1024) {
+        el.textContent = `${mb} MB`;
+      } else {
+        el.textContent = `${(mb / 1024).toFixed(1)} GB`;
+      }
+    }
+  } catch (_) {}
+
+  updateFooter();
+}
+
+function updateFooter() {
+  const footerText = document.getElementById('footer-text');
+  if (!footerText) return;
+  const parts = [];
+  parts.push(busy ? 'Working…' : 'Ready');
+  const java = document.getElementById('stat-java')?.textContent;
+  if (java && java !== '—' && java !== 'none') parts.push(java);
+  parts.push(getPickedVersion());
+  const mods = document.getElementById('stat-mods')?.textContent;
+  if (mods && mods !== '—' && mods !== '0') parts.push(`${mods} mods`);
+  footerText.textContent = parts.join('  ·  ');
+}
+
+// ───── Quick action tiles ───────────────────────────────────────
+document.getElementById('action-mods')?.addEventListener('click', () => {
+  // Open Settings dialog and switch to the Mods tab.
+  settingsDialog.showModal();
+  const tab = document.querySelector('.dlg-tab[data-tab="mods"]');
+  if (tab) activateDialogTab(tab);
+});
+
+document.getElementById('action-cosmetics')?.addEventListener('click', () => {
+  setStatus(
+    'Cosmetics live inside the Shadow HUD overlay — those features ' +
+    'land in a follow-up release.', 'working'
+  );
+  setTimeout(() => setStatus('', null), 5000);
+});
+
+document.getElementById('action-hud-editor')?.addEventListener('click', () => {
+  setStatus(
+    'After launching, press Right Shift in-game to open the HUD editor.',
+    'working'
+  );
+  setTimeout(() => setStatus('', null), 6000);
+});
+
+document.getElementById('action-folder')?.addEventListener('click', async () => {
+  try {
+    await invoke('open_folder');
+  } catch (e) {
+    setStatus('Couldn\'t open folder: ' + e, 'error');
+  }
 });
 
 // ───── Settings dialog open/close ───────────────────────────────
@@ -726,10 +854,13 @@ usernameInput.addEventListener('keydown', (e) => {
 
 // 1. Synchronous paint — UI is alive immediately.
 populateVersionPicker();
+renderGreeting();
+updateFooter();
 
 // 2. Backend reads (instant, only Tauri IPC, no network).
 loadState();
 loadAccount();
+refreshStats();
 
 // 3. Background tasks — kicked off but not awaited, and deliberately
 //    delayed by 200ms so they happen AFTER the first paint settles.
@@ -790,7 +921,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.7';
+const HARDCODED_VERSION = '0.3.8';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

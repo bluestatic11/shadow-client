@@ -14,7 +14,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.7</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.8</span>
     </h1>
 
     <div class="topbar-actions">
@@ -36,6 +36,12 @@
             <div class="account-menu-name" id="account-menu-name">Not signed in</div>
             <div class="account-menu-mode" id="account-menu-mode">Playing in offline mode</div>
           </div>
+          <label class="account-menu-field" id="username-field-wrap">
+            <span class="account-menu-field-label">Username</span>
+            <input type="text" id="username-input" maxlength="16" value="Player"
+                   autocomplete="username" autocapitalize="off" spellcheck="false"
+                   aria-label="Offline username">
+          </label>
           <button class="account-menu-action" id="account-action" type="button" role="menuitem">
             Sign in with Microsoft
           </button>
@@ -54,49 +60,107 @@
     </div>
   </header>
 
-  <!-- ───── Home — one screen, one decision ──────────────────────── -->
+  <!-- ───── Home ──────────────────────────────────────────────────── -->
   <main class="main" id="main">
 
-    <div class="play-card">
+    <!-- Brand-red vertical accent — purely decorative, the "you're in
+         Shadow Client" signal that runs all the way down the left edge. -->
+    <div class="home-accent" aria-hidden="true"></div>
 
-      <!-- Username (only shown when not signed in to Microsoft) -->
-      <div class="username-row" id="username-row">
-        <label for="username-input" class="visually-hidden">Username</label>
-        <input type="text" id="username-input" placeholder="Username" maxlength="16"
-               value="Player" autocomplete="username" autocapitalize="off"
-               spellcheck="false">
+    <div class="home-content">
+
+      <!-- Time-of-day greeting. JS picks the prefix ("Good morning,",
+           "Good afternoon,", "Good evening,", or "Up late,") from the
+           user's local timezone via Date.getHours(). -->
+      <h2 class="greeting">
+        <span class="greeting-time" id="greeting-time">Welcome,</span>
+        <span class="greeting-name" id="greeting-name">Player</span>
+      </h2>
+
+      <!-- PLAY area — the big button + version picker + (hidden until
+           busy) status line and progress bar. Username input is moved
+           into the corner account widget so it doesn't compete here. -->
+      <div class="play-area">
+        <button class="play-btn" id="play-btn" type="button"
+                aria-describedby="status-line"
+                aria-keyshortcuts="Enter">
+          <span class="play-icon" aria-hidden="true">▶</span>
+          <span class="play-text">PLAY</span>
+        </button>
+
+        <div class="version-row">
+          <label for="version-select" class="visually-hidden">Minecraft version</label>
+          <span class="version-icon" aria-hidden="true">◆</span>
+          <select id="version-select" aria-label="Minecraft version">
+            <!-- options injected at runtime -->
+          </select>
+        </div>
+
+        <div class="status-line" id="status-line"
+             role="status" aria-live="polite" aria-atomic="true"></div>
+        <div class="progress" id="progress" hidden
+             role="progressbar" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="0" aria-label="Setup progress">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
       </div>
 
-      <!-- Version picker: any 1.21.x. Populated by main.js. -->
-      <div class="version-row">
-        <label for="version-select" class="visually-hidden">Minecraft version</label>
-        <span class="version-icon" aria-hidden="true">◆</span>
-        <select id="version-select" aria-label="Minecraft version">
-          <!-- options injected at runtime -->
-        </select>
+      <!-- 4-tile stat row. Real values populated from Rust commands. -->
+      <div class="stat-row" aria-label="Install stats">
+        <div class="stat-tile" id="stat-mods-tile">
+          <div class="stat-value" id="stat-mods">—</div>
+          <div class="stat-label">Mods</div>
+        </div>
+        <div class="stat-tile" id="stat-java-tile">
+          <div class="stat-value" id="stat-java">—</div>
+          <div class="stat-label">Java</div>
+        </div>
+        <div class="stat-tile" id="stat-disk-tile">
+          <div class="stat-value" id="stat-disk">—</div>
+          <div class="stat-label">Cached</div>
+        </div>
+        <div class="stat-tile" id="stat-fps-tile">
+          <div class="stat-value" id="stat-fps">600+</div>
+          <div class="stat-label">Target FPS</div>
+        </div>
       </div>
 
-      <!-- The one big button. Press Enter to fire it from anywhere on the page. -->
-      <button class="play-btn" id="play-btn" type="button"
-              aria-describedby="status-line"
-              aria-keyshortcuts="Enter">
-        <span class="play-icon" aria-hidden="true">▶</span>
-        <span class="play-text">PLAY</span>
+      <!-- Quick action tiles — common shortcuts. -->
+      <h3 class="section-title">Quick actions</h3>
+      <div class="action-row" aria-label="Quick actions">
+        <button class="action-tile" id="action-mods" type="button">
+          <span class="action-icon" aria-hidden="true">▦</span>
+          <span class="action-label">Mods</span>
+        </button>
+        <button class="action-tile" id="action-cosmetics" type="button">
+          <span class="action-icon" aria-hidden="true">★</span>
+          <span class="action-label">Cosmetics</span>
+        </button>
+        <button class="action-tile" id="action-hud-editor" type="button">
+          <span class="action-icon" aria-hidden="true">⚡</span>
+          <span class="action-label">HUD editor</span>
+        </button>
+        <button class="action-tile" id="action-folder" type="button">
+          <span class="action-icon" aria-hidden="true">📂</span>
+          <span class="action-label">Open folder</span>
+        </button>
+      </div>
+
+      <!-- Expandable detail log (closed by default — no jarring tab switch) -->
+      <button class="details-toggle" id="details-toggle" type="button"
+              aria-expanded="false" aria-controls="log-view">
+        <span class="caret" aria-hidden="true">▸</span>
+        <span class="details-label">Show details</span>
       </button>
-
-      <!-- Status — empty by default, only shows during setup / launch. The
-           polite live region means screen readers announce changes without
-           interrupting the user. -->
-      <div class="status-line" id="status-line"
-           role="status" aria-live="polite" aria-atomic="true"></div>
-      <div class="progress" id="progress" hidden
-           role="progressbar"
-           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
-           aria-label="Setup progress">
-        <div class="progress-fill" id="progress-fill"></div>
-      </div>
+      <div class="log-view collapsed" id="log-view"
+           role="log" aria-live="polite" aria-label="Process output"></div>
 
     </div>
+
+    <!-- Bottom status strip — persistent glanceable info. -->
+    <footer class="status-footer" id="status-footer" aria-live="polite">
+      <span id="footer-text">Ready</span>
+    </footer>
   </main>
 
   <!-- ───── Settings dialog (everything power-user lives here) ───── -->

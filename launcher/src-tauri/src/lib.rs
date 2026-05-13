@@ -353,6 +353,60 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+/// Recursive size of game_dir, in megabytes. Used by the home-screen stat
+/// tile ("Cached: 1.5 GB"). Walks the tree on a tokio blocking thread so
+/// big installs (~1.5+ GB across multiple version profiles) don't freeze
+/// the UI thread.
+#[tauri::command]
+async fn disk_usage_mb() -> u64 {
+    tokio::task::spawn_blocking(|| {
+        let here = project_root();
+        let game_dir = here.join("game_dir");
+        folder_size_bytes(&game_dir) / (1024 * 1024)
+    })
+    .await
+    .unwrap_or(0)
+}
+
+fn folder_size_bytes(path: &Path) -> u64 {
+    if !path.exists() { return 0; }
+    let mut total: u64 = 0;
+    let Ok(entries) = std::fs::read_dir(path) else { return 0; };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if let Ok(meta) = entry.metadata() {
+            if meta.is_file() {
+                total += meta.len();
+            } else if meta.is_dir() {
+                total += folder_size_bytes(&p);
+            }
+        }
+    }
+    total
+}
+
+/// Open the game_dir in the OS's default file explorer (Explorer on Windows,
+/// Finder on macOS, the user's preferred file manager on Linux via xdg-open).
+/// Backs the "📂 Open folder" home-screen quick action tile.
+#[tauri::command]
+fn open_folder() -> Result<(), String> {
+    let here = project_root();
+    let game_dir = here.join("game_dir");
+    // Make sure the dir exists — opening a missing folder is a confusing
+    // no-op on Windows ("file not found" silent error).
+    std::fs::create_dir_all(&game_dir).map_err(|e| e.to_string())?;
+
+    let spawned = {
+        #[cfg(target_os = "windows")]
+        { std::process::Command::new("explorer").arg(&game_dir).spawn() }
+        #[cfg(target_os = "macos")]
+        { std::process::Command::new("open").arg(&game_dir).spawn() }
+        #[cfg(target_os = "linux")]
+        { std::process::Command::new("xdg-open").arg(&game_dir).spawn() }
+    };
+    spawned.map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// In-launcher self-update. Downloads the given installer URL to a temp
 /// directory, spawns it (NSIS / DMG / AppImage will detect the existing
 /// install and upgrade in place), then exits the current process so the
@@ -536,6 +590,8 @@ pub fn run() {
             diagnostics,
             install_update,
             sweep_update_temp,
+            disk_usage_mb,
+            open_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

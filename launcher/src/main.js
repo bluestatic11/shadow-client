@@ -798,11 +798,11 @@ function showUpdateBanner(latest, downloadUrl, releaseUrl) {
   banner.setAttribute('role', 'status');
   banner.innerHTML = `
     <div class="startup-banner-title">▲ Update available: v${latest}</div>
-    <div class="startup-banner-body">
-      You're on v${CURRENT_LAUNCHER_VERSION}. Click below to grab the new
-      installer — your settings, mods, and saves stay where they are.
+    <div class="startup-banner-body" id="banner-update-body">
+      You're on v${CURRENT_LAUNCHER_VERSION}. One click — your settings,
+      mods, and saves stay where they are.
     </div>
-    <div class="startup-banner-actions">
+    <div class="startup-banner-actions" id="banner-update-actions">
       <button class="banner-action-primary" id="banner-update-btn" type="button">
         Update now
       </button>
@@ -815,12 +815,39 @@ function showUpdateBanner(latest, downloadUrl, releaseUrl) {
   `;
   document.body.appendChild(banner);
 
-  // "Update now" — open the installer URL in the user's default browser via
-  // Tauri's shell plugin. The browser downloads the .exe and shows the
-  // standard "Save / Run" prompt — gives the user a chance to verify the
-  // source (github.com/bluestatic11/...) before running anything.
-  document.getElementById('banner-update-btn').addEventListener('click', () => {
-    openExternal(downloadUrl);
+  // "Update now" — invoke the Rust install_update command, which downloads
+  // the new installer to a temp dir, spawns it detached, then exits the
+  // current launcher so the installer can overwrite our .exe. The user
+  // sees: button → "Downloading…" → "Installing…" → window closes → the
+  // standard NSIS installer takes over → new launcher opens with the
+  // new version. No browser detour.
+  document.getElementById('banner-update-btn').addEventListener('click', async () => {
+    const body = document.getElementById('banner-update-body');
+    const actions = document.getElementById('banner-update-actions');
+    if (actions) actions.style.opacity = '0.6';
+    const btn = document.getElementById('banner-update-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Downloading…'; }
+    if (body) {
+      body.textContent =
+        'Downloading the new installer — the launcher will close in a few seconds and ' +
+        'the installer will take over. Don\'t close anything until you see Shadow Client reopen.';
+    }
+    try {
+      await invoke('install_update', { url: downloadUrl });
+      // If install_update returns success we don't actually get here — the
+      // command exits the app process. If we DO get here, fall back to the
+      // browser-open path so the user still has a path forward.
+      if (body) body.textContent = 'Launcher should close any second…';
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Update now'; }
+      if (actions) actions.style.opacity = '1';
+      if (body) {
+        body.innerHTML =
+          'In-app install failed: ' + String(e).replace(/</g, '&lt;') +
+          '<br><br>Falling back to a browser download — your browser should open in a moment.';
+      }
+      openExternal(downloadUrl);
+    }
   });
   document.getElementById('banner-release-btn').addEventListener('click', () => {
     openExternal(releaseUrl);

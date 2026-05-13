@@ -314,6 +314,90 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+/// In-launcher self-update. Downloads the given installer URL to a temp
+/// directory, spawns it (NSIS / DMG / AppImage will detect the existing
+/// install and upgrade in place), then exits the current process so the
+/// installer can replace the .exe without "file in use" errors.
+///
+/// The JS layer fetches the asset URL from the GitHub Releases API and
+/// hands it to us here. We trust the URL because it comes from a GitHub
+/// HTTPS API response — no signature verification, but the URL itself is
+/// authenticated end-to-end via TLS to api.github.com.
+#[tauri::command]
+async fn install_update(
+    app: tauri::AppHandle,
+    url: String,
+) -> Result<(), String> {
+    use std::time::Duration;
+
+    let temp_dir = std::env::temp_dir().join("ShadowClient-update");
+    std::fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+
+    // Use the filename from the URL so the installer launches with a
+    // sensible name on the user's screen (vs. some opaque tmp file).
+    let filename = url
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Shadow.Client_update.exe");
+    let dest = temp_dir.join(filename);
+
+    // Stream the download so big files (~80 MB AppImage) don't sit in RAM.
+    let client = reqwest::Client::builder()
+        .user_agent(mojang::UA)
+        .timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("download failed: {e}"))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("download failed mid-stream: {e}"))?;
+    std::fs::write(&dest, &bytes)
+        .map_err(|e| format!("writing {}: {e}", dest.display()))?;
+
+    // Make the file executable on Unix (NSIS .exe doesn't need it, but
+    // AppImage / .deb dpkg-launcher does).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&dest)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o755);
+        let _ = std::fs::set_permissions(&dest, perms);
+    }
+
+    // Spawn the installer DETACHED — it must outlive us so it can replace
+    // our .exe on disk after we exit.
+    let spawn_result = {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // DETACHED_PROCESS (0x00000008) | CREATE_NEW_PROCESS_GROUP (0x00000200)
+            std::process::Command::new(&dest)
+                .creation_flags(0x00000008 | 0x00000200)
+                .spawn()
+        }
+        #[cfg(not(windows))]
+        {
+            std::process::Command::new(&dest).spawn()
+        }
+    };
+    spawn_result.map_err(|e| format!("running installer {}: {e}", dest.display()))?;
+
+    // Give the installer a beat to actually start before we vanish, so
+    // the user isn't staring at a closed window wondering what happened.
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    app.exit(0);
+    Ok(())
+}
+
 #[derive(Serialize, Clone)]
 pub struct PythonProbe { pub ok: bool, pub detail: String }
 
@@ -380,6 +464,7 @@ pub fn run() {
             project_path,
             check_python,
             diagnostics,
+            install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

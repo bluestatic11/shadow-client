@@ -772,9 +772,47 @@ async function checkForLauncherUpdate() {
     const asset = (data.assets || []).find(a => patterns[platform].test(a.name));
     if (!asset) return;
 
-    showUpdateBanner(latest, asset.browser_download_url, data.html_url);
+    // FIRE-AND-FORGET auto-update. No button, no prompt — just fetch the
+    // installer and run it. The user sees a status banner so they know what's
+    // happening, but they don't need to click anything.
+    autoInstallUpdate(latest, asset.browser_download_url);
   } catch (e) {
     console.warn('[shadow] update check failed:', e);
+  }
+}
+
+async function autoInstallUpdate(latest, downloadUrl) {
+  // Status-only banner — no buttons. The user sees the launcher updating,
+  // doesn't get asked to do anything, doesn't even need to click "OK".
+  const banner = document.createElement('div');
+  banner.className = 'startup-banner update auto';
+  banner.setAttribute('role', 'status');
+  banner.setAttribute('aria-live', 'polite');
+  banner.innerHTML = `
+    <div class="startup-banner-title" id="auto-update-title">▲ Updating to v${latest}…</div>
+    <div class="startup-banner-body" id="auto-update-body">
+      Downloading the new launcher. The window will close in a few seconds —
+      Shadow Client will reopen automatically when the installer finishes.
+    </div>
+  `;
+  document.body.appendChild(banner);
+
+  try {
+    await invoke('install_update', { url: downloadUrl });
+    // If install_update returns success the app is about to exit and we
+    // won't reach this line. If we do, the spawn went through but exit
+    // hasn't fired yet — just hold the banner.
+  } catch (e) {
+    // Update failed — silently drop the banner after 6 seconds so the user
+    // can keep playing with the current version. Update will retry on the
+    // next boot.
+    const body = document.getElementById('auto-update-body');
+    if (body) {
+      body.textContent =
+        'Auto-update couldn\'t finish (' + String(e).slice(0, 120) +
+        '). Continuing on v' + CURRENT_LAUNCHER_VERSION + '.';
+    }
+    setTimeout(() => banner.remove(), 6000);
   }
 }
 
@@ -792,70 +830,9 @@ function compareSemver(a, b) {
   return 0;
 }
 
-function showUpdateBanner(latest, downloadUrl, releaseUrl) {
-  const banner = document.createElement('div');
-  banner.className = 'startup-banner update';
-  banner.setAttribute('role', 'status');
-  banner.innerHTML = `
-    <div class="startup-banner-title">▲ Update available: v${latest}</div>
-    <div class="startup-banner-body" id="banner-update-body">
-      You're on v${CURRENT_LAUNCHER_VERSION}. One click — your settings,
-      mods, and saves stay where they are.
-    </div>
-    <div class="startup-banner-actions" id="banner-update-actions">
-      <button class="banner-action-primary" id="banner-update-btn" type="button">
-        Update now
-      </button>
-      <button class="banner-action-secondary" id="banner-release-btn" type="button">
-        See what's new
-      </button>
-      <button class="banner-action-dismiss" id="banner-dismiss-btn" type="button"
-              aria-label="Dismiss">×</button>
-    </div>
-  `;
-  document.body.appendChild(banner);
-
-  // "Update now" — invoke the Rust install_update command, which downloads
-  // the new installer to a temp dir, spawns it detached, then exits the
-  // current launcher so the installer can overwrite our .exe. The user
-  // sees: button → "Downloading…" → "Installing…" → window closes → the
-  // standard NSIS installer takes over → new launcher opens with the
-  // new version. No browser detour.
-  document.getElementById('banner-update-btn').addEventListener('click', async () => {
-    const body = document.getElementById('banner-update-body');
-    const actions = document.getElementById('banner-update-actions');
-    if (actions) actions.style.opacity = '0.6';
-    const btn = document.getElementById('banner-update-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Downloading…'; }
-    if (body) {
-      body.textContent =
-        'Downloading the new installer — the launcher will close in a few seconds and ' +
-        'the installer will take over. Don\'t close anything until you see Shadow Client reopen.';
-    }
-    try {
-      await invoke('install_update', { url: downloadUrl });
-      // If install_update returns success we don't actually get here — the
-      // command exits the app process. If we DO get here, fall back to the
-      // browser-open path so the user still has a path forward.
-      if (body) body.textContent = 'Launcher should close any second…';
-    } catch (e) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Update now'; }
-      if (actions) actions.style.opacity = '1';
-      if (body) {
-        body.innerHTML =
-          'In-app install failed: ' + String(e).replace(/</g, '&lt;') +
-          '<br><br>Falling back to a browser download — your browser should open in a moment.';
-      }
-      openExternal(downloadUrl);
-    }
-  });
-  document.getElementById('banner-release-btn').addEventListener('click', () => {
-    openExternal(releaseUrl);
-  });
-  document.getElementById('banner-dismiss-btn').addEventListener('click', () => {
-    banner.remove();
-  });
-}
+// (showUpdateBanner with manual "Update now" button was removed in v0.3.2 —
+//  auto-install replaced the click-to-update flow. The Rust install_update
+//  command stays available for callers that want to gate the upgrade.)
 
 async function openExternal(url) {
   try {

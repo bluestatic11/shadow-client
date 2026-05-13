@@ -5,39 +5,85 @@
 // ../../client.py. We expose Tauri commands that subprocess-call those
 // scripts and stream their output back to the UI.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
 
-/// Resolve the launcher's "project root" — the parent of the launcher/
-/// directory, which contains client.py + game_dir/ + branding/.
-/// In dev (cargo run), CWD is launcher/src-tauri, so we walk up 2 levels.
-/// In production (installed app), the bundle is shipped with these files
-/// adjacent — see the install-time resource copy in the NSIS preprocess.
+/// Resolve the launcher's "project root" — the directory containing
+/// `client.py` and the helper Python modules. This is the working directory
+/// `client.py` is invoked from, so it has to actually contain the file.
+///
+/// We probe an expanded set of candidate locations because the file's home
+/// depends on how the launcher is being run:
+///
+///  * **Dev** (`cargo run` from `launcher/src-tauri/`) — CWD is the crate
+///    dir, project root is two levels up.
+///  * **NSIS install on Windows** — Tauri's bundler copies declared
+///    `bundle.resources` into `<install_dir>\resources\` next to the .exe.
+///  * **MSI install on Windows** — same as NSIS in practice.
+///  * **DMG / .app on macOS** — Tauri puts resources inside
+///    `Contents/Resources/` of the .app bundle.
+///  * **AppImage on Linux** — extracted to `<exe_dir>/resources/` on first run.
+///
+/// We hunt through all of these. The order doesn't matter — first match wins.
 fn project_root() -> PathBuf {
-    // Try a few candidate locations until one has client.py
-    let candidates = [
-        // Dev: launcher/src-tauri/../../
-        std::env::current_dir().ok().map(|p| p.join("../..")),
-        // Dev (alternative): cwd is launcher/, parent has client.py
-        std::env::current_dir().ok().map(|p| p.join("..")),
-        // Installed: app data alongside the .exe
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("resources"))),
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf())),
-    ];
-    for c in candidates.iter().flatten() {
-        if c.join("client.py").exists() {
+    let exe = std::env::current_exe().ok();
+    let exe_dir = exe.as_ref().and_then(|p| p.parent()).map(|p| p.to_path_buf());
+
+    // Walk a few levels up from the exe so we cover nested layouts
+    // (e.g. macOS .app/Contents/MacOS/<exe> wants ../Resources).
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(dir) = &exe_dir {
+        candidates.push(dir.join("resources"));     // <exe_dir>/resources (Windows NSIS/MSI)
+        candidates.push(dir.join("../Resources")); // <exe_dir>/../Resources (macOS .app)
+        candidates.push(dir.clone());               // <exe_dir> (flat layout)
+        // Walk up to 3 ancestors looking for a folder with client.py
+        let mut p = dir.clone();
+        for _ in 0..3 {
+            if let Some(parent) = p.parent() {
+                p = parent.to_path_buf();
+                candidates.push(p.join("resources"));
+                candidates.push(p.clone());
+            }
+        }
+    }
+    // Dev mode: CWD is launcher/src-tauri or launcher/.
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("../.."));
+        candidates.push(cwd.join(".."));
+        candidates.push(cwd.clone());
+    }
+
+    for c in &candidates {
+        let probe = c.join("client.py");
+        if probe.exists() {
             return c.canonicalize().unwrap_or(c.clone());
         }
     }
-    // Last-ditch fallback: just return cwd
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    // Last-ditch: return exe_dir (we'll fail loudly when client.py can't be
+    // spawned, but at least the error message points somewhere debuggable).
+    exe_dir.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
+/// Check whether `client.py` is reachable from the resolved project root.
+/// We want to fail with a friendly error before spawning Python, since
+/// "python: can't open file '<root>/client.py': [Errno 2]" is much less
+/// helpful than "Shadow Client install is incomplete — reinstall from
+/// the website."
+fn ensure_client_py(root: &Path) -> Result<(), String> {
+    if root.join("client.py").exists() {
+        return Ok(());
+    }
+    Err(format!(
+        "Shadow Client install is incomplete — client.py not found at {} .\n\
+         The .exe is the launcher only; the Python sources didn't come with it.\n\
+         Reinstall the latest .exe from \
+         https://github.com/bluestatic11/shadow-client/releases/latest \
+         (v0.2.12 or newer bundles the sources automatically).",
+        root.display()
+    ))
 }
 
 /// One profile's worth of installed state, as written by `client.py setup`.
@@ -89,17 +135,43 @@ fn run_python(
         *b = true;
     }
     let root = project_root();
-    let mut cmd = Command::new("python");
-    cmd.arg("client.py")
-        .args(&args)
-        .current_dir(&root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
+
+    // Fail fast if client.py is missing — much better error than the cryptic
+    // "[Errno 2] No such file or directory" Python would produce.
+    if let Err(msg) = ensure_client_py(&root) {
+        *busy.busy.lock().unwrap() = false;
+        return Err(msg);
+    }
+
+    // Try `python` first, fall back to `python3` and `py` (the launcher
+    // shipped with Windows installs). Same logic as check_python — match
+    // what's actually on the user's PATH instead of failing on systems
+    // that only have `py`.
+    let pythons = ["python", "python3", "py"];
+    let mut spawned: Option<std::process::Child> = None;
+    let mut last_err: Option<String> = None;
+    for py in pythons {
+        let mut cmd = Command::new(py);
+        cmd.arg("client.py")
+            .args(&args)
+            .current_dir(&root)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        match cmd.spawn() {
+            Ok(c) => { spawned = Some(c); break; }
+            Err(e) => { last_err = Some(format!("{}: {}", py, e)); continue; }
+        }
+    }
+    let mut child = match spawned {
+        Some(c) => c,
+        None => {
             *busy.busy.lock().unwrap() = false;
-            return Err(format!("failed to spawn python: {} — is Python on PATH?", e));
+            return Err(format!(
+                "Couldn't start Python. Tried python / python3 / py. Last error: {}.\n\
+                 Install Python 3.11+ from https://www.python.org/downloads/ \
+                 (tick \"Add to PATH\" in the installer) and reopen Shadow Client.",
+                last_err.unwrap_or_else(|| "(unknown)".into())
+            ));
         }
     };
     // Stream stdout/stderr in background threads so the UI sees lines live.

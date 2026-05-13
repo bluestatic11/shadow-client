@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Shadow Client",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "identifier": "app.shadowclient.launcher",
   "build": {
     "frontendDist": "../src",
@@ -37,6 +37,19 @@
       "icons/icon.ico",
       "icons/icon.icns",
       "icons/icon.png"
+    ],
+    "resources": [
+      "../../client.py",
+      "../../auth.py",
+      "../../mojang.py",
+      "../../fabric.py",
+      "../../mods.py",
+      "../../jvm.py",
+      "../../jdk.py",
+      "../../branding/hud_mod/src/**/*",
+      "../../branding/hud_mod/stubs/**/*",
+      "../../branding/hud_mod/resources/**/*",
+      "../../branding/hud_mod/build.py"
     ],
     "category": "Game",
     "shortDescription": "Minecraft client with Lunar-grade UX, 3× the FPS",

@@ -208,14 +208,35 @@ async fn update_mods(
 
 #[tauri::command]
 async fn microsoft_login(
-    _app: tauri::AppHandle,
-    _busy: State<'_, AppState>,
+    app: tauri::AppHandle,
+    busy: State<'_, AppState>,
 ) -> Result<i32, String> {
-    // TODO: native Rust port of the MSA device-code flow. For now, the
-    // corner widget falls back to offline mode and the user can ignore it.
-    Err("Microsoft sign-in is not yet implemented in the Rust port — \
-         offline mode works for singleplayer and offline-mode servers. \
-         Online-mode multiplayer support coming in a follow-up release.".into())
+    let here = project_root();
+    let account_file = here.join("game_dir").join("mc-client-account.json");
+    with_busy(app, busy, |app| async move {
+        let app2 = app.clone();
+        let progress = move |line: String| emit_line(&app2, "stdout", line);
+
+        // Pop the browser open on the verification URL as soon as we get
+        // the device code, so the user doesn't have to type anything.
+        let app3 = app.clone();
+        let on_prompt = move |p: auth::DeviceCodePrompt| {
+            // Tauri 2 shell plugin: open the URL in the user's default browser
+            use tauri_plugin_shell::ShellExt;
+            let url = p.verification_uri_complete.clone();
+            let shell = app3.shell();
+            tauri::async_runtime::spawn(async move {
+                let _ = shell.open(&url, None);
+            });
+        };
+
+        let account = auth::microsoft_device_login(progress, on_prompt).await?;
+        if let Some(parent) = account_file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        account.save(&account_file)?;
+        Ok(0)
+    }).await
 }
 
 #[tauri::command]

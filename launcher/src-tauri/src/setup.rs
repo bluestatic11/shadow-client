@@ -233,19 +233,40 @@ pub async fn launch(
         &jvm_extra,
     )?;
 
-    // Pick Java.
-    let java = jdk::find_java(&here).ok_or_else(|| anyhow!(
-        "No Java found. Install Java 21+ from https://adoptium.net/temurin/releases/ \
-         (pick 'JDK', not JRE) and reopen Shadow Client."
-    ))?;
-    let java_major = jdk::java_major_version(&java).unwrap_or(0);
+    // Pick Java. If nothing on disk is new enough, auto-download from
+    // Adoptium into <here>/jdk-<major>/ so the user doesn't have to.
     let required_major = version
         .get("javaVersion").and_then(|v| v.get("majorVersion"))
         .and_then(|v| v.as_u64()).map(|n| n as u32).unwrap_or(21);
+
+    let mut java = jdk::find_java(&here);
+    let mut java_major = java.as_ref().and_then(|p| jdk::java_major_version(p)).unwrap_or(0);
+
+    if java.is_none() || java_major < required_major {
+        if java_major == 0 {
+            progress("No Java on system — downloading JDK from Adoptium…".into());
+        } else {
+            progress(format!(
+                "Installed Java {java_major} is older than the required Java {required_major} — \
+                 downloading the right one from Adoptium…"
+            ));
+        }
+        let client = build_http_client()?;
+        let into = here.join(format!("jdk-{required_major}"));
+        let progress_ref: &dyn Fn(String) = &progress;
+        let downloaded = jdk::download_jdk(&client, required_major, &into, progress_ref).await?;
+        progress(format!("JDK installed at {}", downloaded.display()));
+        java_major = jdk::java_major_version(&downloaded).unwrap_or(required_major);
+        java = Some(downloaded);
+    }
+    let java = java.ok_or_else(|| anyhow!(
+        "No Java available. Install Java {required_major}+ from \
+         https://adoptium.net/temurin/releases/ and reopen Shadow Client."
+    ))?;
     if java_major < required_major {
         bail!(
-            "Java {java_major} is too old for Minecraft {} (needs Java {required_major}+). \
-             Install Java {required_major}+ from https://adoptium.net/temurin/releases/.",
+            "Downloaded Java {java_major} but Minecraft {} needs Java {required_major}+. \
+             That shouldn't happen — please report this.",
             p.mc_version.as_deref().unwrap_or("")
         );
     }

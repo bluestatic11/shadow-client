@@ -78,6 +78,27 @@ jobs:
         working-directory: launcher
         run: npx --yes @tauri-apps/cli@^2 icon src-tauri/icons/icon.png --output src-tauri/icons
 
+      # Bundle Python with the Windows installer. The embeddable distribution
+      # is a self-contained ~12 MB zip — no pip, no system dependencies, just
+      # a stand-alone python.exe + stdlib that runs anywhere. Eliminates the
+      # "Python not found" / Microsoft Store stub failure mode that bit users
+      # on fresh Windows installs.
+      - name: Bundle Python (Windows only)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        working-directory: launcher/src-tauri
+        run: |
+          curl -L -o python-embed.zip \
+            https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip
+          mkdir -p python
+          unzip -q -o python-embed.zip -d python
+          rm python-embed.zip
+          # Enable site-packages discovery — the embed dist disables this by
+          # default which breaks `import` for relative modules. Uncommenting
+          # the import-site line in python312._pth fixes it.
+          sed -i 's/^#import site/import site/' python/python312._pth || true
+          ls -la python/
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

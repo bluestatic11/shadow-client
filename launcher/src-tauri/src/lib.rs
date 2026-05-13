@@ -143,34 +143,51 @@ fn run_python(
         return Err(msg);
     }
 
-    // Try `python` first, fall back to `python3` and `py` (the launcher
-    // shipped with Windows installs). Same logic as check_python — match
-    // what's actually on the user's PATH instead of failing on systems
-    // that only have `py`.
-    let pythons = ["python", "python3", "py"];
-    let mut spawned: Option<std::process::Child> = None;
-    let mut last_err: Option<String> = None;
-    for py in pythons {
-        let mut cmd = Command::new(py);
-        cmd.arg("client.py")
-            .args(&args)
-            .current_dir(&root)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        match cmd.spawn() {
-            Ok(c) => { spawned = Some(c); break; }
-            Err(e) => { last_err = Some(format!("{}: {}", py, e)); continue; }
-        }
+    // Pick a Python interpreter. Same logic as check_python — first try the
+    // bundled embeddable distribution (Windows installs ship one), then fall
+    // back to PATH lookups. We use the probe results from check_python
+    // rather than blind-spawning candidates: the Microsoft Store stub spawns
+    // successfully but isn't Python (it just prints "install from Store"
+    // and exits 9009), so picking-the-first-that-spawns is wrong.
+    let bundled = bundled_python(&root);
+    let probe = check_python();
+    if !probe.ok && bundled.is_none() {
+        *busy.busy.lock().unwrap() = false;
+        return Err(format!(
+            "Python isn't available.\n\n{}\n\n\
+             Fix: reinstall Shadow Client from \
+             https://github.com/bluestatic11/shadow-client/releases/latest \
+             — the latest .exe bundles Python so you don't need to install \
+             it yourself. Or install Python 3.11+ from \
+             https://www.python.org/downloads/ (tick \"Add to PATH\").",
+            probe.detail
+        ));
     }
-    let mut child = match spawned {
-        Some(c) => c,
-        None => {
+    // Build the actual command. Prefer the bundled python.exe path; else
+    // resolve from the probe detail (it contains "via `py`" or similar).
+    let py_cmd: std::ffi::OsString = if let Some(b) = bundled {
+        b.into_os_string()
+    } else if probe.detail.contains("via `py`") {
+        "py".into()
+    } else if probe.detail.contains("via `python3`") {
+        "python3".into()
+    } else {
+        "python".into()
+    };
+
+    let mut cmd = Command::new(&py_cmd);
+    cmd.arg("client.py")
+        .args(&args)
+        .current_dir(&root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
             *busy.busy.lock().unwrap() = false;
             return Err(format!(
-                "Couldn't start Python. Tried python / python3 / py. Last error: {}.\n\
-                 Install Python 3.11+ from https://www.python.org/downloads/ \
-                 (tick \"Add to PATH\" in the installer) and reopen Shadow Client.",
-                last_err.unwrap_or_else(|| "(unknown)".into())
+                "Failed to start {:?}: {}. Try reinstalling Shadow Client.",
+                py_cmd, e
             ));
         }
     };
@@ -477,34 +494,82 @@ pub struct PythonProbe {
     pub detail: String,
 }
 
-/// Probe for a working Python interpreter on PATH. Returns ok=false (with a
-/// human-readable `detail`) if nothing works — the JS layer renders a clear
-/// "install Python" banner in that case, which is way better than waiting
-/// for the user to click PLAY and getting a cryptic spawn error.
+/// Look for the bundled embeddable Python distribution that the installer
+/// drops into <root>/python/. Returns the absolute path to its python.exe
+/// if present. On macOS/Linux we don't bundle Python (system python3 is
+/// expected), so this only finds it on Windows installs.
+fn bundled_python(root: &Path) -> Option<PathBuf> {
+    let candidates = [
+        root.join("python").join("python.exe"),
+        root.join("python").join("bin").join("python3"),
+        root.join("python").join("bin").join("python"),
+    ];
+    for c in candidates {
+        if c.exists() {
+            return Some(c);
+        }
+    }
+    None
+}
+
+/// True if the candidate output looks like Windows' Microsoft Store Python
+/// stub (`C:\Users\…\AppData\Local\Microsoft\WindowsApps\python.exe`).
+/// The stub spawns successfully but prints a redirect-to-Store message and
+/// exits 9009 — we have to recognise the message and skip it explicitly.
+fn looks_like_store_stub(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower.contains("python was not found")
+        || lower.contains("microsoft store")
+        || lower.contains("ms-windows-store:")
+        || lower.contains("app execution alias")
+}
+
+/// Probe for a working Python interpreter. Returns ok=false (with a
+/// human-readable `detail`) if nothing works — the JS layer renders a
+/// clear "install Python" banner in that case.
 #[tauri::command]
 fn check_python() -> PythonProbe {
-    // Windows ships a `py` launcher in the system32 dir; mac/Linux usually
-    // have `python3`. We try all three in order.
-    let candidates = ["python", "python3", "py"];
-    for exe in candidates {
-        // `python --version` writes to stderr on some old versions, to stdout
-        // on newer ones. We capture both and concatenate.
-        let out = std::process::Command::new(exe).arg("--version").output();
-        let Ok(o) = out else { continue };
-        if !o.status.success() {
-            continue;
+    // First try the bundled Python (only Windows installs ship one).
+    let root = project_root();
+    if let Some(bundled) = bundled_python(&root) {
+        if let Ok(o) = std::process::Command::new(&bundled).arg("--version").output() {
+            if o.status.success() {
+                let text = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr),
+                );
+                if let Some(v) = parse_python_version(&text) {
+                    return PythonProbe {
+                        ok: true,
+                        detail: format!("bundled Python {} ({})", v, bundled.display()),
+                    };
+                }
+            }
         }
+    }
+
+    // Fall back to PATH lookup. Windows ships a `py` launcher in System32 by
+    // default; mac/Linux usually have `python3`.
+    let candidates = ["py", "python3", "python"];
+    for exe in candidates {
+        // `python --version` writes to stderr on old Python, stdout on new.
+        let Ok(o) = std::process::Command::new(exe).arg("--version").output() else {
+            continue;
+        };
         let text = format!(
             "{}{}",
             String::from_utf8_lossy(&o.stdout),
             String::from_utf8_lossy(&o.stderr),
         );
-        // Extract "Python X.Y[.Z]"
-        if let Some(start) = text.find("Python ") {
-            let rest = &text[start + "Python ".len()..];
-            let v: String = rest.chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
+        // Microsoft Store stub spawns fine but isn't Python — recognise + skip.
+        if looks_like_store_stub(&text) {
+            continue;
+        }
+        if !o.status.success() {
+            continue;
+        }
+        if let Some(v) = parse_python_version(&text) {
             // Parse major.minor
             let mut parts = v.split('.');
             let major: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -515,13 +580,22 @@ fn check_python() -> PythonProbe {
                     detail: format!("Python {} via `{}`", v, exe),
                 };
             }
-            // Found a too-old Python — keep looking in case a newer one is also installed.
         }
     }
     PythonProbe {
         ok: false,
-        detail: "No Python 3.11+ found on PATH".into(),
+        detail: "No Python 3.11+ found. The bundled Python from the installer is missing, \
+                 and no system `python` / `python3` / `py` answered to --version.".into(),
     }
+}
+
+fn parse_python_version(text: &str) -> Option<String> {
+    let start = text.find("Python ")?;
+    let rest = &text[start + "Python ".len()..];
+    let v: String = rest.chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    if v.is_empty() { None } else { Some(v) }
 }
 
 /// Public profile info exposed to the front-end after Microsoft sign-in.

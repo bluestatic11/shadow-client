@@ -742,11 +742,20 @@ function showPythonBanner(probeResult) {
 }
 
 // ───── Launcher self-update check ──────────────────────────────
-// Reads our own version from the brand label in the topbar (single source
-// of truth — bumped in sync with package.json + Cargo.toml + tauri.conf.json
-// on every release). Compares against the latest GitHub release; if newer,
-// shows a banner with a one-click download.
-const CURRENT_LAUNCHER_VERSION = ($('version-label')?.textContent || '').replace(/^v/, '').trim();
+// Reads our own version from the brand label. We look in TWO ways so a
+// future HTML edit that drops the id can't silently break auto-update:
+//   1. `#version-label` (the canonical id)
+//   2. `.brand-sub` (the css class on the same element)
+// Hit on either is fine. If both miss (someone gutted the topbar), we
+// fall back to a hardcoded version string so update can still recover.
+const HARDCODED_VERSION = '0.3.4';
+function resolveCurrentVersion() {
+  const el = document.getElementById('version-label')
+          || document.querySelector('.brand-sub');
+  const t = (el?.textContent || '').replace(/^v/, '').trim();
+  return t || HARDCODED_VERSION;
+}
+const CURRENT_LAUNCHER_VERSION = resolveCurrentVersion();
 const LAUNCHER_UPDATE_URL = 'https://api.github.com/repos/bluestatic11/shadow-client/releases/latest';
 
 async function checkForLauncherUpdate() {

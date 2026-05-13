@@ -206,6 +206,31 @@ async fn update_mods(
     }).await
 }
 
+/// Open a URL in the user's default browser. Avoids the tauri-plugin-shell
+/// `ShellExt` API (its signature shifts between v2 minor releases and bit us
+/// in v0.3.5) — std::process::Command is rock-stable and works on all three
+/// target platforms.
+fn open_url_in_browser(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        // `start ""` with the empty title is the canonical way to spawn the
+        // default-protocol-handler on Windows without `cmd` re-parsing the
+        // URL's & / ? characters as command separators.
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", url])
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(url).spawn().map(|_| ())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open").arg(url).spawn().map(|_| ())
+    }
+}
+
 #[tauri::command]
 async fn microsoft_login(
     app: tauri::AppHandle,
@@ -219,15 +244,8 @@ async fn microsoft_login(
 
         // Pop the browser open on the verification URL as soon as we get
         // the device code, so the user doesn't have to type anything.
-        let app3 = app.clone();
         let on_prompt = move |p: auth::DeviceCodePrompt| {
-            // Tauri 2 shell plugin: open the URL in the user's default browser
-            use tauri_plugin_shell::ShellExt;
-            let url = p.verification_uri_complete.clone();
-            let shell = app3.shell();
-            tauri::async_runtime::spawn(async move {
-                let _ = shell.open(&url, None);
-            });
+            let _ = open_url_in_browser(&p.verification_uri_complete);
         };
 
         let account = auth::microsoft_device_login(progress, on_prompt).await?;

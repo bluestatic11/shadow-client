@@ -169,8 +169,8 @@ pub struct DeviceCodePrompt {
 /// in the user's default browser (via the shell plugin) without blocking
 /// the polling loop.
 pub async fn microsoft_device_login(
-    progress: impl Fn(String) + Send + Sync,
-    on_prompt: impl FnOnce(DeviceCodePrompt) + Send + Sync,
+    progress: impl Fn(String) + Send,
+    on_prompt: impl FnOnce(DeviceCodePrompt) + Send,
 ) -> Result<Account> {
     use std::time::{Duration, Instant};
 

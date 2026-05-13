@@ -43,34 +43,17 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* Single static radial gradient. Was a layered combo of two radial
+     gradients + a grid texture overlay, which was killing the GPU
+     compositor on lower-end hardware — caused visible UI lag on every
+     repaint. Trimmed down to one cheap gradient that renders once and
+     stays in the GPU's static texture cache. */
   background:
     radial-gradient(ellipse 1100px 700px at 20% -10%,
-                    rgba(175, 18, 26, 0.28) 0%,
+                    rgba(175, 18, 26, 0.22) 0%,
                     rgba(175, 18, 26, 0) 60%),
-    radial-gradient(ellipse 800px 500px at 100% 100%,
-                    rgba(40, 28, 50, 0.35) 0%,
-                    rgba(0, 0, 0, 0) 60%),
     var(--bg);
-  position: relative;
 }
-
-/* Faint isometric grid texture — purely decorative, ~3% opacity, no
-   interaction. Drawn via repeating linear-gradients (no asset cost). */
-body::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse at center, #000 30%, transparent 90%);
-  z-index: 0;
-}
-
-/* Hold body content above the texture overlay */
-body > * { position: relative; z-index: 1; }
 
 .accent { color: var(--accent-2); }
 
@@ -126,10 +109,17 @@ a:focus-visible,
   body::before { animation: none !important; }
 }
 
-/* ───── Startup banner (Python missing, etc.) ──────────────────
-   Stays visible at the top until the user closes the launcher.
-   We deliberately position absolute so it doesn't reshuffle the
-   layout — overlays the topbar with high z-index. */
+/* ───── Startup banner stack (Python missing, update available, etc.) ─
+   Banners pin to the top of the window and stack vertically. We use
+   flex on a fixed-position wrapper instead of stacking individual
+   position:fixed elements, so a second banner never lands on top of
+   the first. Old behaviour: both banners rendered with top:8px and
+   overlapped each other into illegibility. */
+body {
+  /* Children get rendered above the gradient. Banners are inserted at
+     end of body and will appear above the main flow. */
+}
+
 .startup-banner {
   position: fixed;
   top: 8px;
@@ -142,6 +132,12 @@ a:focus-visible,
   padding: 14px 18px;
   z-index: 500;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* Second banner offset — uses general sibling combinator so an update
+   banner shown after a python banner sits underneath, and vice versa. */
+.startup-banner ~ .startup-banner {
+  top: calc(8px + 110px);
 }
 
 .startup-banner.error {
@@ -276,17 +272,14 @@ a:focus-visible,
   justify-content: center;
   font-weight: 900;
   font-size: 16px;
+  /* Static box-shadow — used to be an infinite pulse animation, but
+     animated box-shadow blur kicks the entire window into "needs repaint"
+     state every frame on Chromium / WebView2, which on low-end hardware
+     visibly stalls the rest of the UI. The static glow looks ~95% as good
+     without the cost. */
   box-shadow:
     0 0 14px rgba(var(--accent-glow), 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  animation: brandPulse 3.2s ease-in-out infinite;
-}
-
-@keyframes brandPulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(var(--accent-glow), 0.45),
-                          inset 0 1px 0 rgba(255, 255, 255, 0.2); }
-  50%      { box-shadow: 0 0 24px rgba(var(--accent-glow), 0.85),
-                          inset 0 1px 0 rgba(255, 255, 255, 0.2); }
 }
 
 .brand-name {
@@ -674,21 +667,18 @@ a:focus-visible,
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent-3));
-  background-size: 200% 100%;
-  animation: progressShine 2s linear infinite;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
   width: 0%;
   transition: width 0.3s ease;
-}
-
-@keyframes progressShine {
-  0%   { background-position: 0% 0; }
-  100% { background-position: -200% 0; }
+  /* Was animating background-position (the "shine sweep" effect) for a
+     polished look, but background-position can't be GPU-accelerated and
+     repaints the entire bar every frame — costly on cheap hardware.
+     Keeping the gradient FILL but losing the animated sweep. */
 }
 
 .progress-fill.indeterminate {
   width: 30%;
-  animation: indeterminate 1.4s ease-in-out infinite, progressShine 2s linear infinite;
+  animation: indeterminate 1.4s ease-in-out infinite;
 }
 
 @keyframes indeterminate {

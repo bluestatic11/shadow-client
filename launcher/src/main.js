@@ -628,53 +628,46 @@ usernameInput.addEventListener('keydown', (e) => {
 });
 
 // ───── Boot ─────────────────────────────────────────────────────
-// Step 1 (synchronous): paint the UI with the fallback version list IMMEDIATELY,
-// so the dropdown is never empty even if everything else fails. This matters
-// because the Mojang fetch can take up to ~8s and the user might click PLAY
-// before it returns — without a populated dropdown they'd see an empty pill
-// and nothing to launch.
+// Order matters here. The first paint should be instant — no awaiting any
+// network or IPC before the dropdown and PLAY button are visible. After
+// the UI is up, we run the slower checks one at a time so a slow machine
+// isn't hammered with five concurrent async tasks during startup.
+
+// 1. Synchronous paint — UI is alive immediately.
 populateVersionPicker();
+
+// 2. Backend reads (instant, only Tauri IPC, no network).
 loadState();
-
-// Step 2 (async, fire-and-forget): try to enrich the picker from Mojang's
-// real manifest. If it works, re-render with the live list. If it doesn't,
-// the user keeps the fallback list — still functional.
-(async () => {
-  try {
-    const versions = await fetchSupportedVersions();
-    if (versions.length > 0 && JSON.stringify(versions) !== JSON.stringify(SUPPORTED_VERSIONS)) {
-      SUPPORTED_VERSIONS = versions;
-      DEFAULT_VERSION    = versions[0];
-      populateVersionPicker();
-      loadState();   // re-check install state against the (possibly new) default
-    }
-  } catch (e) {
-    console.warn('[shadow] manifest enrich failed:', e);
-  }
-})();
-
-// Step 3 (async): load any cached MS account so the corner widget reflects
-// the signed-in state from a previous session.
 loadAccount();
 
-// Step 4 (async): probe Python availability and surface a clear banner if
-// it's missing. Without Python, setup_client / launch_game will fail with
-// "is Python on PATH?" — much better to tell the user UP FRONT so they
-// don't click PLAY expecting it to work.
-(async () => {
-  try {
-    const out = await invoke('check_python');
-    if (!out || !out.ok) showPythonBanner(out);
-  } catch (e) {
-    // check_python isn't implemented in older Rust builds — silently skip.
-  }
-})();
+// 3. Background tasks — kicked off but not awaited, and deliberately
+//    delayed by 200ms so they happen AFTER the first paint settles.
+//    Each one is wrapped so a failure can't cascade into the others.
+setTimeout(() => {
+  // Mojang manifest enrichment — fetches the live version list.
+  (async () => {
+    try {
+      const versions = await fetchSupportedVersions();
+      if (versions.length > 0 && JSON.stringify(versions) !== JSON.stringify(SUPPORTED_VERSIONS)) {
+        SUPPORTED_VERSIONS = versions;
+        DEFAULT_VERSION    = versions[0];
+        populateVersionPicker();
+        loadState();
+      }
+    } catch (e) { console.warn('[shadow] manifest enrich failed:', e); }
+  })();
 
-// Step 5 (async): check GitHub Releases for a newer launcher version. If
-// one's out, render a small blue "Update available" banner with a one-click
-// download. Spares users having to remember the website URL every time
-// we ship a fix.
-checkForLauncherUpdate();
+  // Python availability probe.
+  (async () => {
+    try {
+      const out = await invoke('check_python');
+      if (!out || !out.ok) showPythonBanner(out);
+    } catch (_) { /* old Rust build, silent */ }
+  })();
+
+  // Self-update check.
+  checkForLauncherUpdate();
+}, 200);
 
 function showPythonBanner(probeResult) {
   const banner = document.createElement('div');

@@ -1,6 +1,6 @@
 [package]
 name = "shadow-client-launcher"
-version = "0.2.14"
+version = "0.3.0"
 description = "Shadow Client launcher"
 authors = ["Edison"]
 license = "All Rights Reserved"
@@ -18,6 +18,21 @@ tauri = { version = "2.0", features = [] }
 tauri-plugin-shell = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# HTTP — we need a real client for Mojang/Fabric/Modrinth APIs and
+# the multi-hundred-MB asset downloads.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+bytes = "1"
+# Hashing — Mojang assets are sha1-verified, offline UUIDs are MD5-derived.
+sha1 = "0.10"
+md-5 = "0.10"
+# Zip — native LWJGL libraries ship as .jar files containing DLLs/.so/.dylib.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# Misc
+anyhow = "1.0"
+thiserror = "1.0"
+url = "2.5"
 
 [features]
 # Tauri's custom-protocol feature is needed for production builds

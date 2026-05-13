@@ -521,6 +521,205 @@ body {
   gap: 24px;
 }
 
+/* ───── Friends panel (right sidebar) ─────────────────────────
+   On windows >= 960 px, this is positioned as a fixed-width column on
+   the right with the home content flowing in the remaining space. On
+   narrower windows it collapses below the home content as a normal
+   block (see the @media (max-width: 960px) section). */
+.friends-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 48px;  /* leave room for status-footer */
+  width: 260px;
+  background: linear-gradient(180deg,
+    rgba(20, 24, 33, 0.92) 0%,
+    rgba(14, 18, 26, 0.92) 100%);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 18px 16px 18px;
+  overflow: hidden;
+  z-index: 2;
+}
+
+.friends-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.friends-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.friends-count {
+  font-size: 11px;
+  color: var(--text-mute);
+  font-family: 'Consolas', monospace;
+  background: var(--bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+.friends-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  transition: border-color 0.12s, background 0.12s;
+  cursor: default;
+}
+
+.friend-row:hover {
+  border-color: var(--line);
+  background: var(--bg-3);
+}
+
+.friend-avatar {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  color: white;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(var(--accent-glow), 0.35);
+}
+
+.friend-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  font-size: 16px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s;
+  opacity: 0;
+}
+
+.friend-row:hover .friend-remove,
+.friend-remove:focus-visible {
+  opacity: 1;
+}
+
+.friend-remove:hover {
+  color: #ff8a8a;
+  background: rgba(255, 138, 138, 0.1);
+}
+
+.friends-empty {
+  list-style: none;
+  text-align: center;
+  color: var(--text-mute);
+  font-size: 12px;
+  padding: 24px 8px;
+  background: var(--bg-2);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+}
+
+.friends-add {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.friends-add input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.friends-add input:focus {
+  outline: none;
+  border-color: var(--accent-focus);
+}
+
+/* When the user tries to add an invalid name, the placeholder briefly
+   flips to the error reason — flash a red border to draw the eye. */
+.friends-add input.error {
+  border-color: #ff8a8a;
+  background: rgba(255, 138, 138, 0.06);
+}
+.friends-add input.error::placeholder { color: #ff8a8a; }
+
+.friends-add-btn {
+  width: 34px;
+  height: 34px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s;
+  flex-shrink: 0;
+}
+
+.friends-add-btn:hover { background: var(--accent-2); }
+.friends-add-btn:disabled { background: var(--bg-3); cursor: not-allowed; opacity: 0.5; }
+
+/* Make room for the friends panel on the right when there's space.
+   home-content stays centered in the LEFT region (everything except
+   the 260 px sidebar + 4 px accent bar). */
+@media (min-width: 960px) {
+  .home-content {
+    /* Shift the centerpoint left to compensate for the sidebar on the
+       right, so the PLAY button visually centers in the available space. */
+    margin-right: 280px;
+  }
+}
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -689,7 +888,14 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ───── Responsive: collapse stat/action rows on narrow windows ─ */
+/* ───── Responsive: friends panel + stat/action rows ─────────── */
+/* Below 960 px, collapse the friends sidebar to a hideable button-only
+   thing (we'd want a drawer pattern; for now just hide it so home content
+   gets the full width). Below 720 px, drop tile rows to 2-column. */
+@media (max-width: 960px) {
+  .friends-panel { display: none; }
+  .home-content { margin-right: auto; }
+}
 @media (max-width: 720px) {
   .home-content { padding: 24px 24px 16px 24px; }
   .stat-row, .action-row { grid-template-columns: repeat(2, 1fr); }

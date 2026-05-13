@@ -14,7 +14,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.9</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.10</span>
     </h1>
 
     <div class="topbar-actions">
@@ -66,6 +66,25 @@
     <!-- Brand-red vertical accent — purely decorative, the "you're in
          Shadow Client" signal that runs all the way down the left edge. -->
     <div class="home-accent" aria-hidden="true"></div>
+
+    <!-- Friends panel — right-side sidebar. Persistent on wide windows;
+         collapses below the home content under 960 px width. -->
+    <aside class="friends-panel" aria-label="Friends list">
+      <div class="friends-head">
+        <h3 class="friends-title">Friends</h3>
+        <span class="friends-count" id="friends-count">0</span>
+      </div>
+      <ul class="friends-list" id="friends-list" aria-live="polite">
+        <li class="friends-empty">No friends added yet</li>
+      </ul>
+      <form class="friends-add" id="friends-add-form">
+        <input type="text" id="friends-add-input"
+               placeholder="Add by Minecraft username"
+               maxlength="16" autocomplete="off" autocapitalize="off"
+               spellcheck="false">
+        <button type="submit" class="friends-add-btn" aria-label="Add friend">+</button>
+      </form>
+    </aside>
 
     <div class="home-content">
 
@@ -120,9 +139,9 @@
           <div class="stat-label">Cached</div>
         </div>
         <div class="stat-tile" id="stat-fps-tile"
-             title="Rough estimate based on your CPU core count, picked render distance, and allocated RAM. Real FPS depends on your GPU, the scene, and a dozen other things — this is a ballpark, not a guarantee.">
+             title="Target FPS predicted for your specific device — based on CPU cores, render distance, and allocated RAM. Real FPS depends on the scene + your GPU; this is the ballpark.">
           <div class="stat-value" id="stat-fps">—</div>
-          <div class="stat-label">Est. FPS</div>
+          <div class="stat-label">Target FPS</div>
         </div>
       </div>
 

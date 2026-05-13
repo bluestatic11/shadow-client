@@ -648,6 +648,87 @@ function updateFooter() {
   footerText.textContent = parts.join('  ·  ');
 }
 
+// ───── Friends list ─────────────────────────────────────────────
+const friendsListEl = $('friends-list');
+const friendsCountEl = $('friends-count');
+const friendsAddForm = $('friends-add-form');
+const friendsAddInput = $('friends-add-input');
+
+async function refreshFriends() {
+  if (!friendsListEl) return;
+  try {
+    const friends = await invoke('friends_list');
+    renderFriends(friends);
+  } catch (e) {
+    console.warn('[shadow] friends_list failed:', e);
+  }
+}
+
+function renderFriends(friends) {
+  if (!friendsListEl) return;
+  friendsListEl.innerHTML = '';
+  if (friendsCountEl) friendsCountEl.textContent = String(friends.length);
+  if (!friends.length) {
+    const empty = document.createElement('li');
+    empty.className = 'friends-empty';
+    empty.textContent = 'No friends added yet';
+    friendsListEl.appendChild(empty);
+    return;
+  }
+  for (const f of friends) {
+    const row = document.createElement('li');
+    row.className = 'friend-row';
+    const avatar = document.createElement('div');
+    avatar.className = 'friend-avatar';
+    avatar.setAttribute('aria-hidden', 'true');
+    avatar.textContent = f.username.charAt(0).toUpperCase();
+    const name = document.createElement('div');
+    name.className = 'friend-name';
+    name.textContent = f.username;
+    name.title = f.username;
+    const remove = document.createElement('button');
+    remove.className = 'friend-remove';
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `Remove ${f.username}`);
+    remove.textContent = '×';
+    remove.addEventListener('click', async () => {
+      try {
+        const updated = await invoke('friends_remove', { username: f.username });
+        renderFriends(updated);
+      } catch (e) {
+        console.warn('[shadow] friends_remove failed:', e);
+      }
+    });
+    row.appendChild(avatar);
+    row.appendChild(name);
+    row.appendChild(remove);
+    friendsListEl.appendChild(row);
+  }
+}
+
+friendsAddForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!friendsAddInput) return;
+  const username = friendsAddInput.value.trim();
+  if (!username) return;
+  try {
+    const updated = await invoke('friends_add', { username });
+    renderFriends(updated);
+    friendsAddInput.value = '';
+    friendsAddInput.focus();
+  } catch (err) {
+    // Show the error inline as a status briefly so the user knows why
+    // their add failed (duplicate / invalid char / too long).
+    const old = friendsAddInput.placeholder;
+    friendsAddInput.placeholder = String(err).slice(0, 40);
+    friendsAddInput.classList.add('error');
+    setTimeout(() => {
+      friendsAddInput.placeholder = old;
+      friendsAddInput.classList.remove('error');
+    }, 3000);
+  }
+});
+
 // ───── Quick action tiles ───────────────────────────────────────
 document.getElementById('action-mods')?.addEventListener('click', () => {
   // Open Settings dialog and switch to the Mods tab.
@@ -885,6 +966,7 @@ updateFooter();
 loadState();
 loadAccount();
 refreshStats();
+refreshFriends();
 
 // 3. Background tasks — kicked off but not awaited, and deliberately
 //    delayed by 200ms so they happen AFTER the first paint settles.
@@ -945,7 +1027,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.9';
+const HARDCODED_VERSION = '0.3.10';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

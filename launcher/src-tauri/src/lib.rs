@@ -353,6 +353,82 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+// ───── Friends list ───────────────────────────────────────────
+//
+// Stored as a JSON array at <project_root>/friends.json. Pure
+// launcher-local data — no Mojang account lookup, no presence/online
+// status check, no third-party servers. Just usernames the user has
+// added so they can see them in the sidebar.
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct Friend {
+    pub username: String,
+    /// Epoch seconds when added. Used to sort the list with newest first.
+    #[serde(default)]
+    pub added_at: u64,
+}
+
+fn friends_file() -> PathBuf {
+    project_root().join("friends.json")
+}
+
+fn load_friends() -> Vec<Friend> {
+    let Ok(raw) = std::fs::read(friends_file()) else { return Vec::new() };
+    serde_json::from_slice(&raw).unwrap_or_default()
+}
+
+fn save_friends(friends: &[Friend]) -> Result<(), String> {
+    let path = friends_file();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let body = serde_json::to_string_pretty(friends).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, body).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn friends_list() -> Vec<Friend> {
+    load_friends()
+}
+
+#[tauri::command]
+fn friends_add(username: String) -> Result<Vec<Friend>, String> {
+    let username = username.trim().to_string();
+    if username.is_empty() {
+        return Err("Username can't be empty".into());
+    }
+    if username.len() > 16 {
+        return Err("Minecraft usernames are 16 chars max".into());
+    }
+    // Mojang allows letters, digits, underscore in usernames. We accept the
+    // same set so people don't get rejected for a valid name.
+    if !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Usernames may only contain letters, digits, and underscores".into());
+    }
+    let mut friends = load_friends();
+    if friends.iter().any(|f| f.username.eq_ignore_ascii_case(&username)) {
+        return Err(format!("'{}' is already on your friends list", username));
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    friends.insert(0, Friend { username, added_at: now });
+    save_friends(&friends)?;
+    Ok(friends)
+}
+
+#[tauri::command]
+fn friends_remove(username: String) -> Result<Vec<Friend>, String> {
+    let mut friends = load_friends();
+    friends.retain(|f| !f.username.eq_ignore_ascii_case(&username));
+    save_friends(&friends)?;
+    Ok(friends)
+}
+
 /// Best-effort FPS estimate based on the user's CPU + render distance + heap.
 ///
 /// The exact number isn't meant to be authoritative — actual FPS depends on
@@ -682,6 +758,9 @@ pub fn run() {
             disk_usage_mb,
             open_folder,
             estimate_fps,
+            friends_list,
+            friends_add,
+            friends_remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

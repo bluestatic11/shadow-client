@@ -307,6 +307,64 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+/// Result of probing for a usable Python interpreter.
+#[derive(Serialize, Clone)]
+pub struct PythonProbe {
+    /// True if at least one of `python` / `python3` / `py` answered `--version`
+    /// AND reported a major.minor >= 3.11. (3.11 is the minimum for several
+    /// modern stdlib features client.py relies on.)
+    pub ok: bool,
+    /// Friendly description of what we found, e.g. "Python 3.12.4 via `py`".
+    pub detail: String,
+}
+
+/// Probe for a working Python interpreter on PATH. Returns ok=false (with a
+/// human-readable `detail`) if nothing works — the JS layer renders a clear
+/// "install Python" banner in that case, which is way better than waiting
+/// for the user to click PLAY and getting a cryptic spawn error.
+#[tauri::command]
+fn check_python() -> PythonProbe {
+    // Windows ships a `py` launcher in the system32 dir; mac/Linux usually
+    // have `python3`. We try all three in order.
+    let candidates = ["python", "python3", "py"];
+    for exe in candidates {
+        // `python --version` writes to stderr on some old versions, to stdout
+        // on newer ones. We capture both and concatenate.
+        let out = std::process::Command::new(exe).arg("--version").output();
+        let Ok(o) = out else { continue };
+        if !o.status.success() {
+            continue;
+        }
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr),
+        );
+        // Extract "Python X.Y[.Z]"
+        if let Some(start) = text.find("Python ") {
+            let rest = &text[start + "Python ".len()..];
+            let v: String = rest.chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            // Parse major.minor
+            let mut parts = v.split('.');
+            let major: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let minor: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            if major > 3 || (major == 3 && minor >= 11) {
+                return PythonProbe {
+                    ok: true,
+                    detail: format!("Python {} via `{}`", v, exe),
+                };
+            }
+            // Found a too-old Python — keep looking in case a newer one is also installed.
+        }
+    }
+    PythonProbe {
+        ok: false,
+        detail: "No Python 3.11+ found on PATH".into(),
+    }
+}
+
 /// Public profile info exposed to the front-end after Microsoft sign-in.
 ///
 /// Deliberately does NOT include `access_token` / `refresh_token` — those
@@ -376,6 +434,7 @@ pub fn run() {
             read_account,
             list_mods,
             project_path,
+            check_python,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

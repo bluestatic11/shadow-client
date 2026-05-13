@@ -5,8 +5,26 @@
 // Everything else (RAM, GC, mods list, logs, shortcuts) lives behind the
 // gear icon in the top bar.
 
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+// Defensive Tauri IPC binding. In Tauri 2 the `window.__TAURI__` global is
+// only exposed when `app.withGlobalTauri: true` is set in tauri.conf.json
+// (it defaults to false in v2, unlike v1). If we don't guard this, accessing
+// `.core` on an undefined global crashes the entire script at line 1 and the
+// whole UI fails to wire up — empty dropdown, dead PLAY button, dead settings
+// gear, every event listener never attached. Catching the missing global
+// here lets the UI at least render so we can show a clear "this build is
+// broken" message instead of a silent black screen.
+const tauriGlobal = window.__TAURI__;
+if (!tauriGlobal) {
+  console.error('[shadow] window.__TAURI__ is undefined — IPC will fail. '
+    + 'Check that tauri.conf.json has app.withGlobalTauri: true and that '
+    + 'this page is actually loaded inside the Tauri webview, not a browser.');
+}
+const invoke = (tauriGlobal && tauriGlobal.core && tauriGlobal.core.invoke)
+  || (() => Promise.reject(new Error(
+      'Tauri IPC unavailable — launcher needs to be reinstalled. '
+      + 'Download the latest .exe from the Shadow Client website.')));
+const listen = (tauriGlobal && tauriGlobal.event && tauriGlobal.event.listen)
+  || (() => Promise.resolve(() => {}));   // no-op unlisten
 
 // ───── Supported Minecraft versions ─────────────────────────────
 // We fetch Mojang's version manifest at boot and filter to every release
@@ -129,6 +147,11 @@ function getPickedVersion() {
   return localStorage.getItem(SAVED_VERSION_KEY) || DEFAULT_VERSION;
 }
 
+// We attach the `change` listener exactly once on the select element. Calling
+// populateVersionPicker multiple times (e.g. sync from fallback, then async
+// after Mojang manifest arrives) used to add duplicate listeners.
+let versionPickerChangeWired = false;
+
 function populateVersionPicker(installedSet) {
   const sel = $('version-select');
   if (!sel) return;
@@ -136,8 +159,6 @@ function populateVersionPicker(installedSet) {
   for (const v of SUPPORTED_VERSIONS) {
     const opt = document.createElement('option');
     opt.value = v;
-    // ✓ marker if the user has already set up this version, so the picker
-    // doubles as a "what's installed" indicator.
     const installed = installedSet && installedSet.has(v);
     const installedMark = installed ? ' ✓' : '';
     opt.textContent = v === DEFAULT_VERSION
@@ -145,12 +166,16 @@ function populateVersionPicker(installedSet) {
       : `${v}${installedMark}`;
     sel.appendChild(opt);
   }
+  // Restore the user's last pick if it's still on the list.
   const saved = localStorage.getItem(SAVED_VERSION_KEY) || DEFAULT_VERSION;
   sel.value = SUPPORTED_VERSIONS.includes(saved) ? saved : DEFAULT_VERSION;
-  sel.addEventListener('change', () => {
-    localStorage.setItem(SAVED_VERSION_KEY, sel.value);
-    loadState();   // re-resolve "is this version installed?" for the new pick
-  });
+  if (!versionPickerChangeWired) {
+    versionPickerChangeWired = true;
+    sel.addEventListener('change', () => {
+      localStorage.setItem(SAVED_VERSION_KEY, sel.value);
+      loadState();
+    });
+  }
 }
 
 // ───── Status helpers ───────────────────────────────────────────
@@ -603,21 +628,61 @@ usernameInput.addEventListener('keydown', (e) => {
 });
 
 // ───── Boot ─────────────────────────────────────────────────────
-// Pull the manifest first so the picker is correct on initial render
-// (avoids a flash of fallback-list then re-render to the real list).
-async function boot() {
+// Step 1 (synchronous): paint the UI with the fallback version list IMMEDIATELY,
+// so the dropdown is never empty even if everything else fails. This matters
+// because the Mojang fetch can take up to ~8s and the user might click PLAY
+// before it returns — without a populated dropdown they'd see an empty pill
+// and nothing to launch.
+populateVersionPicker();
+loadState();
+
+// Step 2 (async, fire-and-forget): try to enrich the picker from Mojang's
+// real manifest. If it works, re-render with the live list. If it doesn't,
+// the user keeps the fallback list — still functional.
+(async () => {
   try {
     const versions = await fetchSupportedVersions();
-    if (versions.length > 0) {
+    if (versions.length > 0 && JSON.stringify(versions) !== JSON.stringify(SUPPORTED_VERSIONS)) {
       SUPPORTED_VERSIONS = versions;
       DEFAULT_VERSION    = versions[0];
+      populateVersionPicker();
+      loadState();   // re-check install state against the (possibly new) default
     }
   } catch (e) {
-    console.warn('[shadow] boot manifest fetch failed:', e);
+    console.warn('[shadow] manifest enrich failed:', e);
   }
-  populateVersionPicker();
-  // Two parallel reads — account info (for the corner widget) doesn't
-  // depend on the install state and vice versa.
-  await Promise.all([loadAccount(), loadState()]);
+})();
+
+// Step 3 (async): load any cached MS account so the corner widget reflects
+// the signed-in state from a previous session.
+loadAccount();
+
+// Step 4 (async): probe Python availability and surface a clear banner if
+// it's missing. Without Python, setup_client / launch_game will fail with
+// "is Python on PATH?" — much better to tell the user UP FRONT so they
+// don't click PLAY expecting it to work.
+(async () => {
+  try {
+    const out = await invoke('check_python');
+    if (!out || !out.ok) showPythonBanner(out);
+  } catch (e) {
+    // check_python isn't implemented in older Rust builds — silently skip.
+  }
+})();
+
+function showPythonBanner(probeResult) {
+  const banner = document.createElement('div');
+  banner.className = 'startup-banner error';
+  banner.setAttribute('role', 'alert');
+  banner.innerHTML = `
+    <div class="startup-banner-title">⚠ Python 3.11+ not found</div>
+    <div class="startup-banner-body">
+      Shadow Client uses Python under the hood to download Minecraft. The
+      first PLAY click will fail until you install it.<br>
+      <a href="https://www.python.org/downloads/" target="_blank" rel="noopener">
+        Download Python (python.org)
+      </a> — pick "Add to PATH" during install, then reopen this launcher.
+    </div>
+  `;
+  document.body.appendChild(banner);
 }
-boot();

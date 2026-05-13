@@ -126,6 +126,49 @@ a:focus-visible,
   body::before { animation: none !important; }
 }
 
+/* ───── Startup banner (Python missing, etc.) ──────────────────
+   Stays visible at the top until the user closes the launcher.
+   We deliberately position absolute so it doesn't reshuffle the
+   layout — overlays the topbar with high z-index. */
+.startup-banner {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, calc(100vw - 32px));
+  background: rgba(80, 16, 22, 0.96);
+  border: 1px solid #c8161e;
+  border-radius: 10px;
+  padding: 14px 18px;
+  z-index: 500;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.startup-banner.error {
+  background: rgba(80, 16, 22, 0.96);
+}
+
+.startup-banner-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #ffdcd6;
+  margin-bottom: 6px;
+}
+
+.startup-banner-body {
+  font-size: 13px;
+  color: #ffd5cf;
+  line-height: 1.5;
+}
+
+.startup-banner-body a {
+  color: white;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.startup-banner-body a:hover { color: #fff5f2; }
+
 /* ───── Top bar ──────────────────────────────────────────────── */
 .topbar {
   display: flex;

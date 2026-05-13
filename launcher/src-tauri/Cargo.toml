@@ -1,6 +1,6 @@
 [package]
 name = "shadow-client-launcher"
-version = "0.2.8"
+version = "0.2.9"
 description = "Shadow Client launcher"
 authors = ["Edison"]
 license = "All Rights Reserved"

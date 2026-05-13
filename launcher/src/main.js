@@ -211,6 +211,8 @@ function setBusy(on, label) {
   if (on) {
     playText.textContent = label || 'WORKING…';
     playIcon.textContent = '⏳';
+    // Fresh ETA baseline — each PLAY click starts from zero.
+    resetEta();
   } else {
     playText.textContent = 'PLAY';
     playIcon.textContent = '▶';
@@ -319,6 +321,34 @@ async function playFlow() {
   setBusy(false);
 }
 
+// ───── ETA tracker ─────────────────────────────────────────────
+// Records when a long task starts + the most recent progress %, computes
+// "time remaining" so we can append it to status lines. Resets when the
+// user clicks PLAY (in setBusy(true)) so the ETA always reflects the
+// current setup run, not some stale baseline from earlier.
+let etaStartedAt = 0;          // ms epoch
+let etaLastProgress = -1;      // 0-100
+function resetEta() { etaStartedAt = Date.now(); etaLastProgress = -1; }
+function formatEta(pct) {
+  if (pct <= etaLastProgress || pct < 1 || pct >= 100) return '';
+  etaLastProgress = pct;
+  const elapsedMs = Date.now() - etaStartedAt;
+  if (elapsedMs < 4000) return '';     // first 4s — too early to extrapolate
+  const totalMs = elapsedMs / (pct / 100);
+  const remainingMs = totalMs - elapsedMs;
+  if (remainingMs < 1000) return '';
+  return formatDuration(remainingMs);
+}
+function formatDuration(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60)  return `~${s}s remaining`;
+  const m = Math.round(s / 60);
+  if (m < 60)  return `~${m} min remaining`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `~${h}h ${mm}m remaining`;
+}
+
 // ───── Friendly status parsing ──────────────────────────────────
 function friendlyStatusFor(line) {
   if (/download(ing)?\s+(mc|minecraft|vanilla|version)/i.test(line)) return 'Downloading Minecraft…';
@@ -353,9 +383,15 @@ listen('python-output', (event) => {
   appendLog(line, kind);
   if (!busy) return;
   const nice = friendlyStatusFor(line);
-  if (nice) setStatus(nice, 'working');
   const pct = tryParseProgress(line);
   if (pct !== null) setProgress(pct);
+  if (nice) {
+    // Append ETA when we have a meaningful one. Don't overwrite the
+    // friendly status with raw progress numbers — those still go to
+    // the detail log via appendLog above.
+    const eta = pct !== null ? formatEta(pct) : '';
+    setStatus(eta ? `${nice}  (${eta})` : nice, 'working');
+  }
 });
 
 // ───── Logs (inside Settings → Logs tab) ────────────────────────
@@ -712,13 +748,19 @@ setTimeout(() => {
     } catch (e) { console.warn('[shadow] manifest enrich failed:', e); }
   })();
 
-  // Python availability probe.
+  // Python availability probe. The v0.3.0+ Rust port doesn't actually
+  // need Python — check_python always returns ok=true, so this banner
+  // never fires. Kept around so the JS keeps working when running
+  // against older Rust builds that DID need Python.
   (async () => {
     try {
       const out = await invoke('check_python');
       if (!out || !out.ok) showPythonBanner(out);
     } catch (_) { /* old Rust build, silent */ }
   })();
+
+  // Housekeeping: nuke stale auto-update installers from %TEMP%.
+  invoke('sweep_update_temp').catch(() => {});
 
   // Self-update check.
   checkForLauncherUpdate();
@@ -748,7 +790,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.6';
+const HARDCODED_VERSION = '0.3.7';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

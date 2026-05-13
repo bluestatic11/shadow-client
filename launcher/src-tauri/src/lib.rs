@@ -362,6 +362,37 @@ fn project_path() -> String {
 /// hands it to us here. We trust the URL because it comes from a GitHub
 /// HTTPS API response — no signature verification, but the URL itself is
 /// authenticated end-to-end via TLS to api.github.com.
+/// Sweep stale installers out of the auto-update temp dir.
+///
+/// Every in-app auto-update writes the new installer to
+/// `%TEMP%\ShadowClient-update\Shadow.Client_<v>_x64-setup.exe` and spawns
+/// it. The installer ALWAYS completes before our process exits (we wait
+/// 800 ms to make sure), so the temp file becomes garbage as soon as
+/// install finishes. Without cleanup, every release leaves a 3-4 MB .exe
+/// behind in %TEMP% forever. Run on boot as fire-and-forget — failures
+/// are silently ignored, this is housekeeping not critical path.
+#[tauri::command]
+fn sweep_update_temp() {
+    let dir = std::env::temp_dir().join("ShadowClient-update");
+    if !dir.exists() { return; }
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let now = std::time::SystemTime::now();
+    for e in entries.flatten() {
+        // Only sweep files older than 30 min, so an in-flight update we
+        // just kicked off isn't deleted out from under us by a second
+        // launcher instance the user happened to open at the same time.
+        if let Ok(meta) = e.metadata() {
+            if let Ok(modified) = meta.modified() {
+                if let Ok(age) = now.duration_since(modified) {
+                    if age.as_secs() > 30 * 60 {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 async fn install_update(
     app: tauri::AppHandle,
@@ -504,6 +535,7 @@ pub fn run() {
             check_python,
             diagnostics,
             install_update,
+            sweep_update_temp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

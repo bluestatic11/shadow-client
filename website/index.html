@@ -128,27 +128,33 @@
       <h2>Download</h2>
       <p class="sub">Single-file installer. No sign-in. Type a username, click PLAY, first launch downloads the right version automatically.</p>
       <div class="download-grid">
-        <a href="https://github.com/bluestatic11/shadow-client/releases/download/v0.1.0/Shadow.Client_0.1.0_x64-setup.exe"
+        <!-- Static hrefs point at the GitHub "/releases/latest" PAGE rather
+             than a specific version file. If JS runs, it rewrites these to
+             the direct .exe / .dmg / .AppImage URLs of the literal latest
+             release (fetched via the GitHub API). If JS fails, the user
+             lands on the release page where they can pick the asset
+             manually — much better than 404ing on a stale versioned URL. -->
+        <a href="https://github.com/bluestatic11/shadow-client/releases/latest"
            class="download-card primary" data-platform="windows"
            data-asset-pattern="x64-setup\.exe$" download>
           <div class="dl-os">Windows</div>
-          <div class="dl-version">v0.1.0</div>
+          <div class="dl-version">latest</div>
           <div class="dl-btn">Download .exe</div>
           <div class="dl-size">Windows 10 / 11 x64</div>
         </a>
-        <a href="https://github.com/bluestatic11/shadow-client/releases/download/v0.1.0/Shadow.Client_0.1.0_universal.dmg"
+        <a href="https://github.com/bluestatic11/shadow-client/releases/latest"
            class="download-card" data-platform="mac"
            data-asset-pattern="universal\.dmg$" download>
           <div class="dl-os">macOS</div>
-          <div class="dl-version">v0.1.0</div>
+          <div class="dl-version">latest</div>
           <div class="dl-btn">Download .dmg</div>
           <div class="dl-size">macOS 12+ universal</div>
         </a>
-        <a href="https://github.com/bluestatic11/shadow-client/releases/download/v0.1.0/Shadow.Client_0.1.0_amd64.AppImage"
+        <a href="https://github.com/bluestatic11/shadow-client/releases/latest"
            class="download-card" data-platform="linux"
            data-asset-pattern="amd64\.AppImage$" download>
           <div class="dl-os">Linux</div>
-          <div class="dl-version">v0.1.0</div>
+          <div class="dl-version">latest</div>
           <div class="dl-btn">Download .AppImage</div>
           <div class="dl-size">x86_64</div>
         </a>

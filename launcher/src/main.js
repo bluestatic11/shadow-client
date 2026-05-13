@@ -538,7 +538,10 @@ function activateDialogTab(tab) {
 }
 
 dialogTabs.forEach(tab => {
-  tab.addEventListener('click', () => activateDialogTab(tab));
+  tab.addEventListener('click', () => {
+    activateDialogTab(tab);
+    if (tab.dataset.tab === 'diag') refreshDiagnostics();
+  });
   tab.addEventListener('keydown', (e) => {
     const i = dialogTabs.indexOf(tab);
     let target = null;
@@ -595,6 +598,58 @@ $('update-mods')?.addEventListener('click', async () => {
   }
   setProgress(-1);
   setBusy(false);
+});
+
+// ───── Diagnostics view ────────────────────────────────────────
+async function refreshDiagnostics() {
+  const out = $('diag-output');
+  if (!out) return;
+  out.textContent = 'Loading…';
+  try {
+    const d = await invoke('diagnostics');
+    out.textContent = renderDiagnostics(d);
+  } catch (e) {
+    out.textContent = 'diagnostics command unavailable in this build: ' + e;
+  }
+}
+
+function renderDiagnostics(d) {
+  // Plain-text format — fits in a chat message and is easy to grep.
+  const py = d.python || {};
+  const lines = [
+    `Launcher version:        ${d.launcher_version}`,
+    `Executable:              ${d.exe_path}`,
+    `Executable directory:    ${d.exe_dir}`,
+    `Resolved project root:   ${d.project_root}`,
+    `Has client.py?           ${d.project_root_has_client_py ? 'YES' : 'NO'}`,
+    `Working directory:       ${d.cwd}`,
+    `Python:                  ${py.ok ? '✓' : '✗'} ${py.detail || ''}`,
+    '',
+    'Files found in project root:',
+    ...(d.resource_files_present.length
+        ? d.resource_files_present.map(f => `  ✓ ${f}`)
+        : ['  (none — install is incomplete)']),
+    '',
+    'Candidate paths searched:',
+    ...d.candidates_checked.map(p => `  ${d.candidates_with_client_py.includes(p) ? '✓' : '·'} ${p}`),
+  ];
+  return lines.join('\n');
+}
+
+$('diag-refresh')?.addEventListener('click', refreshDiagnostics);
+$('diag-copy')?.addEventListener('click', async () => {
+  const text = $('diag-output')?.textContent || '';
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = $('diag-copy');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+  } catch (e) {
+    console.warn('clipboard write failed:', e);
+  }
 });
 
 // ───── Global keyboard shortcuts ────────────────────────────────

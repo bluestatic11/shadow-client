@@ -14,7 +14,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" aria-label="version">v0.2.12</span>
+      <span class="brand-sub" aria-label="version">v0.2.13</span>
     </h1>
 
     <div class="topbar-actions">
@@ -129,6 +129,11 @@
               aria-selected="false" aria-controls="dpage-keys" tabindex="-1">
         Shortcuts
       </button>
+      <button class="dlg-tab" data-tab="diag"
+              role="tab" id="dtab-diag"
+              aria-selected="false" aria-controls="dpage-diag" tabindex="-1">
+        Diagnostics
+      </button>
     </div>
 
     <div class="dialog-body">
@@ -188,6 +193,22 @@
           <li><kbd>Esc</kbd> — Close settings</li>
           <li><kbd>Tab</kbd> — Move focus to the next button</li>
         </ul>
+      </section>
+
+      <!-- Diagnostics — for troubleshooting installs that don't work. -->
+      <section class="dlg-page" id="dpage-diag"
+               role="tabpanel" aria-labelledby="dtab-diag" tabindex="0" hidden>
+        <p class="page-blurb">
+          If sign-in or PLAY isn't working, paste this whole block when
+          asking for help — it shows whether Python is detected, where
+          the launcher is looking for client.py, and what's actually
+          on disk where it expects them.
+        </p>
+        <div class="page-actions">
+          <button class="btn-sm primary" id="diag-refresh" type="button">Refresh</button>
+          <button class="btn-sm" id="diag-copy" type="button">Copy to clipboard</button>
+        </div>
+        <pre class="diag-output" id="diag-output">Loading…</pre>
       </section>
 
     </div>

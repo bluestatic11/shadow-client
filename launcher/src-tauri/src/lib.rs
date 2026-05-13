@@ -379,6 +379,93 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+/// A self-test bundle the UI can render in Settings → Diagnostics. Lists
+/// everything we know about the install state so a user can paste it back
+/// to support without us needing them to dig through %LOCALAPPDATA% or
+/// open dev tools.
+#[derive(Serialize, Clone)]
+pub struct Diagnostics {
+    pub launcher_version: String,
+    pub exe_path: String,
+    pub exe_dir: String,
+    pub project_root: String,
+    pub project_root_has_client_py: bool,
+    pub python: Option<PythonProbe>,
+    pub cwd: String,
+    pub candidates_checked: Vec<String>,
+    pub candidates_with_client_py: Vec<String>,
+    pub resource_files_present: Vec<String>,
+}
+
+#[tauri::command]
+fn diagnostics() -> Diagnostics {
+    let exe = std::env::current_exe().ok();
+    let exe_path = exe.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+    let exe_dir = exe.as_ref()
+        .and_then(|p| p.parent())
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+
+    // Re-run the candidate search to surface WHAT was checked, not just the
+    // final winner. Mirrors project_root()'s logic but records every probe.
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(p) = exe.as_ref().and_then(|p| p.parent()) {
+        candidates.push(p.join("resources"));
+        candidates.push(p.join("../Resources"));
+        candidates.push(p.to_path_buf());
+        let mut cur = p.to_path_buf();
+        for _ in 0..3 {
+            if let Some(parent) = cur.parent() {
+                cur = parent.to_path_buf();
+                candidates.push(cur.join("resources"));
+                candidates.push(cur.clone());
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("../.."));
+        candidates.push(cwd.join(".."));
+        candidates.push(cwd.clone());
+    }
+
+    let candidates_strs: Vec<String> = candidates.iter()
+        .map(|p| p.display().to_string())
+        .collect();
+    let with_client_py: Vec<String> = candidates.iter()
+        .filter(|p| p.join("client.py").exists())
+        .map(|p| p.display().to_string())
+        .collect();
+
+    let root = project_root();
+    let root_has = root.join("client.py").exists();
+
+    // List a few key files we EXPECT to find in the project root so the user
+    // can see if the bundle is incomplete.
+    let expected = [
+        "client.py", "auth.py", "mojang.py", "fabric.py", "mods.py", "jvm.py",
+        "jdk.py", "branding/hud_mod/build.py",
+    ];
+    let present: Vec<String> = expected.iter()
+        .filter(|f| root.join(f).exists())
+        .map(|s| s.to_string())
+        .collect();
+
+    Diagnostics {
+        launcher_version: env!("CARGO_PKG_VERSION").to_string(),
+        exe_path,
+        exe_dir,
+        project_root: root.display().to_string(),
+        project_root_has_client_py: root_has,
+        python: Some(check_python()),
+        cwd: std::env::current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
+        candidates_checked: candidates_strs,
+        candidates_with_client_py: with_client_py,
+        resource_files_present: present,
+    }
+}
+
 /// Result of probing for a usable Python interpreter.
 #[derive(Serialize, Clone)]
 pub struct PythonProbe {
@@ -507,6 +594,7 @@ pub fn run() {
             list_mods,
             project_path,
             check_python,
+            diagnostics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

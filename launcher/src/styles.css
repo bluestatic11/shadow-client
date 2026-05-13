@@ -994,6 +994,23 @@ body {
   color: var(--text-dim);
 }
 
+.diag-output {
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  background: #050709;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  color: var(--text-dim);
+  line-height: 1.55;
+  min-height: 200px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
 kbd {
   display: inline-block;
   background: var(--bg);

@@ -445,7 +445,14 @@ fn friends_add(username: String) -> Result<Vec<Friend>, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    friends.insert(0, Friend { username, added_at: now });
+    // The Friend struct gained optional status/server/version/last_seen
+    // fields in v0.3.11 — use Default::default() to fill them in rather
+    // than spelling each None out at every construction site.
+    friends.insert(0, Friend {
+        username,
+        added_at: now,
+        ..Default::default()
+    });
     save_friends(&friends)?;
     Ok(friends)
 }

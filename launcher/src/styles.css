@@ -247,10 +247,33 @@ body {
   justify-content: space-between;
   padding: 14px 24px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.1));
-  backdrop-filter: blur(8px);
+  background: linear-gradient(180deg,
+    rgba(13, 17, 23, 0.85) 0%,
+    rgba(10, 12, 18, 0.85) 100%);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   flex-shrink: 0;
   z-index: 10;
+  position: relative;
+}
+
+/* Soft brand-red line of light directly under the topbar border —
+   one-pixel "you're in Shadow Client" reminder that runs the full
+   width and gives the chrome a sense of depth. */
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(var(--accent-glow), 0.4) 20%,
+    rgba(var(--accent-glow), 0.7) 50%,
+    rgba(var(--accent-glow), 0.4) 80%,
+    transparent 100%);
+  pointer-events: none;
 }
 
 .brand {
@@ -519,6 +542,32 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+/* Staggered entry animation — each immediate child of home-content fades
+   up with a slight delay so the page settles in a satisfying cascade
+   rather than everything popping at once. */
+.home-content > * {
+  opacity: 0;
+  animation: cascadeIn 0.35s ease-out forwards;
+}
+.home-content > *:nth-child(1) { animation-delay: 0.02s; }
+.home-content > *:nth-child(2) { animation-delay: 0.08s; }
+.home-content > *:nth-child(3) { animation-delay: 0.14s; }
+.home-content > *:nth-child(4) { animation-delay: 0.20s; }
+.home-content > *:nth-child(5) { animation-delay: 0.26s; }
+.home-content > *:nth-child(n+6) { animation-delay: 0.32s; }
+
+@keyframes cascadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-content > * {
+    opacity: 1;
+    animation: none;
+  }
 }
 
 /* ───── Friends panel (right sidebar) ─────────────────────────
@@ -846,6 +895,27 @@ body {
   align-items: center;
   gap: 14px;
   padding: 16px 0;
+  position: relative;
+}
+
+/* Soft ambient brand-red glow centered behind the PLAY button. Adds
+   depth without being distracting — the glow is barely visible on
+   its own but gives the button area a sense of presence. */
+.play-area::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 540px;
+  height: 200px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse at center,
+    rgba(var(--accent-glow), 0.18) 0%,
+    rgba(var(--accent-glow), 0.06) 40%,
+    transparent 70%);
+  filter: blur(20px);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .play-area .play-btn {

@@ -370,6 +370,45 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+// ───── Cosmetics persistence ──────────────────────────────────
+//
+// Stored as a JSON object at <project_root>/cosmetics.json with one key
+// per slot (back / head / trail / accent). Values are short string IDs
+// (e.g. "cape", "halo", "fairies", or "#ff2030" for the accent color).
+// The Shadow HUD mod will read this file at game launch once it's
+// bundled in a follow-up release.
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct Cosmetics {
+    #[serde(default)] pub back:   Option<String>,
+    #[serde(default)] pub head:   Option<String>,
+    #[serde(default)] pub trail:  Option<String>,
+    #[serde(default)] pub accent: Option<String>,
+}
+
+fn cosmetics_file() -> PathBuf {
+    project_root().join("cosmetics.json")
+}
+
+#[tauri::command]
+fn read_cosmetics() -> Cosmetics {
+    let Ok(raw) = std::fs::read(cosmetics_file()) else { return Cosmetics::default() };
+    serde_json::from_slice(&raw).unwrap_or_default()
+}
+
+#[tauri::command]
+fn save_cosmetics(cosm: Cosmetics) -> Result<(), String> {
+    let path = cosmetics_file();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let body = serde_json::to_string_pretty(&cosm).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ───── Friends list ───────────────────────────────────────────
 //
 // Stored as a JSON array at <project_root>/friends.json. Pure
@@ -797,6 +836,8 @@ pub fn run() {
             friends_list,
             friends_add,
             friends_remove,
+            read_cosmetics,
+            save_cosmetics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

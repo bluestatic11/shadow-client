@@ -935,12 +935,12 @@ document.getElementById('action-mods')?.addEventListener('click', () => {
   if (tab) activateDialogTab(tab);
 });
 
+// Cosmetics quick action now opens the dedicated Cosmetics tab in the
+// settings dialog so the user can actually pick things.
 document.getElementById('action-cosmetics')?.addEventListener('click', () => {
-  setStatus(
-    'Cosmetics live inside the Shadow HUD overlay — those features ' +
-    'land in a follow-up release.', 'working'
-  );
-  setTimeout(() => setStatus('', null), 5000);
+  settingsDialog.showModal();
+  const tab = document.querySelector('.dlg-tab[data-tab="cosm"]');
+  if (tab) activateDialogTab(tab);
 });
 
 document.getElementById('action-hud-editor')?.addEventListener('click', () => {
@@ -1008,6 +1008,7 @@ dialogTabs.forEach(tab => {
   tab.addEventListener('click', () => {
     activateDialogTab(tab);
     if (tab.dataset.tab === 'diag') refreshDiagnostics();
+    if (tab.dataset.tab === 'cosm') loadCosmetics();
   });
   tab.addEventListener('keydown', (e) => {
     const i = dialogTabs.indexOf(tab);
@@ -1065,6 +1066,50 @@ $('update-mods')?.addEventListener('click', async () => {
   }
   setProgress(-1);
   setBusy(false);
+});
+
+// ───── Cosmetics tab ───────────────────────────────────────────
+// Each .cosm-section is one slot (back / head / trail / accent). Tiles
+// inside a section are mutually exclusive — click sets that slot to the
+// tile's data-value and unselects the previous one. Writes to disk via
+// Rust save_cosmetics on every change.
+let cosmCache = { back: null, head: null, trail: null, accent: null };
+
+async function loadCosmetics() {
+  try {
+    cosmCache = await invoke('read_cosmetics') || cosmCache;
+  } catch (_) {}
+  applyCosmeticsToUI();
+}
+
+function applyCosmeticsToUI() {
+  for (const section of document.querySelectorAll('.cosm-section')) {
+    const slot = section.dataset.slot;
+    const wanted = cosmCache[slot] || (slot === 'back' || slot === 'head' || slot === 'trail' ? 'none' : null);
+    section.querySelectorAll('.cosm-tile, .cosm-swatch').forEach(el => {
+      const isSelected = el.dataset.value === wanted ||
+        (wanted === null && slot === 'accent' && el.dataset.value === '#ff2030');
+      el.classList.toggle('selected', isSelected);
+      el.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    });
+  }
+}
+
+document.querySelectorAll('.cosm-section').forEach(section => {
+  const slot = section.dataset.slot;
+  section.addEventListener('click', async (e) => {
+    const target = e.target.closest('.cosm-tile, .cosm-swatch');
+    if (!target) return;
+    const value = target.dataset.value;
+    // "none" tiles save as null so the HUD reads "no cosmetic in this slot".
+    cosmCache[slot] = (value === 'none') ? null : value;
+    applyCosmeticsToUI();
+    try {
+      await invoke('save_cosmetics', { cosm: cosmCache });
+    } catch (err) {
+      console.warn('[shadow] save_cosmetics failed:', err);
+    }
+  });
 });
 
 // ───── Diagnostics view ────────────────────────────────────────
@@ -1165,6 +1210,7 @@ loadState();
 loadAccount();
 refreshStats();
 refreshFriends();
+loadCosmetics();
 
 // 3. Background tasks — kicked off but not awaited, and deliberately
 //    delayed by 200ms so they happen AFTER the first paint settles.
@@ -1228,7 +1274,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.14';
+const HARDCODED_VERSION = '0.3.15';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

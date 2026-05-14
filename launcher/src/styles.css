@@ -1710,6 +1710,120 @@ body {
 .log-line.stderr { color: #ff8a8a; }
 .log-line.exit   { color: var(--amber); border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }
 
+/* ───── Cosmetics tab ──────────────────────────────────────── */
+.cosm-section {
+  margin-bottom: 22px;
+}
+
+.cosm-slot-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+.cosm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.cosm-tile {
+  background: linear-gradient(135deg,
+    var(--bg-3) 0%,
+    rgba(28, 34, 48, 0.85) 100%);
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  padding: 16px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-dim);
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.cosm-tile:hover {
+  border-color: var(--text-mute);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.cosm-tile.selected {
+  border-color: var(--accent-2);
+  background: linear-gradient(135deg,
+    rgba(var(--accent-glow), 0.20) 0%,
+    rgba(var(--accent-glow), 0.05) 100%);
+  color: var(--text);
+  box-shadow:
+    0 0 0 1px rgba(var(--accent-glow), 0.3),
+    0 0 14px rgba(var(--accent-glow), 0.25);
+}
+
+/* Tiny corner check on the selected tile so the state reads
+   instantly even at a glance. */
+.cosm-tile.selected::before {
+  content: '✓';
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent-2);
+}
+
+.cosm-icon {
+  font-size: 26px;
+  color: var(--accent-2);
+  line-height: 1;
+}
+
+.cosm-tile:not(.selected) .cosm-icon {
+  color: var(--text-mute);
+}
+
+.cosm-name {
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+/* Accent-color swatches — circles, brand-red ring on selected. */
+.cosm-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cosm-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  padding: 0;
+  position: relative;
+}
+
+.cosm-swatch:hover { transform: scale(1.1); border-color: var(--text); }
+
+.cosm-swatch.selected {
+  border-color: white;
+  box-shadow:
+    0 0 0 2px var(--accent-2),
+    0 0 12px rgba(var(--accent-glow), 0.5);
+  transform: scale(1.05);
+}
+
 /* ───── Keyboard shortcuts ────────────────────────────────── */
 .shortcut-list {
   list-style: none;

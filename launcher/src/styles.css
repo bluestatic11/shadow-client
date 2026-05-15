@@ -1710,6 +1710,28 @@ body {
 .log-line.stderr { color: #ff8a8a; }
 .log-line.exit   { color: var(--amber); border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }
 
+/* Validation badge at the top of the cosmetics tab. Green if catalog
+   passed self-test, red if any check failed. */
+.cosm-validation {
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  padding: 7px 12px;
+  border-radius: 5px;
+  margin-bottom: 18px;
+  display: inline-block;
+  letter-spacing: 0.3px;
+}
+.cosm-validation.ok {
+  background: rgba(34, 221, 85, 0.10);
+  color: var(--green);
+  border: 1px solid rgba(34, 221, 85, 0.3);
+}
+.cosm-validation.fail {
+  background: rgba(255, 138, 138, 0.10);
+  color: #ff8a8a;
+  border: 1px solid rgba(255, 138, 138, 0.3);
+}
+
 /* ───── Cosmetics tab ──────────────────────────────────────── */
 .cosm-section {
   margin-bottom: 22px;

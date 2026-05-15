@@ -1087,80 +1087,212 @@ $('update-mods')?.addEventListener('click', async () => {
 // cosmetics.json would just render as "no selection" rather than crashing.
 const COSMETICS_CATALOG = {
   back: [
-    { id: 'none',              name: 'None',          icon: '∅' },
-    // Capes — varied palette so they're distinguishable at a glance.
-    { id: 'cape_shadow',       name: 'Shadow',        icon: '▽', color: '#ff2030' },
-    { id: 'cape_storm',        name: 'Storm',         icon: '▽', color: '#3a9eda' },
-    { id: 'cape_embers',       name: 'Embers',        icon: '▽', color: '#ff8a40' },
-    { id: 'cape_frost',        name: 'Frost',         icon: '▽', color: '#9ad8ea' },
-    { id: 'cape_royal',        name: 'Royal',         icon: '▽', color: '#a050ff' },
-    { id: 'cape_forest',       name: 'Forest',        icon: '▽', color: '#22dd55' },
-    { id: 'cape_noir',         name: 'Noir',          icon: '▽', color: '#444' },
-    { id: 'cape_solar',        name: 'Solar',         icon: '▽', color: '#ffd24a' },
-    { id: 'cape_galaxy',       name: 'Galaxy',        icon: '▽', color: '#7050cc' },
-    // Wings (also occupy the back slot — mutually exclusive with capes).
-    { id: 'wings_dragon',      name: 'Dragon',        icon: '⫷⫸', color: '#ff2030' },
-    { id: 'wings_angel',       name: 'Angel',         icon: '✦',  color: '#e8e8ec' },
-    { id: 'wings_demon',       name: 'Demon',         icon: '⫷⫸', color: '#660020' },
-    { id: 'wings_fairy',       name: 'Fairy',         icon: '✿',  color: '#ffb0e0' },
-    { id: 'wings_butterfly',   name: 'Butterfly',     icon: '⨳',  color: '#3a9eda' },
-    { id: 'wings_phoenix',     name: 'Phoenix',       icon: '✦',  color: '#ff8a40' },
-    { id: 'wings_bat',         name: 'Bat',           icon: '⫷⫸', color: '#2a2030' },
-    { id: 'wings_crystal',     name: 'Crystal',       icon: '◇',  color: '#9ad8ea' },
+    { id: 'none',            name: 'None',         icon: '∅' },
+    // ─── Capes (color/theme variants) ────────────────────────────
+    { id: 'cape_shadow',     name: 'Shadow',       icon: '▽', color: '#ff2030' },
+    { id: 'cape_storm',      name: 'Storm',        icon: '▽', color: '#3a9eda' },
+    { id: 'cape_embers',     name: 'Embers',       icon: '▽', color: '#ff8a40' },
+    { id: 'cape_frost',      name: 'Frost',        icon: '▽', color: '#9ad8ea' },
+    { id: 'cape_royal',      name: 'Royal',        icon: '▽', color: '#a050ff' },
+    { id: 'cape_forest',     name: 'Forest',       icon: '▽', color: '#22dd55' },
+    { id: 'cape_noir',       name: 'Noir',         icon: '▽', color: '#444444' },
+    { id: 'cape_solar',      name: 'Solar',        icon: '▽', color: '#ffd24a' },
+    { id: 'cape_galaxy',     name: 'Galaxy',       icon: '▽', color: '#7050cc' },
+    { id: 'cape_aurora',     name: 'Aurora',       icon: '▽', color: '#0ad6a8' },
+    { id: 'cape_sunset',     name: 'Sunset',       icon: '▽', color: '#ff70a0' },
+    { id: 'cape_eclipse',    name: 'Eclipse',      icon: '▽', color: '#202028' },
+    { id: 'cape_inferno',    name: 'Inferno',      icon: '▽', color: '#dc2020' },
+    { id: 'cape_tide',       name: 'Tide',         icon: '▽', color: '#4090d8' },
+    { id: 'cape_mist',       name: 'Mist',         icon: '▽', color: '#b8b8c0' },
+    { id: 'cape_volt',       name: 'Volt',         icon: '▽', color: '#fff45a' },
+    { id: 'cape_steel',      name: 'Steel',        icon: '▽', color: '#909098' },
+    { id: 'cape_rose',       name: 'Rose',         icon: '▽', color: '#ff8888' },
+    { id: 'cape_crimson',    name: 'Crimson',      icon: '▽', color: '#8b0020' },
+    // ─── Wings ────────────────────────────────────────────────────
+    { id: 'wings_dragon',    name: 'Dragon',       icon: '⫷⫸', color: '#ff2030' },
+    { id: 'wings_angel',     name: 'Angel',        icon: '✦',  color: '#e8e8ec' },
+    { id: 'wings_demon',     name: 'Demon',        icon: '⫷⫸', color: '#660020' },
+    { id: 'wings_fairy',     name: 'Fairy',        icon: '✿',  color: '#ffb0e0' },
+    { id: 'wings_butterfly', name: 'Butterfly',    icon: '⨳',  color: '#3a9eda' },
+    { id: 'wings_phoenix',   name: 'Phoenix',      icon: '✦',  color: '#ff8a40' },
+    { id: 'wings_bat',       name: 'Bat',          icon: '⫷⫸', color: '#2a2030' },
+    { id: 'wings_crystal',   name: 'Crystal',      icon: '◇',  color: '#9ad8ea' },
+    { id: 'wings_mech',      name: 'Mech',         icon: '⫷⫸', color: '#909098' },
+    { id: 'wings_astral',    name: 'Astral',       icon: '✦',  color: '#a050ff' },
+    { id: 'wings_toxic',     name: 'Toxic',        icon: '⫷⫸', color: '#88dd22' },
+    { id: 'wings_void',      name: 'Void',         icon: '⫷⫸', color: '#3a2050' },
+    { id: 'wings_origami',   name: 'Origami',      icon: '◇',  color: '#fff0e0' },
+    { id: 'wings_shark',     name: 'Shark Fin',    icon: '▲',  color: '#6088a0' },
   ],
   head: [
-    { id: 'none',              name: 'None',          icon: '∅' },
-    { id: 'head_halo',         name: 'Halo',          icon: '◯',  color: '#ffd24a' },
-    { id: 'head_crown',        name: 'Crown',         icon: '♔',  color: '#ffd24a' },
-    { id: 'head_antlers',      name: 'Antlers',       icon: '⫮',  color: '#bb8855' },
-    { id: 'head_tophat',       name: 'Top Hat',       icon: '⌂',  color: '#1a1a1a' },
-    { id: 'head_tiara',        name: 'Tiara',         icon: '♦',  color: '#9ad8ea' },
-    { id: 'head_helmet',       name: 'Helmet',        icon: '⛨',  color: '#888' },
-    { id: 'head_beanie',       name: 'Beanie',        icon: '◓',  color: '#3a9eda' },
-    { id: 'head_headband',     name: 'Headband',      icon: '—',  color: '#ff2030' },
+    { id: 'none',            name: 'None',         icon: '∅' },
+    { id: 'head_halo',       name: 'Halo',         icon: '◯',  color: '#ffd24a' },
+    { id: 'head_crown',      name: 'Crown',        icon: '♔',  color: '#ffd24a' },
+    { id: 'head_antlers',    name: 'Antlers',      icon: '⫮',  color: '#bb8855' },
+    { id: 'head_tophat',     name: 'Top Hat',      icon: '⌂',  color: '#1a1a1a' },
+    { id: 'head_tiara',      name: 'Tiara',        icon: '♦',  color: '#9ad8ea' },
+    { id: 'head_helmet',     name: 'Helmet',       icon: '⛨',  color: '#888888' },
+    { id: 'head_beanie',     name: 'Beanie',       icon: '◓',  color: '#3a9eda' },
+    { id: 'head_headband',   name: 'Headband',     icon: '—',  color: '#ff2030' },
+    { id: 'head_wizard',     name: 'Wizard Hat',   icon: '⌂',  color: '#a050ff' },
+    { id: 'head_cowboy',     name: 'Cowboy Hat',   icon: '⌂',  color: '#bb8855' },
+    { id: 'head_cap',        name: 'Cap',          icon: '◓',  color: '#ff2030' },
+    { id: 'head_phones',     name: 'Headphones',   icon: '⊂⊃', color: '#202020' },
+    { id: 'head_mask',       name: 'Mask',         icon: '◬',  color: '#e8e8ec' },
+    { id: 'head_mohawk',     name: 'Mohawk',       icon: '⏶',  color: '#ff2030' },
+    { id: 'head_cat_ears',   name: 'Cat Ears',     icon: '⏶',  color: '#ffb0e0' },
+    { id: 'head_glasses',    name: 'Glasses',      icon: '◙◙', color: '#202020' },
+    { id: 'head_pirate',     name: 'Pirate Hat',   icon: '⌂',  color: '#202020' },
+    { id: 'head_visor',      name: 'Cyber Visor',  icon: '─',  color: '#0adada' },
   ],
   trail: [
-    { id: 'none',              name: 'None',          icon: '∅' },
-    { id: 'trail_fairies',     name: 'Fairies',       icon: '✨', color: '#ffb0e0' },
-    { id: 'trail_footsteps',   name: 'Footsteps',     icon: '⋯',  color: '#a8a8a8' },
-    { id: 'trail_stars',       name: 'Stars',         icon: '★',  color: '#ffd24a' },
-    { id: 'trail_bow',         name: 'Bow Trail',     icon: '⤳',  color: '#ff2030' },
-    { id: 'trail_fire',        name: 'Fire',          icon: '▲',  color: '#ff8a40' },
-    { id: 'trail_ice',         name: 'Ice',           icon: '❄',  color: '#9ad8ea' },
-    { id: 'trail_lightning',   name: 'Lightning',     icon: '⚡', color: '#fff45a' },
-    { id: 'trail_hearts',      name: 'Hearts',        icon: '♥',  color: '#ff60a0' },
-    { id: 'trail_petals',      name: 'Petals',        icon: '❀',  color: '#ffb0e0' },
+    { id: 'none',            name: 'None',         icon: '∅' },
+    { id: 'trail_fairies',   name: 'Fairies',      icon: '✨', color: '#ffb0e0' },
+    { id: 'trail_footsteps', name: 'Footsteps',    icon: '⋯',  color: '#a8a8a8' },
+    { id: 'trail_stars',     name: 'Stars',        icon: '★',  color: '#ffd24a' },
+    { id: 'trail_bow',       name: 'Bow Trail',    icon: '⤳',  color: '#ff2030' },
+    { id: 'trail_fire',      name: 'Fire',         icon: '▲',  color: '#ff8a40' },
+    { id: 'trail_ice',       name: 'Ice',          icon: '❄',  color: '#9ad8ea' },
+    { id: 'trail_lightning', name: 'Lightning',    icon: '⚡', color: '#fff45a' },
+    { id: 'trail_hearts',    name: 'Hearts',       icon: '♥',  color: '#ff60a0' },
+    { id: 'trail_petals',    name: 'Petals',       icon: '❀',  color: '#ffb0e0' },
+    { id: 'trail_bubbles',   name: 'Bubbles',      icon: '○',  color: '#9ad8ea' },
+    { id: 'trail_smoke',     name: 'Smoke',        icon: '☁',  color: '#888888' },
+    { id: 'trail_leaves',    name: 'Leaves',       icon: '☘',  color: '#22dd55' },
+    { id: 'trail_magic',     name: 'Magic',        icon: '✺',  color: '#a050ff' },
+    { id: 'trail_cherry',    name: 'Cherry Bloss', icon: '❀',  color: '#ff90c0' },
+    { id: 'trail_confetti',  name: 'Confetti',     icon: '◆',  color: '#e040c0' },
+    { id: 'trail_skulls',    name: 'Skulls',       icon: '☠',  color: '#e8e8ec' },
+    { id: 'trail_comet',     name: 'Comet',        icon: '☄',  color: '#3a9eda' },
   ],
   aura: [
-    { id: 'none',              name: 'None',          icon: '∅' },
-    { id: 'aura_soft',         name: 'Soft Glow',     icon: '◌',  color: '#ffffff' },
-    { id: 'aura_brand',        name: 'Brand',         icon: '◌',  color: '#ff2030' },
-    { id: 'aura_holy',         name: 'Holy',          icon: '◌',  color: '#ffd24a' },
-    { id: 'aura_shadow',       name: 'Shadow',        icon: '◌',  color: '#3a2a3a' },
-    { id: 'aura_energy',       name: 'Energy',        icon: '◌',  color: '#3a9eda' },
-    { id: 'aura_nature',       name: 'Nature',        icon: '◌',  color: '#22dd55' },
-    { id: 'aura_arcane',       name: 'Arcane',        icon: '◌',  color: '#a050ff' },
+    { id: 'none',            name: 'None',         icon: '∅' },
+    { id: 'aura_soft',       name: 'Soft Glow',    icon: '◌',  color: '#ffffff' },
+    { id: 'aura_brand',      name: 'Brand',        icon: '◌',  color: '#ff2030' },
+    { id: 'aura_holy',       name: 'Holy',         icon: '◌',  color: '#ffd24a' },
+    { id: 'aura_shadow',     name: 'Shadow',       icon: '◌',  color: '#3a2a3a' },
+    { id: 'aura_energy',     name: 'Energy',       icon: '◌',  color: '#3a9eda' },
+    { id: 'aura_nature',     name: 'Nature',       icon: '◌',  color: '#22dd55' },
+    { id: 'aura_arcane',     name: 'Arcane',       icon: '◌',  color: '#a050ff' },
+    { id: 'aura_crimson',    name: 'Crimson',      icon: '◌',  color: '#8b0020' },
+    { id: 'aura_verdant',    name: 'Verdant',      icon: '◌',  color: '#88dd22' },
+    { id: 'aura_mystic',     name: 'Mystic',       icon: '◌',  color: '#0ad6d6' },
+    { id: 'aura_spectral',   name: 'Spectral',     icon: '◌',  color: '#c0e0ff' },
+    { id: 'aura_void',       name: 'Void',         icon: '◌',  color: '#2a1040' },
+    { id: 'aura_neon',       name: 'Neon',         icon: '◌',  color: '#e040c0' },
   ],
   accent: [
-    // Used for the HUD's accent color. Stored as the hex string itself.
+    // 24-color accent palette. Stored as the hex string itself.
     { id: '#ff2030', name: 'Brand Red' },
-    { id: '#ff60a0', name: 'Pink' },
-    { id: '#ff8a40', name: 'Orange' },
-    { id: '#ffd24a', name: 'Gold' },
-    { id: '#fff45a', name: 'Yellow' },
-    { id: '#22dd55', name: 'Green' },
-    { id: '#0ad6a8', name: 'Mint' },
-    { id: '#0ad6d6', name: 'Teal' },
-    { id: '#3a9eda', name: 'Blue' },
-    { id: '#4060d0', name: 'Navy' },
-    { id: '#a050ff', name: 'Purple' },
-    { id: '#e040c0', name: 'Magenta' },
-    { id: '#9ad8ea', name: 'Cyan' },
-    { id: '#e8e8ec', name: 'White' },
-    { id: '#888888', name: 'Grey' },
-    { id: '#1a1a1a', name: 'Black' },
+    { id: '#dc2020', name: 'Crimson'   },
+    { id: '#ff60a0', name: 'Pink'      },
+    { id: '#ff7088', name: 'Coral'     },
+    { id: '#ff8a40', name: 'Orange'    },
+    { id: '#ffb840', name: 'Amber'     },
+    { id: '#ffd24a', name: 'Gold'      },
+    { id: '#fff45a', name: 'Yellow'    },
+    { id: '#a8ff40', name: 'Lime'      },
+    { id: '#22dd55', name: 'Green'     },
+    { id: '#1e6038', name: 'Forest'    },
+    { id: '#0ad6a8', name: 'Mint'      },
+    { id: '#0ad6d6', name: 'Teal'      },
+    { id: '#9ad8ea', name: 'Cyan'      },
+    { id: '#3a9eda', name: 'Blue'      },
+    { id: '#7ec8ff', name: 'Sky'       },
+    { id: '#4060d0', name: 'Navy'      },
+    { id: '#3030c0', name: 'Indigo'    },
+    { id: '#a050ff', name: 'Purple'    },
+    { id: '#c898ff', name: 'Lavender'  },
+    { id: '#e040c0', name: 'Magenta'   },
+    { id: '#e8e8ec', name: 'White'     },
+    { id: '#888888', name: 'Grey'      },
+    { id: '#1a1a1a', name: 'Black'     },
   ],
 };
+
+/**
+ * Catalog self-test. Runs at boot + the first time the cosmetics tab
+ * opens. Logs "Catalog OK" if everything checks out, or a list of
+ * specific errors if anything is wrong. This is bug-check pass 2 for
+ * every cosmetic — pass 1 is the manual code review at edit time.
+ *
+ * Checks performed against EVERY catalog entry:
+ *   1. ID is a non-empty string
+ *   2. IDs are unique within each slot
+ *   3. ID matches the pattern: 'none' / lowercase_with_underscores /
+ *      '#rrggbb' (the accent-slot hex form)
+ *   4. Name is a non-empty string
+ *   5. Tile-slot entries have an icon set
+ *   6. Color (if present) is a valid 6-digit hex
+ *   7. Tile slots (everything except 'accent') include a 'none' entry
+ *   8. No ID appears in more than one slot (except 'none' which is
+ *      slot-scoped and intentionally shared)
+ */
+function verifyCatalog() {
+  const errors = [];
+  const allIds = new Map();
+  let total = 0;
+
+  for (const [slot, items] of Object.entries(COSMETICS_CATALOG)) {
+    const slotIds = new Set();
+    for (const item of items) {
+      total++;
+      // 1. ID validity
+      if (typeof item.id !== 'string' || item.id.length === 0) {
+        errors.push(`${slot}: item missing id → ${JSON.stringify(item)}`);
+        continue;
+      }
+      // 2. Slot-local uniqueness
+      if (slotIds.has(item.id)) {
+        errors.push(`${slot}: duplicate id '${item.id}'`);
+      }
+      slotIds.add(item.id);
+      // 3. ID format
+      const idOk = item.id === 'none'
+        || /^[a-z][a-z0-9_]*$/.test(item.id)
+        || /^#[0-9a-f]{6}$/i.test(item.id);
+      if (!idOk) {
+        errors.push(`${slot}: id '${item.id}' fails format check`);
+      }
+      // 4. Name
+      if (typeof item.name !== 'string' || !item.name.trim()) {
+        errors.push(`${slot}: '${item.id}' has empty name`);
+      }
+      // 5. Icon for tile slots
+      if (slot !== 'accent' && (typeof item.icon !== 'string' || !item.icon)) {
+        errors.push(`${slot}: '${item.id}' has no icon`);
+      }
+      // 6. Color hex (if present)
+      if (item.color !== undefined && !/^#[0-9a-f]{6}$/i.test(item.color)) {
+        errors.push(`${slot}: '${item.id}' has invalid color '${item.color}'`);
+      }
+      // 8. Cross-slot collision (skip 'none' — it's slot-scoped)
+      if (item.id !== 'none') {
+        const prev = allIds.get(item.id);
+        if (prev && prev !== slot) {
+          errors.push(`cross-slot collision: '${item.id}' in '${prev}' and '${slot}'`);
+        }
+        allIds.set(item.id, slot);
+      }
+    }
+    // 7. Tile slots need 'none'
+    if (slot !== 'accent' && !slotIds.has('none')) {
+      errors.push(`${slot}: missing 'none' entry`);
+    }
+  }
+
+  if (errors.length) {
+    console.error('[shadow] Catalog FAILED validation (' + errors.length
+      + ' errors):\n  ' + errors.join('\n  '));
+    return { ok: false, errors, total };
+  }
+  console.log(`[shadow] Catalog OK — ${total} cosmetics validated`);
+  return { ok: true, errors: [], total };
+}
+
+// Run the self-test at module-load time so any catalog typo surfaces
+// immediately in the console + can be caught before the user sees it.
+const __CATALOG_CHECK = verifyCatalog();
 
 // Pretty slot titles. Order matters — this is the render order.
 const COSM_SLOTS = [
@@ -1207,6 +1339,17 @@ function renderCosmeticsTab() {
   const host = document.getElementById('cosm-sections-host');
   if (!host) return;
   host.innerHTML = '';
+
+  // Validation status badge — surfaces the catalog self-test result in
+  // the UI so the user can see at a glance that every cosmetic passed
+  // the runtime checks. Green if ok, red if any check failed.
+  const badge = document.createElement('div');
+  badge.className = __CATALOG_CHECK.ok ? 'cosm-validation ok' : 'cosm-validation fail';
+  badge.textContent = __CATALOG_CHECK.ok
+    ? `✓ ${__CATALOG_CHECK.total} cosmetics — all validated`
+    : `✗ Catalog failed validation (${__CATALOG_CHECK.errors.length} errors — see console)`;
+  host.appendChild(badge);
+
   for (const { key, title } of COSM_SLOTS) {
     const section = document.createElement('div');
     section.className = 'cosm-section';
@@ -1484,7 +1627,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.17';
+const HARDCODED_VERSION = '0.3.18';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

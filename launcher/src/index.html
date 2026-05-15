@@ -14,7 +14,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.15</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.16</span>
     </h1>
 
     <div class="topbar-actions">
@@ -285,93 +285,18 @@
              role="log" aria-live="polite" aria-label="Process output"></div>
       </section>
 
-      <!-- Cosmetics — pick one item per slot (Back / Head / Trail).
-           Saved to cosmetics.json so the Shadow HUD mod can read it when
-           bundled in a follow-up release. -->
+      <!-- Cosmetics — pick one item per slot. Saved to cosmetics.json
+           so the Shadow HUD mod can read it when bundled. Tiles are
+           generated dynamically from the JS COSMETICS_CATALOG so the
+           HTML stays clean and adding new items is one-line. -->
       <section class="dlg-page" id="dpage-cosm"
                role="tabpanel" aria-labelledby="dtab-cosm" tabindex="0" hidden>
         <p class="page-blurb">
           Pick what you want to wear in-game. Selections save instantly —
-          they take effect once you launch Minecraft with the Shadow HUD
-          overlay (bundling that's coming in a later release; for now
-          your picks persist).
+          they apply once you launch Minecraft with the Shadow HUD overlay
+          bundled (coming in a follow-up). Until then, your picks persist.
         </p>
-
-        <div class="cosm-section" data-slot="back">
-          <h4 class="cosm-slot-title">Back</h4>
-          <div class="cosm-grid">
-            <button class="cosm-tile" data-value="none" type="button">
-              <span class="cosm-icon" aria-hidden="true">∅</span>
-              <span class="cosm-name">None</span>
-            </button>
-            <button class="cosm-tile" data-value="cape" type="button">
-              <span class="cosm-icon" aria-hidden="true">▽</span>
-              <span class="cosm-name">Cape</span>
-            </button>
-            <button class="cosm-tile" data-value="cape_alt" type="button">
-              <span class="cosm-icon" aria-hidden="true">◣</span>
-              <span class="cosm-name">Cape Alt</span>
-            </button>
-            <button class="cosm-tile" data-value="wings" type="button">
-              <span class="cosm-icon" aria-hidden="true">⫷⫸</span>
-              <span class="cosm-name">Wings</span>
-            </button>
-            <button class="cosm-tile" data-value="angel_wings" type="button">
-              <span class="cosm-icon" aria-hidden="true">✦</span>
-              <span class="cosm-name">Angel Wings</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="cosm-section" data-slot="head">
-          <h4 class="cosm-slot-title">Head</h4>
-          <div class="cosm-grid">
-            <button class="cosm-tile" data-value="none" type="button">
-              <span class="cosm-icon" aria-hidden="true">∅</span>
-              <span class="cosm-name">None</span>
-            </button>
-            <button class="cosm-tile" data-value="halo" type="button">
-              <span class="cosm-icon" aria-hidden="true">◯</span>
-              <span class="cosm-name">Halo</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="cosm-section" data-slot="trail">
-          <h4 class="cosm-slot-title">Trail</h4>
-          <div class="cosm-grid">
-            <button class="cosm-tile" data-value="none" type="button">
-              <span class="cosm-icon" aria-hidden="true">∅</span>
-              <span class="cosm-name">None</span>
-            </button>
-            <button class="cosm-tile" data-value="fairies" type="button">
-              <span class="cosm-icon" aria-hidden="true">✨</span>
-              <span class="cosm-name">Fairies</span>
-            </button>
-            <button class="cosm-tile" data-value="footsteps" type="button">
-              <span class="cosm-icon" aria-hidden="true">⋯</span>
-              <span class="cosm-name">Footsteps</span>
-            </button>
-            <button class="cosm-tile" data-value="bow_trail" type="button">
-              <span class="cosm-icon" aria-hidden="true">⤳</span>
-              <span class="cosm-name">Bow Trail</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="cosm-section" data-slot="accent">
-          <h4 class="cosm-slot-title">Accent color</h4>
-          <div class="cosm-swatches">
-            <button class="cosm-swatch" data-value="#ff2030" type="button" aria-label="Brand red" style="background:#ff2030"></button>
-            <button class="cosm-swatch" data-value="#22dd55" type="button" aria-label="Green" style="background:#22dd55"></button>
-            <button class="cosm-swatch" data-value="#3a9eda" type="button" aria-label="Blue" style="background:#3a9eda"></button>
-            <button class="cosm-swatch" data-value="#d8c75a" type="button" aria-label="Gold" style="background:#d8c75a"></button>
-            <button class="cosm-swatch" data-value="#a050ff" type="button" aria-label="Purple" style="background:#a050ff"></button>
-            <button class="cosm-swatch" data-value="#ff8a40" type="button" aria-label="Orange" style="background:#ff8a40"></button>
-            <button class="cosm-swatch" data-value="#ffffff" type="button" aria-label="White" style="background:#ffffff"></button>
-            <button class="cosm-swatch" data-value="#1a1a1a" type="button" aria-label="Black" style="background:#1a1a1a"></button>
-          </div>
-        </div>
+        <div id="cosm-sections-host"><!-- sections injected by JS --></div>
       </section>
 
       <!-- Keyboard shortcuts -->

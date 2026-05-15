@@ -383,6 +383,8 @@ pub struct Cosmetics {
     #[serde(default)] pub back:   Option<String>,
     #[serde(default)] pub head:   Option<String>,
     #[serde(default)] pub trail:  Option<String>,
+    /// Added v0.3.16. Optional on disk so older cosmetics.json files load.
+    #[serde(default)] pub aura:   Option<String>,
     #[serde(default)] pub accent: Option<String>,
 }
 

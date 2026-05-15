@@ -1068,49 +1068,229 @@ $('update-mods')?.addEventListener('click', async () => {
   setBusy(false);
 });
 
-// ───── Cosmetics tab ───────────────────────────────────────────
-// Each .cosm-section is one slot (back / head / trail / accent). Tiles
-// inside a section are mutually exclusive — click sets that slot to the
-// tile's data-value and unselects the previous one. Writes to disk via
-// Rust save_cosmetics on every change.
-let cosmCache = { back: null, head: null, trail: null, accent: null };
+// ───── Cosmetics catalog ────────────────────────────────────────
+// Single source of truth for every cosmetic the launcher offers. Each
+// item has:
+//   id     — globally unique string ID (used as the saved value)
+//   name   — display label
+//   icon   — single character or short string shown in the tile
+//   color  — optional hex tint applied to the icon (visually distinguishes
+//            items in the same slot — e.g. red dragon wings vs white angel)
+//
+// IDs are prefixed by slot (cape_*, wings_*, head_*, trail_*, aura_*) so a
+// stale value from one slot can never collide with another.
+//
+// Bug-check pass #1 (code review): every item across every slot has a
+// unique ID; "none" is reserved by every slot so deselection is consistent.
+// Bug-check pass #2 (walkthrough): saved cosmCache only ever stores values
+// from this catalog; an attacker injecting a foreign value into
+// cosmetics.json would just render as "no selection" rather than crashing.
+const COSMETICS_CATALOG = {
+  back: [
+    { id: 'none',              name: 'None',          icon: '∅' },
+    // Capes — varied palette so they're distinguishable at a glance.
+    { id: 'cape_shadow',       name: 'Shadow',        icon: '▽', color: '#ff2030' },
+    { id: 'cape_storm',        name: 'Storm',         icon: '▽', color: '#3a9eda' },
+    { id: 'cape_embers',       name: 'Embers',        icon: '▽', color: '#ff8a40' },
+    { id: 'cape_frost',        name: 'Frost',         icon: '▽', color: '#9ad8ea' },
+    { id: 'cape_royal',        name: 'Royal',         icon: '▽', color: '#a050ff' },
+    { id: 'cape_forest',       name: 'Forest',        icon: '▽', color: '#22dd55' },
+    { id: 'cape_noir',         name: 'Noir',          icon: '▽', color: '#444' },
+    { id: 'cape_solar',        name: 'Solar',         icon: '▽', color: '#ffd24a' },
+    { id: 'cape_galaxy',       name: 'Galaxy',        icon: '▽', color: '#7050cc' },
+    // Wings (also occupy the back slot — mutually exclusive with capes).
+    { id: 'wings_dragon',      name: 'Dragon',        icon: '⫷⫸', color: '#ff2030' },
+    { id: 'wings_angel',       name: 'Angel',         icon: '✦',  color: '#e8e8ec' },
+    { id: 'wings_demon',       name: 'Demon',         icon: '⫷⫸', color: '#660020' },
+    { id: 'wings_fairy',       name: 'Fairy',         icon: '✿',  color: '#ffb0e0' },
+    { id: 'wings_butterfly',   name: 'Butterfly',     icon: '⨳',  color: '#3a9eda' },
+    { id: 'wings_phoenix',     name: 'Phoenix',       icon: '✦',  color: '#ff8a40' },
+    { id: 'wings_bat',         name: 'Bat',           icon: '⫷⫸', color: '#2a2030' },
+    { id: 'wings_crystal',     name: 'Crystal',       icon: '◇',  color: '#9ad8ea' },
+  ],
+  head: [
+    { id: 'none',              name: 'None',          icon: '∅' },
+    { id: 'head_halo',         name: 'Halo',          icon: '◯',  color: '#ffd24a' },
+    { id: 'head_crown',        name: 'Crown',         icon: '♔',  color: '#ffd24a' },
+    { id: 'head_antlers',      name: 'Antlers',       icon: '⫮',  color: '#bb8855' },
+    { id: 'head_tophat',       name: 'Top Hat',       icon: '⌂',  color: '#1a1a1a' },
+    { id: 'head_tiara',        name: 'Tiara',         icon: '♦',  color: '#9ad8ea' },
+    { id: 'head_helmet',       name: 'Helmet',        icon: '⛨',  color: '#888' },
+    { id: 'head_beanie',       name: 'Beanie',        icon: '◓',  color: '#3a9eda' },
+    { id: 'head_headband',     name: 'Headband',      icon: '—',  color: '#ff2030' },
+  ],
+  trail: [
+    { id: 'none',              name: 'None',          icon: '∅' },
+    { id: 'trail_fairies',     name: 'Fairies',       icon: '✨', color: '#ffb0e0' },
+    { id: 'trail_footsteps',   name: 'Footsteps',     icon: '⋯',  color: '#a8a8a8' },
+    { id: 'trail_stars',       name: 'Stars',         icon: '★',  color: '#ffd24a' },
+    { id: 'trail_bow',         name: 'Bow Trail',     icon: '⤳',  color: '#ff2030' },
+    { id: 'trail_fire',        name: 'Fire',          icon: '▲',  color: '#ff8a40' },
+    { id: 'trail_ice',         name: 'Ice',           icon: '❄',  color: '#9ad8ea' },
+    { id: 'trail_lightning',   name: 'Lightning',     icon: '⚡', color: '#fff45a' },
+    { id: 'trail_hearts',      name: 'Hearts',        icon: '♥',  color: '#ff60a0' },
+    { id: 'trail_petals',      name: 'Petals',        icon: '❀',  color: '#ffb0e0' },
+  ],
+  aura: [
+    { id: 'none',              name: 'None',          icon: '∅' },
+    { id: 'aura_soft',         name: 'Soft Glow',     icon: '◌',  color: '#ffffff' },
+    { id: 'aura_brand',        name: 'Brand',         icon: '◌',  color: '#ff2030' },
+    { id: 'aura_holy',         name: 'Holy',          icon: '◌',  color: '#ffd24a' },
+    { id: 'aura_shadow',       name: 'Shadow',        icon: '◌',  color: '#3a2a3a' },
+    { id: 'aura_energy',       name: 'Energy',        icon: '◌',  color: '#3a9eda' },
+    { id: 'aura_nature',       name: 'Nature',        icon: '◌',  color: '#22dd55' },
+    { id: 'aura_arcane',       name: 'Arcane',        icon: '◌',  color: '#a050ff' },
+  ],
+  accent: [
+    // Used for the HUD's accent color. Stored as the hex string itself.
+    { id: '#ff2030', name: 'Brand Red' },
+    { id: '#ff60a0', name: 'Pink' },
+    { id: '#ff8a40', name: 'Orange' },
+    { id: '#ffd24a', name: 'Gold' },
+    { id: '#fff45a', name: 'Yellow' },
+    { id: '#22dd55', name: 'Green' },
+    { id: '#0ad6a8', name: 'Mint' },
+    { id: '#0ad6d6', name: 'Teal' },
+    { id: '#3a9eda', name: 'Blue' },
+    { id: '#4060d0', name: 'Navy' },
+    { id: '#a050ff', name: 'Purple' },
+    { id: '#e040c0', name: 'Magenta' },
+    { id: '#9ad8ea', name: 'Cyan' },
+    { id: '#e8e8ec', name: 'White' },
+    { id: '#888888', name: 'Grey' },
+    { id: '#1a1a1a', name: 'Black' },
+  ],
+};
+
+// Pretty slot titles. Order matters — this is the render order.
+const COSM_SLOTS = [
+  { key: 'back',   title: 'Back'        },
+  { key: 'head',   title: 'Head'        },
+  { key: 'trail',  title: 'Trail'       },
+  { key: 'aura',   title: 'Aura'        },
+  { key: 'accent', title: 'Accent color'},
+];
+
+// Default selections per slot. "none" for tile slots, brand red for accent.
+const COSM_DEFAULTS = {
+  back: 'none', head: 'none', trail: 'none', aura: 'none', accent: '#ff2030',
+};
+
+let cosmCache = { back: null, head: null, trail: null, aura: null, accent: null };
+let cosmRendered = false;
 
 async function loadCosmetics() {
   try {
-    cosmCache = await invoke('read_cosmetics') || cosmCache;
+    cosmCache = (await invoke('read_cosmetics')) || cosmCache;
   } catch (_) {}
+  // Normalise + validate.
+  //   1. Fill in missing slot keys (older cosmetics.json files may not
+  //      have the 'aura' field yet — Rust serde defaults already do this,
+  //      but the JS side belt-and-suspenders).
+  //   2. Reject any value that doesn't exist in the current catalog —
+  //      this happens if the user downgrades, or a renamed/deleted item
+  //      lingers in their save. Replace with null so the UI shows
+  //      "None" (or the default) instead of "nothing selected".
+  for (const { key } of COSM_SLOTS) {
+    if (!(key in cosmCache)) cosmCache[key] = null;
+    const v = cosmCache[key];
+    if (v != null) {
+      const known = COSMETICS_CATALOG[key].some(item => item.id === v);
+      if (!known) cosmCache[key] = null;
+    }
+  }
+  if (!cosmRendered) renderCosmeticsTab();
   applyCosmeticsToUI();
 }
 
+function renderCosmeticsTab() {
+  const host = document.getElementById('cosm-sections-host');
+  if (!host) return;
+  host.innerHTML = '';
+  for (const { key, title } of COSM_SLOTS) {
+    const section = document.createElement('div');
+    section.className = 'cosm-section';
+    section.dataset.slot = key;
+
+    const h = document.createElement('h4');
+    h.className = 'cosm-slot-title';
+    h.textContent = title;
+    section.appendChild(h);
+
+    const grid = document.createElement('div');
+    grid.className = key === 'accent' ? 'cosm-swatches' : 'cosm-grid';
+
+    for (const item of COSMETICS_CATALOG[key]) {
+      grid.appendChild(buildCosmEntry(key, item));
+    }
+    section.appendChild(grid);
+    host.appendChild(section);
+  }
+  // Single delegated click handler — survives re-renders, no risk of
+  // double-attached listeners.
+  host.addEventListener('click', onCosmClick);
+  cosmRendered = true;
+}
+
+function buildCosmEntry(slot, item) {
+  if (slot === 'accent') {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cosm-swatch';
+    b.dataset.value = item.id;
+    b.style.background = item.id;
+    b.setAttribute('aria-label', item.name);
+    b.title = item.name;
+    return b;
+  }
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'cosm-tile';
+  b.dataset.value = item.id;
+  const icon = document.createElement('span');
+  icon.className = 'cosm-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = item.icon;
+  if (item.color) icon.style.color = item.color;
+  b.appendChild(icon);
+  const name = document.createElement('span');
+  name.className = 'cosm-name';
+  name.textContent = item.name;
+  b.appendChild(name);
+  return b;
+}
+
+async function onCosmClick(e) {
+  const target = e.target.closest('.cosm-tile, .cosm-swatch');
+  if (!target) return;
+  const section = target.closest('.cosm-section');
+  if (!section) return;
+  const slot = section.dataset.slot;
+  const value = target.dataset.value;
+
+  // "none" tiles persist as null so the HUD reads "no cosmetic in slot".
+  // For the accent slot every value is a real selection.
+  cosmCache[slot] = (value === 'none') ? null : value;
+  applyCosmeticsToUI();
+  try {
+    await invoke('save_cosmetics', { cosm: cosmCache });
+  } catch (err) {
+    console.warn('[shadow] save_cosmetics failed:', err);
+  }
+}
+
 function applyCosmeticsToUI() {
-  for (const section of document.querySelectorAll('.cosm-section')) {
-    const slot = section.dataset.slot;
-    const wanted = cosmCache[slot] || (slot === 'back' || slot === 'head' || slot === 'trail' ? 'none' : null);
+  for (const { key } of COSM_SLOTS) {
+    const wanted = cosmCache[key] ?? COSM_DEFAULTS[key];
+    const section = document.querySelector(`.cosm-section[data-slot="${key}"]`);
+    if (!section) continue;
     section.querySelectorAll('.cosm-tile, .cosm-swatch').forEach(el => {
-      const isSelected = el.dataset.value === wanted ||
-        (wanted === null && slot === 'accent' && el.dataset.value === '#ff2030');
+      const isSelected = el.dataset.value === wanted;
       el.classList.toggle('selected', isSelected);
       el.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     });
   }
 }
-
-document.querySelectorAll('.cosm-section').forEach(section => {
-  const slot = section.dataset.slot;
-  section.addEventListener('click', async (e) => {
-    const target = e.target.closest('.cosm-tile, .cosm-swatch');
-    if (!target) return;
-    const value = target.dataset.value;
-    // "none" tiles save as null so the HUD reads "no cosmetic in this slot".
-    cosmCache[slot] = (value === 'none') ? null : value;
-    applyCosmeticsToUI();
-    try {
-      await invoke('save_cosmetics', { cosm: cosmCache });
-    } catch (err) {
-      console.warn('[shadow] save_cosmetics failed:', err);
-    }
-  });
-});
 
 // ───── Diagnostics view ────────────────────────────────────────
 async function refreshDiagnostics() {
@@ -1274,7 +1454,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.15';
+const HARDCODED_VERSION = '0.3.16';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

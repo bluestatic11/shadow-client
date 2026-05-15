@@ -1329,6 +1329,36 @@ function renderDiagnostics(d) {
 }
 
 $('diag-refresh')?.addEventListener('click', refreshDiagnostics);
+
+// Manual update-check button. Belt-and-suspenders fallback for users
+// whose auto-update silently fails (network hiccup at boot, CSP
+// regression, etc.) — clicking this re-runs the same check that
+// fires on launcher boot, with a clear status message either way.
+$('diag-check-update')?.addEventListener('click', async () => {
+  const btn = $('diag-check-update');
+  if (!btn) return;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  try {
+    const r = await fetch(LAUNCHER_UPDATE_URL);
+    if (!r.ok) throw new Error('GitHub returned ' + r.status);
+    const data = await r.json();
+    const latest = (data.tag_name || '').replace(/^v/, '').trim();
+    if (!latest) throw new Error('No release found');
+    if (compareSemver(latest, CURRENT_LAUNCHER_VERSION) <= 0) {
+      btn.textContent = `Already on latest (v${CURRENT_LAUNCHER_VERSION})`;
+    } else {
+      btn.textContent = `Update found — v${latest}, installing…`;
+      // Fall through to the normal auto-install path.
+      checkForLauncherUpdate();
+    }
+  } catch (e) {
+    btn.textContent = 'Check failed: ' + String(e).slice(0, 50);
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 4500);
+});
+
 $('diag-copy')?.addEventListener('click', async () => {
   const text = $('diag-output')?.textContent || '';
   try {
@@ -1454,7 +1484,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.16';
+const HARDCODED_VERSION = '0.3.17';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

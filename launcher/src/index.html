@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https://*.mojang.com">
+  <!-- connect-src https: allows every HTTPS host. This is intentionally
+       permissive: we're a desktop app, not a public web page, so the
+       cross-origin-data-exfiltration risk that CSP normally guards against
+       doesn't apply. Restricting to specific origins (mojang.com only)
+       silently broke auto-update for every user since v0.3.2 because
+       api.github.com wasn't whitelisted, and the update-check fetch
+       errored into a silent catch block. Widening it once + done. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https:">
   <title>Shadow Client</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,7 +21,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.16</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.17</span>
     </h1>
 
     <div class="topbar-actions">
@@ -322,6 +329,7 @@
         <div class="page-actions">
           <button class="btn-sm primary" id="diag-refresh" type="button">Refresh</button>
           <button class="btn-sm" id="diag-copy" type="button">Copy to clipboard</button>
+          <button class="btn-sm" id="diag-check-update" type="button">Check for updates now</button>
         </div>
         <pre class="diag-output" id="diag-output">Loading…</pre>
       </section>

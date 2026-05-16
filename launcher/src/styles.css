@@ -110,11 +110,12 @@ a:focus-visible,
 }
 
 /* ───── Startup banner stack (Python missing, update available, etc.) ─
-   Banners pin to the top of the window and stack vertically. We use
-   flex on a fixed-position wrapper instead of stacking individual
-   position:fixed elements, so a second banner never lands on top of
-   the first. Old behaviour: both banners rendered with top:8px and
-   overlapped each other into illegibility. */
+   Banners dock to the bottom-LEFT of the window as toast-style cards.
+   v0.3.21: moved away from top-center because users reported they blocked
+   the PLAY button area — and on smaller windows the 680 px banner ran
+   into the friends panel. Bottom-left keeps the center of the window
+   clear, sits well above the status-footer, and doesn't overlap with
+   the friends panel on the right. Stacks upward when there are multiple. */
 body {
   /* Children get rendered above the gradient. Banners are inserted at
      end of body and will appear above the main flow. */
@@ -122,22 +123,29 @@ body {
 
 .startup-banner {
   position: fixed;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(680px, calc(100vw - 32px));
+  bottom: 64px;      /* sits above the status-footer (~48 px) + breathing */
+  left: 16px;
+  width: min(380px, calc(100vw - 32px));
   background: rgba(80, 16, 22, 0.96);
   border: 1px solid #c8161e;
   border-radius: 10px;
-  padding: 14px 18px;
+  padding: 12px 14px;
   z-index: 500;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  animation: bannerSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Second banner offset — uses general sibling combinator so an update
-   banner shown after a python banner sits underneath, and vice versa. */
+   banner shown after a python banner sits ABOVE the first one (stacking
+   upward like a normal toast queue). Was 110 px below the first when
+   banners docked at the top; now the math reverses. */
 .startup-banner ~ .startup-banner {
-  top: calc(8px + 110px);
+  bottom: calc(64px + 110px);
+}
+
+@keyframes bannerSlideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 .startup-banner.error {

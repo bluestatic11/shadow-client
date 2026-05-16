@@ -276,6 +276,18 @@ pub async fn launch(
     progress(format!("Main class: {main_class}"));
     progress(format!("User: {} ({})", acct.username, acct.user_type));
     progress(format!("Heap: {heap_mb}M  GC: {gc}"));
+
+    // Dump the full command line to <here>/last-launch-cmd.log so that if
+    // Java crashes (e.g. UnsatisfiedLinkError) we can diagnose it from the
+    // recorded invocation — `progress(...)` output is gone the moment the
+    // launcher window is reopened, but this file persists. Also writes the
+    // natives_dir on its own line + a directory listing so we can confirm
+    // lwjgl.dll & friends actually got extracted before launch.
+    let log_path = here.join("last-launch-cmd.log");
+    let _ = write_launch_log(
+        &log_path, &java, java_major, &all_args, &profile_dir, &natives_dir,
+    );
+    progress(format!("Launch command logged → {}", log_path.display()));
     progress("Starting Minecraft — first boot can take 30-60s…".into());
 
     // Spawn Java. We capture stdout/stderr line-by-line via an mpsc channel
@@ -321,4 +333,64 @@ fn build_http_client() -> Result<reqwest::Client> {
         .timeout(std::time::Duration::from_secs(120))
         .build()?;
     Ok(client)
+}
+
+/// Write a human-readable record of the Java command line + natives state
+/// to `last-launch-cmd.log`. Errors are best-effort; never fail the launch
+/// because the log couldn't be written.
+fn write_launch_log(
+    log_path: &Path,
+    java: &Path,
+    java_major: u32,
+    args: &[String],
+    cwd: &Path,
+    natives_dir: &Path,
+) -> Result<()> {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(4096);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    writeln!(s, "# Shadow Client launch log").ok();
+    writeln!(s, "# unix_ts={now}").ok();
+    writeln!(s, "# java={}", java.display()).ok();
+    writeln!(s, "# java_major={java_major}").ok();
+    writeln!(s, "# cwd={}", cwd.display()).ok();
+    writeln!(s, "# natives_dir={}", natives_dir.display()).ok();
+    writeln!(s).ok();
+    writeln!(s, "# === args (one per line) ===").ok();
+    for a in args {
+        writeln!(s, "{a}").ok();
+    }
+    writeln!(s).ok();
+    writeln!(s, "# === natives directory contents ===").ok();
+    match std::fs::read_dir(natives_dir) {
+        Ok(rd) => {
+            let mut entries: Vec<(String, u64)> = rd
+                .filter_map(|e| e.ok())
+                .map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+                    (name, size)
+                })
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            if entries.is_empty() {
+                writeln!(s, "(empty)").ok();
+            } else {
+                for (name, size) in entries {
+                    writeln!(s, "{size:>10}  {name}").ok();
+                }
+            }
+        }
+        Err(e) => {
+            writeln!(s, "(unreadable: {e})").ok();
+        }
+    }
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    std::fs::write(log_path, s)?;
+    Ok(())
 }

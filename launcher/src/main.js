@@ -1373,6 +1373,13 @@ function renderCosmeticsTab() {
   if (!host) return;
   host.innerHTML = '';
 
+  // Character mesh preview — Lunar-style mannequin showing the currently
+  // equipped cape/wings/head on a blocky Minecraft-shaped silhouette.
+  // The user asked for this in v0.3.24: "show the mesh." Each cosmetic
+  // slot maps to a visual layer on the character. Updated reactively
+  // by applyCosmeticsToUI() whenever a tile is clicked.
+  host.appendChild(buildCharacterPreview());
+
   // Validation status badge — surfaces the catalog self-test result in
   // the UI so the user can see at a glance that every cosmetic passed
   // the runtime checks. Green if ok, red if any check failed.
@@ -1424,33 +1431,187 @@ function buildCosmEntry(slot, item) {
   b.className = 'cosm-tile';
   b.dataset.value = item.id;
 
-  // Color hint strip across the top of the tile. Emoji glyphs render in
-  // the system's own emoji colors and ignore `color: ...`, so without
-  // this strip the user can't tell a brand-red 'Crimson' cape from a
-  // navy 'Tide' cape — every cape would render with its emoji and
-  // identical grey tile chrome. Strip is only drawn when item.color is
-  // set (i.e. skipped on the 'None' tile).
-  if (item.color) {
-    const swatch = document.createElement('span');
-    swatch.className = 'cosm-color-strip';
-    swatch.setAttribute('aria-hidden', 'true');
-    swatch.style.background = item.color;
-    b.appendChild(swatch);
-  }
-
-  const icon = document.createElement('span');
-  icon.className = 'cosm-icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = item.icon;
-  // Color is intentionally NOT applied to the icon any more — emojis
-  // own their pixel colors. The strip above carries the color identity.
-  b.appendChild(icon);
+  // v0.3.24: shape-based previews instead of color strips + emojis. Each
+  // cosmetic category renders a stylized SVG/CSS shape so the tile
+  // visually resembles the item — a cape looks like a cape, wings look
+  // like wings, an aura looks like a glowing disc. Previously every cape
+  // rendered as the same triangle + a 6px color strip and they all
+  // looked indistinguishable. This is what the Lunar-style preview the
+  // user shared screenshot of actually does.
+  const preview = buildCosmPreview(slot, item);
+  b.appendChild(preview);
 
   const name = document.createElement('span');
   name.className = 'cosm-name';
   name.textContent = item.name;
   b.appendChild(name);
   return b;
+}
+
+/**
+ * Build the visual preview block for a cosmetic tile. Routed by slot +
+ * id-prefix so capes get cape-shapes, wings get wing-shapes, etc. Falls
+ * back to the emoji icon for anything that doesn't have a dedicated
+ * preview (e.g. the 'None' tile or future slots).
+ */
+function buildCosmPreview(slot, item) {
+  // 'None' tile in any slot — show a muted crossed-out circle so it
+  // doesn't compete visually with the colorful real cosmetics.
+  if (item.id === 'none') {
+    const none = document.createElement('div');
+    none.className = 'cosm-preview cosm-preview-none';
+    none.setAttribute('aria-hidden', 'true');
+    none.innerHTML =
+      '<svg viewBox="0 0 32 32" width="32" height="32">' +
+        '<circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2"/>' +
+        '<line x1="6" y1="26" x2="26" y2="6" stroke="currentColor" stroke-width="2"/>' +
+      '</svg>';
+    return none;
+  }
+
+  // Cape — rectangular cloth with mesh weave. Looks like Lunar's cape
+  // thumbnails: a piece of dyed fabric you'd hang on a character's back.
+  if (slot === 'back' && item.id.startsWith('cape_') && item.color) {
+    const cape = document.createElement('div');
+    cape.className = 'cosm-preview cape-preview';
+    cape.style.setProperty('--cape-color', item.color);
+    cape.setAttribute('aria-hidden', 'true');
+    // Collar notch as a child div so we don't fight CSS pseudo-element
+    // limitations across themes.
+    cape.innerHTML = '<div class="cape-collar"></div>';
+    return cape;
+  }
+
+  // Wings — two angled wing shapes flanking an invisible torso, SVG so
+  // the silhouette is exact rather than a div hack.
+  if (slot === 'back' && item.id.startsWith('wings_') && item.color) {
+    const wings = document.createElement('div');
+    wings.className = 'cosm-preview wings-preview';
+    wings.style.setProperty('--wings-color', item.color);
+    wings.setAttribute('aria-hidden', 'true');
+    wings.innerHTML =
+      '<svg viewBox="0 0 70 50" width="64" height="46">' +
+        // Left wing — feather-shaped path
+        '<path d="M 35 25 Q 20 5, 2 12 Q 8 28, 18 32 Q 25 32, 35 25 Z" ' +
+              'fill="var(--wings-color)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>' +
+        // Right wing — mirror
+        '<path d="M 35 25 Q 50 5, 68 12 Q 62 28, 52 32 Q 45 32, 35 25 Z" ' +
+              'fill="var(--wings-color)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>' +
+        // Highlight strokes for depth
+        '<path d="M 18 14 Q 12 22, 14 28" fill="none" ' +
+              'stroke="rgba(255,255,255,0.25)" stroke-width="1"/>' +
+        '<path d="M 52 14 Q 58 22, 56 28" fill="none" ' +
+              'stroke="rgba(255,255,255,0.25)" stroke-width="1"/>' +
+      '</svg>';
+    return wings;
+  }
+
+  // Head — emoji on a tinted disk. Head items vary too much (hat, halo,
+  // mask, glasses) to draw a single canonical shape, so we lean on
+  // emoji which already convey the type clearly.
+  if (slot === 'head' && item.color) {
+    const head = document.createElement('div');
+    head.className = 'cosm-preview head-preview';
+    head.style.setProperty('--head-color', item.color);
+    head.setAttribute('aria-hidden', 'true');
+    head.innerHTML = `<span class="head-emoji">${item.icon}</span>`;
+    return head;
+  }
+
+  // Trail — three small dots in the trail's color, hinting at a particle
+  // line. Plus the trail's emoji centered on top.
+  if (slot === 'trail' && item.color) {
+    const trail = document.createElement('div');
+    trail.className = 'cosm-preview trail-preview';
+    trail.style.setProperty('--trail-color', item.color);
+    trail.setAttribute('aria-hidden', 'true');
+    trail.innerHTML =
+      `<span class="trail-emoji">${item.icon}</span>` +
+      '<div class="trail-dots">' +
+        '<span></span><span></span><span></span>' +
+      '</div>';
+    return trail;
+  }
+
+  // Aura — glowing colored disc, radial gradient. The aura's nature is
+  // "a colored glow around the character" so showing it as a soft circle
+  // is the most faithful representation.
+  if (slot === 'aura' && item.color) {
+    const aura = document.createElement('div');
+    aura.className = 'cosm-preview aura-preview';
+    aura.style.setProperty('--aura-color', item.color);
+    aura.setAttribute('aria-hidden', 'true');
+    return aura;
+  }
+
+  // Fallback — emoji on tinted backdrop. Covers any slot we didn't
+  // special-case above.
+  const fallback = document.createElement('div');
+  fallback.className = 'cosm-preview cosm-preview-fallback';
+  if (item.color) fallback.style.setProperty('--fallback-color', item.color);
+  fallback.setAttribute('aria-hidden', 'true');
+  fallback.textContent = item.icon || '';
+  return fallback;
+}
+
+/**
+ * Build the character mannequin shown at the top of the cosmetics tab.
+ * Blocky Minecraft-style silhouette built from CSS-styled divs (no
+ * external assets), with overlay layers for cape/wings/head/aura that
+ * are toggled on/off by applyCosmeticsToUI().
+ *
+ * "Show the mesh" — we don't have a real 3D renderer in the launcher,
+ * but a stylized 2D character is enough to communicate "here's what
+ * you'll look like in-game".
+ */
+function buildCharacterPreview() {
+  const mount = document.createElement('div');
+  mount.className = 'cosm-character-mount';
+  mount.id = 'cosm-character-mount';
+  mount.innerHTML = `
+    <div class="char-stage">
+      <!-- Aura sits behind everything else -->
+      <div class="char-aura"     id="char-aura"     aria-hidden="true"></div>
+      <!-- Wings render behind the body -->
+      <div class="char-wings"    id="char-wings"    aria-hidden="true"></div>
+      <!-- Cape behind the body, in front of wings -->
+      <div class="char-cape"     id="char-cape"     aria-hidden="true">
+        <div class="char-cape-collar"></div>
+      </div>
+      <!-- Trail particles drifting behind the legs -->
+      <div class="char-trail"    id="char-trail"    aria-hidden="true"></div>
+      <!-- Body parts in front -->
+      <div class="char-body" aria-hidden="true">
+        <div class="char-head-block">
+          <span class="char-head-overlay" id="char-head-overlay"></span>
+        </div>
+        <div class="char-torso-block"></div>
+        <div class="char-arm-l"></div>
+        <div class="char-arm-r"></div>
+        <div class="char-leg-l"></div>
+        <div class="char-leg-r"></div>
+      </div>
+    </div>
+    <div class="char-info">
+      <div class="char-info-label">PREVIEW</div>
+      <ul class="char-equipped" id="char-equipped">
+        <li data-slot="back">  <span class="char-slot-name">Back</span>
+                               <span class="char-slot-val">None</span></li>
+        <li data-slot="head">  <span class="char-slot-name">Head</span>
+                               <span class="char-slot-val">None</span></li>
+        <li data-slot="trail"> <span class="char-slot-name">Trail</span>
+                               <span class="char-slot-val">None</span></li>
+        <li data-slot="aura">  <span class="char-slot-name">Aura</span>
+                               <span class="char-slot-val">None</span></li>
+        <li data-slot="accent"><span class="char-slot-name">Accent</span>
+                               <span class="char-slot-val">—</span></li>
+      </ul>
+      <div class="char-info-hint">
+        Click any item below to equip. Selections save instantly.
+      </div>
+    </div>
+  `;
+  return mount;
 }
 
 async function onCosmClick(e) {
@@ -1482,6 +1643,95 @@ function applyCosmeticsToUI() {
       el.classList.toggle('selected', isSelected);
       el.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     });
+  }
+  updateCharacterPreview();
+}
+
+/**
+ * Reflect the current cosmCache onto the character mannequin at the
+ * top of the cosmetics tab. Each slot toggles a different visual
+ * layer on the character — cape gets the cape color, head gets the
+ * matching emoji on the head block, etc. Updated every time a tile
+ * is clicked so the user sees the result before saving.
+ */
+function updateCharacterPreview() {
+  const mount = document.getElementById('cosm-character-mount');
+  if (!mount) return;  // tab not rendered yet
+  const lookup = id => {
+    for (const slot of Object.keys(COSMETICS_CATALOG)) {
+      const hit = COSMETICS_CATALOG[slot].find(i => i.id === id);
+      if (hit) return hit;
+    }
+    return null;
+  };
+
+  // Back slot — capes vs wings render differently on the body.
+  const backId = cosmCache.back;
+  const back = backId && backId !== 'none' ? lookup(backId) : null;
+  const cape  = document.getElementById('char-cape');
+  const wings = document.getElementById('char-wings');
+  if (cape && wings) {
+    if (back && back.id.startsWith('cape_')) {
+      cape.style.setProperty('--cape-color', back.color);
+      cape.style.display = 'block';
+      wings.style.display = 'none';
+    } else if (back && back.id.startsWith('wings_')) {
+      wings.style.setProperty('--wings-color', back.color);
+      wings.style.display = 'block';
+      cape.style.display = 'none';
+    } else {
+      cape.style.display = 'none';
+      wings.style.display = 'none';
+    }
+  }
+
+  // Head — overlay an emoji on the head block.
+  const headId = cosmCache.head;
+  const head = headId && headId !== 'none' ? lookup(headId) : null;
+  const headOverlay = document.getElementById('char-head-overlay');
+  if (headOverlay) {
+    headOverlay.textContent = head ? head.icon : '';
+  }
+
+  // Trail — show 3 colored dots at the character's feet if equipped.
+  const trailId = cosmCache.trail;
+  const trail = trailId && trailId !== 'none' ? lookup(trailId) : null;
+  const trailEl = document.getElementById('char-trail');
+  if (trailEl) {
+    if (trail) {
+      trailEl.style.setProperty('--trail-color', trail.color);
+      trailEl.style.display = 'block';
+    } else {
+      trailEl.style.display = 'none';
+    }
+  }
+
+  // Aura — radial glow behind the whole character.
+  const auraId = cosmCache.aura;
+  const aura = auraId && auraId !== 'none' ? lookup(auraId) : null;
+  const auraEl = document.getElementById('char-aura');
+  if (auraEl) {
+    if (aura) {
+      auraEl.style.setProperty('--aura-color', aura.color);
+      auraEl.style.display = 'block';
+    } else {
+      auraEl.style.display = 'none';
+    }
+  }
+
+  // Equipment summary list on the right side of the preview.
+  const list = document.getElementById('char-equipped');
+  if (list) {
+    const setRow = (slot, name) => {
+      const row = list.querySelector(`li[data-slot="${slot}"] .char-slot-val`);
+      if (row) row.textContent = name;
+    };
+    setRow('back',   back   ? back.name   : 'None');
+    setRow('head',   head   ? head.name   : 'None');
+    setRow('trail',  trail  ? trail.name  : 'None');
+    setRow('aura',   aura   ? aura.name   : 'None');
+    const accent = lookup(cosmCache.accent || COSM_DEFAULTS.accent);
+    setRow('accent', accent ? accent.name : '—');
   }
 }
 

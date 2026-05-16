@@ -513,14 +513,23 @@ body {
 }
 
 /* ───── Main panel ─────────────────────────────────────────────
-   New layout: vertical brand-red accent bar on the left edge,
-   then content (greeting, play area, stat tiles, quick actions),
-   then a status footer pinned to the bottom of the window. */
+   v0.3.23: true two-column grid. Previous layout used position: absolute
+   for the friends panel + margin-right magic on .home-content, which
+   left a window of widths where the panel would slide over the 4th
+   column of the stat / action tiles. CSS grid pins each region to its
+   own column so overlap is structurally impossible.
+   Layout:
+     [   content (greeting/PLAY/stats/actions/updates)   |  friends  ]
+     [                       footer                                  ] */
 .main {
   flex: 1;
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
   grid-template-rows: 1fr auto;
+  grid-template-areas:
+    "content friends"
+    "footer  footer";
   overflow-y: auto;
   animation: fadeUp 0.4s ease-out;
 }
@@ -543,13 +552,15 @@ body {
 }
 
 .home-content {
+  grid-area: content;
   padding: 36px 64px 28px 64px;
   max-width: 1100px;
-  margin: 0 auto;
   width: 100%;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 28px;
+  min-width: 0;  /* lets the grid cell shrink instead of forcing overflow */
 }
 
 /* Cascade fade-in removed in v0.3.19 — users reported the staggered
@@ -557,16 +568,12 @@ body {
    from .main was enough on its own. Children now render instantly. */
 
 /* ───── Friends panel (right sidebar) ─────────────────────────
-   On windows >= 960 px, this is positioned as a fixed-width column on
-   the right with the home content flowing in the remaining space. On
-   narrower windows it collapses below the home content as a normal
-   block (see the @media (max-width: 960px) section). */
+   Lives in the "friends" grid column — its 260 px width comes from
+   .main's grid-template-columns, not its own positioning. Below 960 px
+   the .main grid collapses to a single column and this whole element
+   hides (see the @media (max-width: 960px) section).  */
 .friends-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 48px;  /* leave room for status-footer */
-  width: 260px;
+  grid-area: friends;
   background: linear-gradient(180deg,
     rgba(20, 24, 33, 0.92) 0%,
     rgba(14, 18, 26, 0.92) 100%);
@@ -575,7 +582,6 @@ body {
   flex-direction: column;
   padding: 20px 18px 16px 18px;
   overflow: hidden;
-  z-index: 2;
 }
 
 .friends-head {
@@ -827,23 +833,11 @@ body {
 .friends-add-btn:hover { background: var(--accent-2); }
 .friends-add-btn:disabled { background: var(--bg-3); cursor: not-allowed; opacity: 0.5; }
 
-/* Make room for the friends panel on the right when there's space.
-   home-content shifts left so its visual center sits in the middle of
-   the available area (window width minus the 260 px sidebar). */
-@media (min-width: 960px) {
-  .home-content {
-    margin-left: 32px;
-    margin-right: 292px;  /* 260 sidebar + 32 breathing room */
-    max-width: none;       /* fluid in the remaining space */
-  }
-}
-/* Above 1400 px, cap the width again so the layout doesn't sprawl. */
-@media (min-width: 1400px) {
-  .home-content {
-    max-width: 1100px;
-    margin-left: auto;
-  }
-}
+/* The old @media (min-width: 960px) / (1400px) rules that shoved
+   .home-content around with margin-right: 292px were removed in v0.3.23.
+   The new .main CSS grid puts content + friends-panel in separate
+   columns, so home-content automatically gets whatever width remains
+   after the 260 px friends column — no manual margin math. */
 
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(10px); }
@@ -1150,6 +1144,7 @@ body {
 
 /* ───── Status footer ──────────────────────────────────────── */
 .status-footer {
+  grid-area: footer;
   border-top: 1px solid var(--line);
   background: rgba(13, 17, 23, 0.6);
   padding: 8px 24px 8px 52px;   /* 52 = 48 content padding + 4 accent bar */
@@ -1162,12 +1157,18 @@ body {
 }
 
 /* ───── Responsive: friends panel + stat/action rows ─────────── */
-/* Below 960 px, collapse the friends sidebar to a hideable button-only
-   thing (we'd want a drawer pattern; for now just hide it so home content
-   gets the full width). Below 720 px, drop tile rows to 2-column. */
+/* Below 960 px, collapse to single-column grid: friends panel hides and
+   home content gets the full width. Below 720 px, drop tile rows to
+   2-column. The friends-panel column disappears from the grid template,
+   so home-content automatically reflows to fill the row. */
 @media (max-width: 960px) {
+  .main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "content"
+      "footer";
+  }
   .friends-panel { display: none; }
-  .home-content { margin-right: auto; }
 }
 @media (max-width: 720px) {
   .home-content { padding: 24px 24px 16px 24px; }

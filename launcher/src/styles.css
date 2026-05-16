@@ -535,40 +535,18 @@ body {
 }
 
 .home-content {
-  padding: 32px 48px 24px 48px;
-  max-width: 920px;
+  padding: 36px 64px 28px 64px;
+  max-width: 1100px;
   margin: 0 auto;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
 }
 
-/* Staggered entry animation — each immediate child of home-content fades
-   up with a slight delay so the page settles in a satisfying cascade
-   rather than everything popping at once. */
-.home-content > * {
-  opacity: 0;
-  animation: cascadeIn 0.35s ease-out forwards;
-}
-.home-content > *:nth-child(1) { animation-delay: 0.02s; }
-.home-content > *:nth-child(2) { animation-delay: 0.08s; }
-.home-content > *:nth-child(3) { animation-delay: 0.14s; }
-.home-content > *:nth-child(4) { animation-delay: 0.20s; }
-.home-content > *:nth-child(5) { animation-delay: 0.26s; }
-.home-content > *:nth-child(n+6) { animation-delay: 0.32s; }
-
-@keyframes cascadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .home-content > * {
-    opacity: 1;
-    animation: none;
-  }
-}
+/* Cascade fade-in removed in v0.3.19 — users reported the staggered
+   reveal as elements "popping in and out". The full-window radial fade
+   from .main was enough on its own. Children now render instantly. */
 
 /* ───── Friends panel (right sidebar) ─────────────────────────
    On windows >= 960 px, this is positioned as a fixed-width column on
@@ -842,13 +820,20 @@ body {
 .friends-add-btn:disabled { background: var(--bg-3); cursor: not-allowed; opacity: 0.5; }
 
 /* Make room for the friends panel on the right when there's space.
-   home-content stays centered in the LEFT region (everything except
-   the 260 px sidebar + 4 px accent bar). */
+   home-content shifts left so its visual center sits in the middle of
+   the available area (window width minus the 260 px sidebar). */
 @media (min-width: 960px) {
   .home-content {
-    /* Shift the centerpoint left to compensate for the sidebar on the
-       right, so the PLAY button visually centers in the available space. */
-    margin-right: 280px;
+    margin-left: 32px;
+    margin-right: 292px;  /* 260 sidebar + 32 breathing room */
+    max-width: none;       /* fluid in the remaining space */
+  }
+}
+/* Above 1400 px, cap the width again so the layout doesn't sprawl. */
+@media (min-width: 1400px) {
+  .home-content {
+    max-width: 1100px;
+    margin-left: auto;
   }
 }
 
@@ -1127,39 +1112,22 @@ body {
   font-size: 12px;
   color: var(--text-dim);
   line-height: 1.5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   margin: 4px 0 0;
 }
 
-.update-card.expanded .update-summary {
-  display: block;
-  -webkit-line-clamp: none;
-  overflow: visible;
-  text-overflow: clip;
-  white-space: pre-wrap;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-family: 'Consolas', monospace;
-  background: var(--bg);
-  padding: 10px 12px;
-  border-radius: 5px;
+/* "View on GitHub →" link at the bottom of each card. Replaces the
+   old click-to-expand-full-body interaction, which was just a wall of
+   commit-message jargon. */
+.update-link {
+  display: inline-block;
   margin-top: 8px;
-  border: 1px solid var(--line);
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.update-card-toggle {
-  font-size: 10px;
-  color: var(--accent-2);
-  margin-top: 6px;
-  user-select: none;
+  font-size: 11px;
   font-weight: 600;
+  color: var(--accent-2);
+  text-decoration: none;
+  letter-spacing: 0.2px;
 }
+.update-link:hover { color: var(--accent-3); text-decoration: underline; }
 
 .updates-empty {
   list-style: none;

@@ -534,14 +534,19 @@ fn estimate_fps(version: Option<String>, heap_mb: Option<u32>) -> u32 {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get() as u32)
         .unwrap_or(4);
+    // Conservative — previous values (1100 / 800 / 550 / 380 / …) were way
+    // over what users actually see in-game because they assumed best-case
+    // GPU, light scene, and zero background load. Cut roughly in half so
+    // the displayed number under-promises and the user is pleasantly
+    // surprised at runtime rather than disappointed.
     let base: u32 = match cores {
-        c if c >= 24 => 1100,   // Threadripper / dual-CPU
-        c if c >= 16 => 800,    // Ryzen 9 / i9
-        c if c >= 12 => 550,    // Ryzen 7 / i7
-        c if c >= 8  => 380,    // Ryzen 5 / i5 mid
-        c if c >= 6  => 260,    // older i5 / mobile Ryzen 5
-        c if c >= 4  => 170,    // i3 / low-end / laptop dual-with-HT
-        _            => 90,     // very old / netbook
+        c if c >= 24 => 550,    // Threadripper / dual-CPU
+        c if c >= 16 => 400,    // Ryzen 9 / i9
+        c if c >= 12 => 290,    // Ryzen 7 / i7
+        c if c >= 8  => 210,    // Ryzen 5 / i5 mid
+        c if c >= 6  => 150,    // older i5 / mobile Ryzen 5
+        c if c >= 4  => 95,     // i3 / low-end / laptop dual-with-HT
+        _            => 55,     // very old / netbook
     };
 
     // Render distance multiplier. MC FPS scales roughly inversely with the

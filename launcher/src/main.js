@@ -688,11 +688,16 @@ function renderUpdates(releases) {
   }
 }
 
+/**
+ * Build a single "Latest updates" card. We deliberately show ONLY the
+ * release headline (the commit subject line) — the full body is mostly
+ * dev jargon that's noisier than useful for end users. If they want the
+ * deep dive there's a "View on GitHub →" link that opens the release
+ * page in their default browser.
+ */
 function buildUpdateCard(rel) {
   const card = document.createElement('li');
   card.className = 'update-card';
-  card.setAttribute('role', 'button');
-  card.setAttribute('tabindex', '0');
 
   const head = document.createElement('div');
   head.className = 'update-card-head';
@@ -706,30 +711,51 @@ function buildUpdateCard(rel) {
   head.appendChild(date);
   card.appendChild(head);
 
-  // Pick the first non-empty line of the release body as the summary.
-  // Strip leading bullet/heading markers so it reads cleanly.
+  // Extract just the first meaningful line of the release body — that's
+  // the human-readable summary written at the top of every commit
+  // message. Skips empty lines + the auto-generated "## Downloads:"
+  // section from the release template.
   const body = (rel.body || '').trim();
+  const summaryText = firstReadableLine(body);
   const summary = document.createElement('div');
   summary.className = 'update-summary';
-  summary.textContent = body || '(no release notes)';
-
-  const toggle = document.createElement('div');
-  toggle.className = 'update-card-toggle';
-  toggle.textContent = body ? 'Click to expand' : '';
-
+  summary.textContent = summaryText || '(no summary)';
   card.appendChild(summary);
-  if (body) card.appendChild(toggle);
 
-  // Click / Enter / Space toggles the full body inline.
-  const flip = () => {
-    const expanded = card.classList.toggle('expanded');
-    toggle.textContent = expanded ? 'Click to collapse' : 'Click to expand';
-  };
-  card.addEventListener('click', flip);
-  card.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
-  });
+  // "View on GitHub →" link for users who want the full technical
+  // changelog. Opens in their default browser via the same helper the
+  // auto-update path uses, so no extra wiring.
+  if (rel.html_url) {
+    const link = document.createElement('a');
+    link.className = 'update-link';
+    link.textContent = 'View on GitHub →';
+    link.href = '#';
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      openExternal(rel.html_url);
+    });
+    card.appendChild(link);
+  }
   return card;
+}
+
+/**
+ * Pull the first useful line out of a release body. Skips blank lines,
+ * "## Heading"-style auto-template chunks, and lines that look like our
+ * commit-message subject ("vX.Y.Z — …") since that's already shown above.
+ */
+function firstReadableLine(body) {
+  if (!body) return '';
+  for (let raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#')) continue;          // markdown heading
+    if (line.startsWith('**Downloads')) continue; // workflow template
+    if (line.startsWith('- ')) continue;         // template bullet
+    if (/^v\d/i.test(line)) continue;            // duplicate version header
+    return line;
+  }
+  return body.split(/\r?\n/)[0].trim();
 }
 
 function relativeReleaseTime(iso) {
@@ -1627,7 +1653,7 @@ function showPythonBanner(probeResult) {
 //   2. `.brand-sub` (the css class on the same element)
 // Hit on either is fine. If both miss (someone gutted the topbar), we
 // fall back to a hardcoded version string so update can still recover.
-const HARDCODED_VERSION = '0.3.18';
+const HARDCODED_VERSION = '0.3.19';
 function resolveCurrentVersion() {
   const el = document.getElementById('version-label')
           || document.querySelector('.brand-sub');

@@ -1111,101 +1111,108 @@ $('update-mods')?.addEventListener('click', async () => {
 // Bug-check pass #2 (walkthrough): saved cosmCache only ever stores values
 // from this catalog; an attacker injecting a foreign value into
 // cosmetics.json would just render as "no selection" rather than crashing.
+// v0.3.22: every cosmetic now uses a unique emoji glyph (Segoe UI Emoji is
+// always installed on Win10+, so these render reliably). Previously many
+// items shared a generic symbol — every cape was '▽', every aura was '◌',
+// several wing types used '⫷⫸' which doesn't even render in most fonts and
+// fell back to a missing-glyph box. Result: capes/auras were
+// indistinguishable. Now each item has a thematic emoji + still keeps its
+// color hint for the cosmetic background swatch.
 const COSMETICS_CATALOG = {
   back: [
-    { id: 'none',            name: 'None',         icon: '∅' },
-    // ─── Capes (color/theme variants) ────────────────────────────
-    { id: 'cape_shadow',     name: 'Shadow',       icon: '▽', color: '#ff2030' },
-    { id: 'cape_storm',      name: 'Storm',        icon: '▽', color: '#3a9eda' },
-    { id: 'cape_embers',     name: 'Embers',       icon: '▽', color: '#ff8a40' },
-    { id: 'cape_frost',      name: 'Frost',        icon: '▽', color: '#9ad8ea' },
-    { id: 'cape_royal',      name: 'Royal',        icon: '▽', color: '#a050ff' },
-    { id: 'cape_forest',     name: 'Forest',       icon: '▽', color: '#22dd55' },
-    { id: 'cape_noir',       name: 'Noir',         icon: '▽', color: '#444444' },
-    { id: 'cape_solar',      name: 'Solar',        icon: '▽', color: '#ffd24a' },
-    { id: 'cape_galaxy',     name: 'Galaxy',       icon: '▽', color: '#7050cc' },
-    { id: 'cape_aurora',     name: 'Aurora',       icon: '▽', color: '#0ad6a8' },
-    { id: 'cape_sunset',     name: 'Sunset',       icon: '▽', color: '#ff70a0' },
-    { id: 'cape_eclipse',    name: 'Eclipse',      icon: '▽', color: '#202028' },
-    { id: 'cape_inferno',    name: 'Inferno',      icon: '▽', color: '#dc2020' },
-    { id: 'cape_tide',       name: 'Tide',         icon: '▽', color: '#4090d8' },
-    { id: 'cape_mist',       name: 'Mist',         icon: '▽', color: '#b8b8c0' },
-    { id: 'cape_volt',       name: 'Volt',         icon: '▽', color: '#fff45a' },
-    { id: 'cape_steel',      name: 'Steel',        icon: '▽', color: '#909098' },
-    { id: 'cape_rose',       name: 'Rose',         icon: '▽', color: '#ff8888' },
-    { id: 'cape_crimson',    name: 'Crimson',      icon: '▽', color: '#8b0020' },
-    // ─── Wings ────────────────────────────────────────────────────
-    { id: 'wings_dragon',    name: 'Dragon',       icon: '⫷⫸', color: '#ff2030' },
-    { id: 'wings_angel',     name: 'Angel',        icon: '✦',  color: '#e8e8ec' },
-    { id: 'wings_demon',     name: 'Demon',        icon: '⫷⫸', color: '#660020' },
-    { id: 'wings_fairy',     name: 'Fairy',        icon: '✿',  color: '#ffb0e0' },
-    { id: 'wings_butterfly', name: 'Butterfly',    icon: '⨳',  color: '#3a9eda' },
-    { id: 'wings_phoenix',   name: 'Phoenix',      icon: '✦',  color: '#ff8a40' },
-    { id: 'wings_bat',       name: 'Bat',          icon: '⫷⫸', color: '#2a2030' },
-    { id: 'wings_crystal',   name: 'Crystal',      icon: '◇',  color: '#9ad8ea' },
-    { id: 'wings_mech',      name: 'Mech',         icon: '⫷⫸', color: '#909098' },
-    { id: 'wings_astral',    name: 'Astral',       icon: '✦',  color: '#a050ff' },
-    { id: 'wings_toxic',     name: 'Toxic',        icon: '⫷⫸', color: '#88dd22' },
-    { id: 'wings_void',      name: 'Void',         icon: '⫷⫸', color: '#3a2050' },
-    { id: 'wings_origami',   name: 'Origami',      icon: '◇',  color: '#fff0e0' },
-    { id: 'wings_shark',     name: 'Shark Fin',    icon: '▲',  color: '#6088a0' },
+    { id: 'none',            name: 'None',         icon: '🚫' },
+    // ─── Capes (color/theme variants — each gets a thematic emoji) ──
+    { id: 'cape_shadow',     name: 'Shadow',       icon: '🌑', color: '#ff2030' },
+    { id: 'cape_storm',      name: 'Storm',        icon: '⛈️', color: '#3a9eda' },
+    { id: 'cape_embers',     name: 'Embers',       icon: '🔥', color: '#ff8a40' },
+    { id: 'cape_frost',      name: 'Frost',        icon: '❄️', color: '#9ad8ea' },
+    { id: 'cape_royal',      name: 'Royal',        icon: '👑', color: '#a050ff' },
+    { id: 'cape_forest',     name: 'Forest',       icon: '🌲', color: '#22dd55' },
+    { id: 'cape_noir',       name: 'Noir',         icon: '🌚', color: '#444444' },
+    { id: 'cape_solar',      name: 'Solar',        icon: '☀️', color: '#ffd24a' },
+    { id: 'cape_galaxy',     name: 'Galaxy',       icon: '🌌', color: '#7050cc' },
+    { id: 'cape_aurora',     name: 'Aurora',       icon: '🌠', color: '#0ad6a8' },
+    { id: 'cape_sunset',     name: 'Sunset',       icon: '🌅', color: '#ff70a0' },
+    { id: 'cape_eclipse',    name: 'Eclipse',      icon: '🌘', color: '#202028' },
+    { id: 'cape_inferno',    name: 'Inferno',      icon: '🌋', color: '#dc2020' },
+    { id: 'cape_tide',       name: 'Tide',         icon: '🌊', color: '#4090d8' },
+    { id: 'cape_mist',       name: 'Mist',         icon: '🌫️', color: '#b8b8c0' },
+    { id: 'cape_volt',       name: 'Volt',         icon: '⚡', color: '#fff45a' },
+    { id: 'cape_steel',      name: 'Steel',        icon: '🔩', color: '#909098' },
+    { id: 'cape_rose',       name: 'Rose',         icon: '🌹', color: '#ff8888' },
+    { id: 'cape_crimson',    name: 'Crimson',      icon: '🩸', color: '#8b0020' },
+    // ─── Wings (one distinct emoji per kind) ────────────────────────
+    { id: 'wings_dragon',    name: 'Dragon',       icon: '🐉', color: '#ff2030' },
+    { id: 'wings_angel',     name: 'Angel',        icon: '👼', color: '#e8e8ec' },
+    { id: 'wings_demon',     name: 'Demon',        icon: '😈', color: '#660020' },
+    { id: 'wings_fairy',     name: 'Fairy',        icon: '🧚', color: '#ffb0e0' },
+    { id: 'wings_butterfly', name: 'Butterfly',    icon: '🦋', color: '#3a9eda' },
+    { id: 'wings_phoenix',   name: 'Phoenix',      icon: '🦅', color: '#ff8a40' },
+    { id: 'wings_bat',       name: 'Bat',          icon: '🦇', color: '#2a2030' },
+    { id: 'wings_crystal',   name: 'Crystal',      icon: '💎', color: '#9ad8ea' },
+    { id: 'wings_mech',      name: 'Mech',         icon: '🤖', color: '#909098' },
+    { id: 'wings_astral',    name: 'Astral',       icon: '🌟', color: '#a050ff' },
+    { id: 'wings_toxic',     name: 'Toxic',        icon: '☣️', color: '#88dd22' },
+    { id: 'wings_void',      name: 'Void',         icon: '🕳️', color: '#3a2050' },
+    { id: 'wings_origami',   name: 'Origami',      icon: '📜', color: '#fff0e0' },
+    { id: 'wings_shark',     name: 'Shark Fin',    icon: '🦈', color: '#6088a0' },
   ],
   head: [
-    { id: 'none',            name: 'None',         icon: '∅' },
-    { id: 'head_halo',       name: 'Halo',         icon: '◯',  color: '#ffd24a' },
-    { id: 'head_crown',      name: 'Crown',        icon: '♔',  color: '#ffd24a' },
-    { id: 'head_antlers',    name: 'Antlers',      icon: '⫮',  color: '#bb8855' },
-    { id: 'head_tophat',     name: 'Top Hat',      icon: '⌂',  color: '#1a1a1a' },
-    { id: 'head_tiara',      name: 'Tiara',        icon: '♦',  color: '#9ad8ea' },
-    { id: 'head_helmet',     name: 'Helmet',       icon: '⛨',  color: '#888888' },
-    { id: 'head_beanie',     name: 'Beanie',       icon: '◓',  color: '#3a9eda' },
-    { id: 'head_headband',   name: 'Headband',     icon: '—',  color: '#ff2030' },
-    { id: 'head_wizard',     name: 'Wizard Hat',   icon: '⌂',  color: '#a050ff' },
-    { id: 'head_cowboy',     name: 'Cowboy Hat',   icon: '⌂',  color: '#bb8855' },
-    { id: 'head_cap',        name: 'Cap',          icon: '◓',  color: '#ff2030' },
-    { id: 'head_phones',     name: 'Headphones',   icon: '⊂⊃', color: '#202020' },
-    { id: 'head_mask',       name: 'Mask',         icon: '◬',  color: '#e8e8ec' },
-    { id: 'head_mohawk',     name: 'Mohawk',       icon: '⏶',  color: '#ff2030' },
-    { id: 'head_cat_ears',   name: 'Cat Ears',     icon: '⏶',  color: '#ffb0e0' },
-    { id: 'head_glasses',    name: 'Glasses',      icon: '◙◙', color: '#202020' },
-    { id: 'head_pirate',     name: 'Pirate Hat',   icon: '⌂',  color: '#202020' },
-    { id: 'head_visor',      name: 'Cyber Visor',  icon: '─',  color: '#0adada' },
+    { id: 'none',            name: 'None',         icon: '🚫' },
+    { id: 'head_halo',       name: 'Halo',         icon: '😇', color: '#ffd24a' },
+    { id: 'head_crown',      name: 'Crown',        icon: '👑', color: '#ffd24a' },
+    { id: 'head_antlers',    name: 'Antlers',      icon: '🦌', color: '#bb8855' },
+    { id: 'head_tophat',     name: 'Top Hat',      icon: '🎩', color: '#1a1a1a' },
+    { id: 'head_tiara',      name: 'Tiara',        icon: '👸', color: '#9ad8ea' },
+    { id: 'head_helmet',     name: 'Helmet',       icon: '⛑️', color: '#888888' },
+    { id: 'head_beanie',     name: 'Beanie',       icon: '🧢', color: '#3a9eda' },
+    { id: 'head_headband',   name: 'Headband',     icon: '🥋', color: '#ff2030' },
+    { id: 'head_wizard',     name: 'Wizard Hat',   icon: '🧙', color: '#a050ff' },
+    { id: 'head_cowboy',     name: 'Cowboy Hat',   icon: '🤠', color: '#bb8855' },
+    { id: 'head_cap',        name: 'Cap',          icon: '⛑️', color: '#ff2030' },
+    { id: 'head_phones',     name: 'Headphones',   icon: '🎧', color: '#202020' },
+    { id: 'head_mask',       name: 'Mask',         icon: '🎭', color: '#e8e8ec' },
+    { id: 'head_mohawk',     name: 'Mohawk',       icon: '🦔', color: '#ff2030' },
+    { id: 'head_cat_ears',   name: 'Cat Ears',     icon: '🐱', color: '#ffb0e0' },
+    { id: 'head_glasses',    name: 'Glasses',      icon: '👓', color: '#202020' },
+    { id: 'head_pirate',     name: 'Pirate Hat',   icon: '🏴‍☠️', color: '#202020' },
+    { id: 'head_visor',      name: 'Cyber Visor',  icon: '🥽', color: '#0adada' },
   ],
   trail: [
-    { id: 'none',            name: 'None',         icon: '∅' },
-    { id: 'trail_fairies',   name: 'Fairies',      icon: '✨', color: '#ffb0e0' },
-    { id: 'trail_footsteps', name: 'Footsteps',    icon: '⋯',  color: '#a8a8a8' },
-    { id: 'trail_stars',     name: 'Stars',        icon: '★',  color: '#ffd24a' },
-    { id: 'trail_bow',       name: 'Bow Trail',    icon: '⤳',  color: '#ff2030' },
-    { id: 'trail_fire',      name: 'Fire',         icon: '▲',  color: '#ff8a40' },
-    { id: 'trail_ice',       name: 'Ice',          icon: '❄',  color: '#9ad8ea' },
+    { id: 'none',            name: 'None',         icon: '🚫' },
+    { id: 'trail_fairies',   name: 'Fairies',      icon: '🧚', color: '#ffb0e0' },
+    { id: 'trail_footsteps', name: 'Footsteps',    icon: '👣', color: '#a8a8a8' },
+    { id: 'trail_stars',     name: 'Stars',        icon: '⭐', color: '#ffd24a' },
+    { id: 'trail_bow',       name: 'Bow Trail',    icon: '🏹', color: '#ff2030' },
+    { id: 'trail_fire',      name: 'Fire',         icon: '🔥', color: '#ff8a40' },
+    { id: 'trail_ice',       name: 'Ice',          icon: '❄️', color: '#9ad8ea' },
     { id: 'trail_lightning', name: 'Lightning',    icon: '⚡', color: '#fff45a' },
-    { id: 'trail_hearts',    name: 'Hearts',       icon: '♥',  color: '#ff60a0' },
-    { id: 'trail_petals',    name: 'Petals',       icon: '❀',  color: '#ffb0e0' },
-    { id: 'trail_bubbles',   name: 'Bubbles',      icon: '○',  color: '#9ad8ea' },
-    { id: 'trail_smoke',     name: 'Smoke',        icon: '☁',  color: '#888888' },
-    { id: 'trail_leaves',    name: 'Leaves',       icon: '☘',  color: '#22dd55' },
-    { id: 'trail_magic',     name: 'Magic',        icon: '✺',  color: '#a050ff' },
-    { id: 'trail_cherry',    name: 'Cherry Bloss', icon: '❀',  color: '#ff90c0' },
-    { id: 'trail_confetti',  name: 'Confetti',     icon: '◆',  color: '#e040c0' },
-    { id: 'trail_skulls',    name: 'Skulls',       icon: '☠',  color: '#e8e8ec' },
-    { id: 'trail_comet',     name: 'Comet',        icon: '☄',  color: '#3a9eda' },
+    { id: 'trail_hearts',    name: 'Hearts',       icon: '❤️', color: '#ff60a0' },
+    { id: 'trail_petals',    name: 'Petals',       icon: '🌸', color: '#ffb0e0' },
+    { id: 'trail_bubbles',   name: 'Bubbles',      icon: '🫧', color: '#9ad8ea' },
+    { id: 'trail_smoke',     name: 'Smoke',        icon: '💨', color: '#888888' },
+    { id: 'trail_leaves',    name: 'Leaves',       icon: '🍃', color: '#22dd55' },
+    { id: 'trail_magic',     name: 'Magic',        icon: '✨', color: '#a050ff' },
+    { id: 'trail_cherry',    name: 'Cherry Bloss', icon: '🌸', color: '#ff90c0' },
+    { id: 'trail_confetti',  name: 'Confetti',     icon: '🎊', color: '#e040c0' },
+    { id: 'trail_skulls',    name: 'Skulls',       icon: '💀', color: '#e8e8ec' },
+    { id: 'trail_comet',     name: 'Comet',        icon: '☄️', color: '#3a9eda' },
   ],
   aura: [
-    { id: 'none',            name: 'None',         icon: '∅' },
-    { id: 'aura_soft',       name: 'Soft Glow',    icon: '◌',  color: '#ffffff' },
-    { id: 'aura_brand',      name: 'Brand',        icon: '◌',  color: '#ff2030' },
-    { id: 'aura_holy',       name: 'Holy',         icon: '◌',  color: '#ffd24a' },
-    { id: 'aura_shadow',     name: 'Shadow',       icon: '◌',  color: '#3a2a3a' },
-    { id: 'aura_energy',     name: 'Energy',       icon: '◌',  color: '#3a9eda' },
-    { id: 'aura_nature',     name: 'Nature',       icon: '◌',  color: '#22dd55' },
-    { id: 'aura_arcane',     name: 'Arcane',       icon: '◌',  color: '#a050ff' },
-    { id: 'aura_crimson',    name: 'Crimson',      icon: '◌',  color: '#8b0020' },
-    { id: 'aura_verdant',    name: 'Verdant',      icon: '◌',  color: '#88dd22' },
-    { id: 'aura_mystic',     name: 'Mystic',       icon: '◌',  color: '#0ad6d6' },
-    { id: 'aura_spectral',   name: 'Spectral',     icon: '◌',  color: '#c0e0ff' },
-    { id: 'aura_void',       name: 'Void',         icon: '◌',  color: '#2a1040' },
-    { id: 'aura_neon',       name: 'Neon',         icon: '◌',  color: '#e040c0' },
+    { id: 'none',            name: 'None',         icon: '🚫' },
+    { id: 'aura_soft',       name: 'Soft Glow',    icon: '⚪', color: '#ffffff' },
+    { id: 'aura_brand',      name: 'Brand',        icon: '🔴', color: '#ff2030' },
+    { id: 'aura_holy',       name: 'Holy',         icon: '🟡', color: '#ffd24a' },
+    { id: 'aura_shadow',     name: 'Shadow',       icon: '⚫', color: '#3a2a3a' },
+    { id: 'aura_energy',     name: 'Energy',       icon: '🔵', color: '#3a9eda' },
+    { id: 'aura_nature',     name: 'Nature',       icon: '🟢', color: '#22dd55' },
+    { id: 'aura_arcane',     name: 'Arcane',       icon: '🟣', color: '#a050ff' },
+    { id: 'aura_crimson',    name: 'Crimson',      icon: '🩸', color: '#8b0020' },
+    { id: 'aura_verdant',    name: 'Verdant',      icon: '🌿', color: '#88dd22' },
+    { id: 'aura_mystic',     name: 'Mystic',       icon: '💎', color: '#0ad6d6' },
+    { id: 'aura_spectral',   name: 'Spectral',     icon: '👻', color: '#c0e0ff' },
+    { id: 'aura_void',       name: 'Void',         icon: '🕳️', color: '#2a1040' },
+    { id: 'aura_neon',       name: 'Neon',         icon: '💜', color: '#e040c0' },
   ],
   accent: [
     // 24-color accent palette. Stored as the hex string itself.
@@ -1416,12 +1423,29 @@ function buildCosmEntry(slot, item) {
   b.type = 'button';
   b.className = 'cosm-tile';
   b.dataset.value = item.id;
+
+  // Color hint strip across the top of the tile. Emoji glyphs render in
+  // the system's own emoji colors and ignore `color: ...`, so without
+  // this strip the user can't tell a brand-red 'Crimson' cape from a
+  // navy 'Tide' cape — every cape would render with its emoji and
+  // identical grey tile chrome. Strip is only drawn when item.color is
+  // set (i.e. skipped on the 'None' tile).
+  if (item.color) {
+    const swatch = document.createElement('span');
+    swatch.className = 'cosm-color-strip';
+    swatch.setAttribute('aria-hidden', 'true');
+    swatch.style.background = item.color;
+    b.appendChild(swatch);
+  }
+
   const icon = document.createElement('span');
   icon.className = 'cosm-icon';
   icon.setAttribute('aria-hidden', 'true');
   icon.textContent = item.icon;
-  if (item.color) icon.style.color = item.color;
+  // Color is intentionally NOT applied to the icon any more — emojis
+  // own their pixel colors. The strip above carries the color identity.
   b.appendChild(icon);
+
   const name = document.createElement('span');
   name.className = 'cosm-name';
   name.textContent = item.name;

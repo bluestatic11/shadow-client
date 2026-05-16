@@ -1765,25 +1765,44 @@ body {
 }
 
 /* Tiny corner check on the selected tile so the state reads
-   instantly even at a glance. */
+   instantly even at a glance. Moved from top:6px → top:10px in v0.3.22
+   so it sits below the new color-strip band rather than on top of it. */
 .cosm-tile.selected::before {
   content: '✓';
   position: absolute;
-  top: 6px;
+  top: 10px;
   right: 8px;
   font-size: 11px;
   font-weight: 800;
   color: var(--accent-2);
+  z-index: 1;
 }
 
 .cosm-icon {
-  font-size: 26px;
-  color: var(--accent-2);
+  /* Emoji rendering — uses the system emoji font on Win/macOS/Linux so
+     every glyph renders in color. Larger size than v0.3.21 (was 26 px,
+     now 32 px) because emojis read smaller than the previous geometric
+     symbols at the same point size. */
+  font-size: 32px;
   line-height: 1;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
+               inherit;
+  /* Keep the emoji vertically centered in the space below the color strip. */
+  margin-top: 4px;
 }
 
-.cosm-tile:not(.selected) .cosm-icon {
-  color: var(--text-mute);
+/* Color identity strip — 6 px tall bar across the top of each tile.
+   Lets the user distinguish cosmetics that share an emoji theme but
+   differ by color (e.g. every aura has its own color). Sits flush
+   against the tile's rounded top corners thanks to overflow: hidden
+   on .cosm-tile. */
+.cosm-color-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  pointer-events: none;
 }
 
 .cosm-name {

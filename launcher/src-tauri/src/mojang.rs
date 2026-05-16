@@ -377,8 +377,16 @@ pub async fn download_libraries(
     Ok((classpath, natives_dir))
 }
 
-/// Extract DLL / .so / .dylib from a native .jar (which is just a zip) into
-/// the version's natives/ directory.
+/// Extract DLL / .so / .dylib / .lib from a native .jar (which is just a zip)
+/// into the version's natives/ directory.
+///
+/// Filter rule: any file with a native-library extension, regardless of where
+/// it lives in the zip. Some LWJGL jars put the DLLs at the root, some
+/// nest them under `windows/x64/`, some under `META-INF/natives/`. The
+/// previous implementation skipped anything containing "META-INF" in the
+/// path to avoid extracting MANIFEST.MF and friends, but that filter also
+/// caught the META-INF/natives layout and was the cause of the
+/// "Failed to locate library: lwjgl.dll" crash on first launch.
 fn extract_native_jar(jar: &Path, natives_dir: &Path) -> Result<()> {
     let f = std::fs::File::open(jar)
         .with_context(|| format!("opening {}", jar.display()))?;
@@ -387,26 +395,46 @@ fn extract_native_jar(jar: &Path, natives_dir: &Path) -> Result<()> {
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
         let name = entry.name().to_string();
-        if name.ends_with('/') || name.contains("META-INF") {
-            continue;
-        }
+        if name.ends_with('/') { continue; }
         let lower = name.to_lowercase();
         if !(lower.ends_with(".dll")
             || lower.ends_with(".so")
             || lower.ends_with(".dylib")
-            || lower.ends_with(".jnilib"))
+            || lower.ends_with(".jnilib")
+            || lower.ends_with(".lib"))
         {
             continue;
         }
+        // Skip the manifest itself if it ever masquerades as a .dll
+        // (it doesn't — but defensive). Real DLLs in META-INF/natives/
+        // still get through.
+        if lower.ends_with("manifest.mf") { continue; }
+
         let basename = Path::new(&name)
             .file_name()
             .map(|s| s.to_owned())
             .ok_or_else(|| anyhow!("no basename in {name}"))?;
         let out_path = natives_dir.join(&basename);
-        let mut out = std::fs::File::create(&out_path)?;
+        let mut out = std::fs::File::create(&out_path)
+            .with_context(|| format!("creating {}", out_path.display()))?;
         std::io::copy(&mut entry, &mut out)?;
     }
     Ok(())
+}
+
+/// Strip the Windows extended-path prefix (`\\?\`) that `canonicalize()`
+/// likes to add. Some Java code paths choke on those — most reliably
+/// `-Djava.library.path`, which is exactly the property LWJGL reads to
+/// find `lwjgl.dll`. On non-Windows the prefix doesn't exist; pass-through.
+pub fn path_str_no_unc(p: &Path) -> String {
+    let s = p.display().to_string();
+    if cfg!(target_os = "windows") {
+        s.strip_prefix(r"\\?\")
+            .map(|x| x.to_string())
+            .unwrap_or(s)
+    } else {
+        s
+    }
 }
 
 pub async fn download_client_jar(
@@ -510,11 +538,13 @@ pub fn build_launch_args(
 ) -> Result<(Vec<String>, String)> {
     let (os_name, arch) = detect_os();
     let cp_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+    // Strip UNC prefix from every classpath jar so the resulting
+    // -cp string is something Java parses cleanly.
     let mut cp_parts: Vec<String> = classpath
         .iter()
-        .map(|p| p.display().to_string())
+        .map(|p| path_str_no_unc(p))
         .collect();
-    cp_parts.push(client_jar.display().to_string());
+    cp_parts.push(path_str_no_unc(client_jar));
     let cp = cp_parts.join(cp_sep);
     let asset_index = version
         .get("assetIndex")
@@ -527,8 +557,8 @@ pub fn build_launch_args(
     let mut tokens: HashMap<&str, String> = HashMap::new();
     tokens.insert("auth_player_name", username.to_string());
     tokens.insert("version_name", version_id.to_string());
-    tokens.insert("game_directory", game_dir.display().to_string());
-    tokens.insert("assets_root", assets_dir.display().to_string());
+    tokens.insert("game_directory", path_str_no_unc(game_dir));
+    tokens.insert("assets_root", path_str_no_unc(assets_dir));
     tokens.insert("assets_index_name", asset_index.to_string());
     tokens.insert("auth_uuid", uuid.to_string());
     tokens.insert("auth_access_token", access_token.to_string());
@@ -537,13 +567,13 @@ pub fn build_launch_args(
     tokens.insert("user_type", user_type.to_string());
     tokens.insert("version_type", version_type.to_string());
     tokens.insert("user_properties", "{}".to_string());
-    tokens.insert("natives_directory", natives_dir.display().to_string());
+    tokens.insert("natives_directory", path_str_no_unc(natives_dir));
     tokens.insert("launcher_name", LAUNCHER_BRAND.to_string());
     tokens.insert("launcher_version", LAUNCHER_VERSION.to_string());
     tokens.insert("classpath", cp.clone());
     tokens.insert(
         "game_assets",
-        assets_dir.join("virtual").join("legacy").display().to_string(),
+        path_str_no_unc(&assets_dir.join("virtual").join("legacy")),
     );
     tokens.insert("auth_session", access_token.to_string());
 
@@ -618,7 +648,7 @@ pub fn build_launch_args(
     } else {
         // Legacy pre-1.13 format.
         let jvm = vec![
-            format!("-Djava.library.path={}", natives_dir.display()),
+            format!("-Djava.library.path={}", path_str_no_unc(natives_dir)),
             format!("-Dminecraft.launcher.brand={LAUNCHER_BRAND}"),
             format!("-Dminecraft.launcher.version={LAUNCHER_VERSION}"),
             "-cp".to_string(),

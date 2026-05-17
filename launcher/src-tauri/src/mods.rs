@@ -4,8 +4,38 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::mojang::{self, download_file};
+use crate::shadow_chat;
 
 pub const MODRINTH: &str = "https://api.modrinth.com/v2";
+
+/// Direct-URL mods that aren't on Modrinth. (slug, filename, url, mc_versions, critical).
+/// `mc_versions` is the set of MC versions this jar supports — entries
+/// scoped to a version not in this list are skipped silently the same
+/// way the Modrinth installer skips slugs with no matching build.
+///
+/// Shadow Chat lives here because its jar is published on GitHub
+/// Releases, not Modrinth. The URL below is a placeholder pointing at a
+/// release that doesn't exist yet — the sibling mod-build task will
+/// publish that asset, and the next setup pass after the release goes
+/// live will pull it in. Until then, `install_mods` logs a skip line
+/// and moves on, exactly like a missing Modrinth build.
+pub const DIRECT_URL_MODS: &[DirectMod] = &[
+    DirectMod {
+        slug: "shadow-chat",
+        filename: "shadow-chat-0.1.0.jar",
+        url: shadow_chat::MOD_JAR_URL,
+        mc_versions: shadow_chat::SUPPORTED_MC_VERSIONS,
+        critical: false,
+    },
+];
+
+pub struct DirectMod {
+    pub slug: &'static str,
+    pub filename: &'static str,
+    pub url: &'static str,
+    pub mc_versions: &'static [&'static str],
+    pub critical: bool,
+}
 
 /// (slug, description, critical) — same list and order as the Python.
 pub const PERFORMANCE_MODS: &[(&str, &str, bool)] = &[
@@ -68,7 +98,7 @@ pub async fn install_mods(
     std::fs::create_dir_all(mods_dir)?;
     let mut installed = Vec::new();
     let mut skipped = Vec::new();
-    let total = PERFORMANCE_MODS.len();
+    let total = PERFORMANCE_MODS.len() + DIRECT_URL_MODS.len();
     for (i, (slug, desc, critical)) in PERFORMANCE_MODS.iter().enumerate() {
         progress(format!("  [{}/{}] {} — {}", i + 1, total, slug, desc));
         let v = match pick_version(client, slug, mc_version).await {
@@ -92,5 +122,41 @@ pub async fn install_mods(
         download_file(client, url, &dest, sha1).await?;
         installed.push(slug.to_string());
     }
+
+    // Direct-URL mods (Shadow Chat etc). Scoped to specific MC versions
+    // and downloaded without a sha1 (GitHub Releases don't publish one in
+    // a machine-readable form). Download failures are non-fatal — they
+    // get logged + recorded in `skipped` so the user (and the launcher
+    // UI) can see what was missed.
+    let base = PERFORMANCE_MODS.len();
+    for (i, m) in DIRECT_URL_MODS.iter().enumerate() {
+        progress(format!(
+            "  [{}/{}] {} — direct download",
+            base + i + 1,
+            total,
+            m.slug
+        ));
+        if !m.mc_versions.iter().any(|v| *v == mc_version) {
+            progress(format!(
+                "  skip {} — not built for MC {mc_version}",
+                m.slug
+            ));
+            skipped.push(m.slug.to_string());
+            continue;
+        }
+        let dest = mods_dir.join(m.filename);
+        match download_file(client, m.url, &dest, None).await {
+            Ok(()) => installed.push(m.slug.to_string()),
+            Err(e) => {
+                let msg = if m.critical { " (critical missing!)" } else { "" };
+                progress(format!(
+                    "  skip {} — download failed: {e:#}{msg}",
+                    m.slug
+                ));
+                skipped.push(m.slug.to_string());
+            }
+        }
+    }
+
     Ok((installed, skipped))
 }

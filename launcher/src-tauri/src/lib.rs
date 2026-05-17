@@ -13,6 +13,7 @@ mod jvm;
 mod mods;
 mod mojang;
 mod setup;
+mod shadow_chat;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

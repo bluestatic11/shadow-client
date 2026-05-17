@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "shadowchat",
+  "version": "${version}",
+  "name": "Shadow Chat",
+  "description": "In-game chat overlay for Shadow Client users — connects to a WebSocket relay so everyone on the same MC server can chat across worlds, plus private groups.",
+  "authors": ["Shadow Client"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "custom": {
+    "modmenu": {
+      "hidden": true
+    }
+  },
+  "entrypoints": {
+    "client": ["app.shadowclient.chat.ShadowChatClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

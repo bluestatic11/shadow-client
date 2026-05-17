@@ -1,0 +1,25 @@
+# Build output
+.gradle/
+build/
+out/
+bin/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Fabric Loom runtime
+run/
+run-client/
+runs/

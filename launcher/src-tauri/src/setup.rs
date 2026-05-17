@@ -5,7 +5,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::{auth::Account, fabric, jdk, jvm, mods, mojang};
+use crate::{auth::Account, fabric, jdk, jvm, mods, mojang, shadow_chat};
 
 /// Per-profile install state stored under `installed.json`.
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -289,6 +289,14 @@ pub async fn launch(
     );
     progress(format!("Launch command logged → {}", log_path.display()));
     progress("Starting Minecraft — first boot can take 30-60s…".into());
+
+    // Hand the Shadow Chat mod its auth + relay info via a small JSON file
+    // dropped into profile_dir (== Java's CWD). Best-effort: if anything
+    // here fails, log it and keep going — chat-mod is non-essential.
+    match shadow_chat::write_auth_file(&profile_dir, &acct) {
+        Ok(()) => progress(shadow_chat::status_line(&acct)),
+        Err(e) => progress(format!("Shadow Chat: disabled (couldn't write auth file: {e:#})")),
+    }
 
     // Spawn Java. We capture stdout/stderr line-by-line via an mpsc channel
     // so the UI sees output live instead of waiting for process exit.

@@ -1,0 +1,35 @@
+# Cloudflare Workers config for the Shadow Chat relay.
+#
+# Deploy:
+#   $ npx wrangler login          # one-time, links to your Cloudflare account
+#   $ npx wrangler deploy
+#
+# Local dev (mod connects to ws://localhost:8787/ws):
+#   $ npx wrangler dev
+
+name = "shadow-chat-relay"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+# A single Durable Object class handles ALL channels — server-wide rooms,
+# private groups, future DMs. The DO's *name* distinguishes them:
+#   - "server:hypixel.net"  → everyone on that MC server
+#   - "group:<random-id>"   → private group, ID is the shared secret
+# Cloudflare hashes the name to a stable DO instance.
+[[durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "ChatRoom"
+
+# Use SQLite-backed Durable Objects — cheaper and faster than the legacy
+# KV-backed flavour, and gives us per-room SQL storage if we want to add
+# message history later without a separate D1 binding.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChatRoom"]
+
+# Observability: route logs to Cloudflare's dashboard at full sample rate.
+# Keep at 1.0 until we hit volume that costs money to log; then drop.
+[observability]
+enabled = true
+head_sampling_rate = 1.0

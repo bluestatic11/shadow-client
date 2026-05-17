@@ -20,6 +20,14 @@ interface Member {
   socket: WebSocket;
   /** Sliding-window message timestamps for rate limiting. */
   recentMsgs: number[];
+  /**
+   * Discord-style voice opt-in flag. False by default; flipped by
+   * voice:join / voice:leave ops. Outbound voice frames from this
+   * member are forwarded only to OTHER members whose inVoice is also
+   * true; if this member is false, their own voice uploads are
+   * silently dropped (no DO ops burned on people who aren't in VC).
+   */
+  inVoice: boolean;
 }
 
 /** Cap each message at this many chars after trim. Stops "wall of text"
@@ -70,7 +78,7 @@ export class ChatRoom implements DurableObject {
       this.members.delete(uuid);
     }
 
-    const member: Member = { uuid, name, socket: serverSide, recentMsgs: [] };
+    const member: Member = { uuid, name, socket: serverSide, recentMsgs: [], inVoice: false };
     this.members.set(uuid, member);
 
     serverSide.addEventListener('message', (event) => {
@@ -91,8 +99,11 @@ export class ChatRoom implements DurableObject {
       // a "replaced by new connection" replacement.
       const m = this.members.get(uuid);
       if (m && m.socket === serverSide) {
+        const wasInVoice = m.inVoice;
         this.members.delete(uuid);
         this.broadcastPresence();
+        // If they were in voice, the roster needs to update too.
+        if (wasInVoice) this.broadcastVoiceRoster();
       }
     };
     serverSide.addEventListener('close', close);
@@ -133,10 +144,18 @@ export class ChatRoom implements DurableObject {
     out.set(uuidBytes, 1);
     out.set(payload, 17);
 
-    // The .buffer property gives us a transferable ArrayBuffer for
-    // Workers' WebSocket.send(). Skipping the sender avoids self-echo.
+    // Voice fan-out:
+    //  - sender must be inVoice (otherwise we drop their upload — they
+    //    haven't opted in, no reason to broadcast their mic)
+    //  - receiver must be inVoice (otherwise they don't hear voice)
+    //  - sender themselves is always skipped (no self-echo)
+    // The double gate means voice traffic only flows between members
+    // who have BOTH explicitly joined the VC for this channel —
+    // matches the Discord-style "join voice" UX.
+    if (!from.inVoice) return;
     for (const m of this.members.values()) {
       if (m.uuid === from.uuid) continue;
+      if (!m.inVoice) continue;
       try { m.socket.send(out.buffer); } catch (_) {}
     }
   }
@@ -174,6 +193,22 @@ export class ChatRoom implements DurableObject {
       return;
     }
 
+    if (msg.op === 'voice:join') {
+      if (!from.inVoice) {
+        from.inVoice = true;
+        this.broadcastVoiceRoster();
+      }
+      return;
+    }
+
+    if (msg.op === 'voice:leave') {
+      if (from.inVoice) {
+        from.inVoice = false;
+        this.broadcastVoiceRoster();
+      }
+      return;
+    }
+
     // Unknown op → silently drop. Forward-compat with future client
     // versions that emit ops this build doesn't understand.
   }
@@ -206,6 +241,17 @@ export class ChatRoom implements DurableObject {
       name: m.name,
     }));
     this.broadcast({ op: 'presence', users });
+  }
+
+  /** Authoritative snapshot of who's currently in the voice room.
+   *  Sent on every voice:join / voice:leave AND whenever a member
+   *  disconnects while inVoice (handled implicitly by the close
+   *  handler calling broadcastPresence + broadcastVoiceRoster). */
+  private broadcastVoiceRoster() {
+    const members = [...this.members.values()]
+      .filter(m => m.inVoice)
+      .map(m => ({ uuid: m.uuid, name: m.name }));
+    this.broadcast({ op: 'voice:roster', members });
   }
 }
 

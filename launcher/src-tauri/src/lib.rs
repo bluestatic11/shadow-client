@@ -260,13 +260,30 @@ async fn microsoft_login(
         let app2 = app.clone();
         let progress = move |line: String| emit_line(&app2, "stdout", line);
 
-        // Pop the browser open on the verification URL as soon as we get
-        // the device code, so the user doesn't have to type anything.
+        // v0.3.37: emit the device code + URL to the frontend AS WELL AS
+        // trying to open the browser. If the user's default browser
+        // fails to open (no handler registered, popup blocker, headless
+        // environment) they can still complete sign-in by manually
+        // visiting the URL and entering the code. The frontend listens
+        // for `ms-prompt` and renders a sticky banner with both.
+        let app_for_prompt = app.clone();
         let on_prompt = move |p: auth::DeviceCodePrompt| {
+            let _ = app_for_prompt.emit("ms-prompt", serde_json::json!({
+                "user_code": p.user_code,
+                "verification_uri": p.verification_uri,
+                "verification_uri_complete": p.verification_uri_complete,
+                "expires_in": p.expires_in,
+            }));
             let _ = open_url_in_browser(&p.verification_uri_complete);
         };
 
-        let account = auth::microsoft_device_login(progress, on_prompt).await?;
+        let app_for_done = app.clone();
+        let result = auth::microsoft_device_login(progress, on_prompt).await;
+        // Tear down the prompt banner regardless of outcome — success
+        // means it succeeded, failure means the user already saw an
+        // error in the status line and the banner should disappear.
+        let _ = app_for_done.emit("ms-prompt-done", ());
+        let account = result?;
         if let Some(parent) = account_file.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -927,6 +944,89 @@ fn diagnostics() -> Diagnostics {
     }
 }
 
+/// Shadow Chat-specific diagnostic dump. One button → everything the
+/// user (or I) need to know about why chat isn't working. Strings only,
+/// formatted for direct paste into a bug report.
+#[tauri::command]
+fn chat_diagnostics() -> String {
+    let root = project_root();
+    let game_dir = root.join("game_dir");
+    let account_file = game_dir.join("mc-client-account.json");
+    let state_file = root.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let last_profile = state.last_used.clone().unwrap_or_default();
+    let profile_dir = if last_profile.is_empty() {
+        game_dir.clone()
+    } else {
+        game_dir.join("profiles").join(&last_profile)
+    };
+    let auth_file = profile_dir.join("shadow-chat-auth.json");
+    let mods_dir = profile_dir.join("mods");
+    let shadow_jar = std::fs::read_dir(&mods_dir).ok().and_then(|rd| {
+        rd.filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .find(|n| n.starts_with("shadow-chat") && n.ends_with(".jar"))
+    });
+    let acct_json: Option<serde_json::Value> = if account_file.exists() {
+        std::fs::read_to_string(&account_file).ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+    } else { None };
+
+    let mut lines: Vec<String> = Vec::new();
+    lines.push(format!("Project root:    {}", root.display()));
+    lines.push(format!("Last profile:    {}", last_profile));
+    lines.push(format!("Profile dir:     {}", profile_dir.display()));
+    lines.push(String::new());
+
+    lines.push("=== Microsoft account ===".into());
+    if let Some(a) = &acct_json {
+        let user_type = a.get("user_type").and_then(|v| v.as_str()).unwrap_or("?");
+        let username = a.get("username").and_then(|v| v.as_str()).unwrap_or("?");
+        let token = a.get("access_token").and_then(|v| v.as_str()).unwrap_or("");
+        let has_real_token = token.len() > 10;
+        let signed_in_marker = if user_type == "msa" && has_real_token {
+            "✓ SIGNED IN"
+        } else {
+            "✗ OFFLINE MODE — chat will not connect to relay"
+        };
+        lines.push(format!("  status:        {signed_in_marker}"));
+        lines.push(format!("  user_type:     {user_type}"));
+        lines.push(format!("  username:      {username}"));
+        lines.push(format!("  access_token:  {} bytes", token.len()));
+    } else {
+        lines.push(format!("  ✗ account file NOT FOUND at {}", account_file.display()));
+    }
+    lines.push(String::new());
+
+    lines.push("=== Shadow Chat install ===".into());
+    if auth_file.exists() {
+        lines.push(format!("  ✓ shadow-chat-auth.json present"));
+        if let Ok(s) = std::fs::read_to_string(&auth_file) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                let token = v.get("token").and_then(|t| t.as_str()).unwrap_or("");
+                let relay = v.get("relay_url").and_then(|t| t.as_str()).unwrap_or("");
+                lines.push(format!("    token:     {} bytes", token.len()));
+                lines.push(format!("    relay:     {relay}"));
+            }
+        }
+    } else {
+        lines.push(format!("  ✗ shadow-chat-auth.json MISSING ({})", auth_file.display()));
+        lines.push("    (launcher writes this on every successful launch — has the game".into());
+        lines.push("     been started since v0.3.30 was installed?)".into());
+    }
+    match shadow_jar.as_deref() {
+        Some(name) => lines.push(format!("  ✓ mod jar:    {name}")),
+        None       => lines.push(format!("  ✗ no shadow-chat-*.jar in {}", mods_dir.display())),
+    }
+    lines.push(String::new());
+
+    lines.push("=== Relay ===".into());
+    lines.push(format!("  URL: {}", shadow_chat::DEFAULT_RELAY_URL));
+    lines.push("  (use 'Ping relay' below to test reachability)".into());
+
+    lines.join("\n")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -945,6 +1045,7 @@ pub fn run() {
             project_path,
             check_python,
             diagnostics,
+            chat_diagnostics,
             install_update,
             sweep_update_temp,
             disk_usage_mb,

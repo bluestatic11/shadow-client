@@ -24,7 +24,14 @@ export type ClientMessage =
   // Length-capped server-side to prevent abuse.
   | { op: 'msg'; text: string }
   // Optional: server-side typing indicator. May be ignored in MVP.
-  | { op: 'typing' };
+  | { op: 'typing' }
+  // Discord-style opt-in to the channel's voice room. After voice:join
+  // the client's outbound binary voice frames will actually be forwarded,
+  // and they'll receive other members' voice frames. Until then voice
+  // traffic is dropped (no DO ops burned, no extra bandwidth).
+  | { op: 'voice:join' }
+  // Opt out of voice while staying in the text channel.
+  | { op: 'voice:leave' };
 
 /** Anything the *relay* sends back to the connected mod. */
 export type ServerMessage =
@@ -41,6 +48,13 @@ export type ServerMessage =
   // the mod can keep its "who's here" list fresh.
   | { op: 'presence';
       users: { uuid: string; name: string }[];
+    }
+  // Voice roster snapshot. Sent whenever someone in the channel joins
+  // or leaves voice. The full list is replayed on every change (no
+  // deltas) — simpler client logic, and the list is tiny so the
+  // bandwidth cost is negligible.
+  | { op: 'voice:roster';
+      members: { uuid: string; name: string }[];
     }
   // Per-socket error (rate-limit hit, bad op, etc.). The connection
   // stays open — only the offending message is rejected.

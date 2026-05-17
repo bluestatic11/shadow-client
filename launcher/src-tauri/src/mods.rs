@@ -22,7 +22,7 @@ pub const MODRINTH: &str = "https://api.modrinth.com/v2";
 pub const DIRECT_URL_MODS: &[DirectMod] = &[
     DirectMod {
         slug: "shadow-chat",
-        filename: "shadow-chat-0.1.1.jar",
+        filename: "shadow-chat-0.1.2.jar",
         url: shadow_chat::MOD_JAR_URL,
         mc_versions: shadow_chat::SUPPORTED_MC_VERSIONS,
         critical: false,
@@ -191,35 +191,41 @@ pub async fn ensure_direct_mods_present(
         if dest.exists() {
             continue;
         }
-        // Also tolerate the case where a PRIOR version of this mod is
-        // sitting in the folder (e.g. shadow-chat-0.1.0.jar when we now
-        // want shadow-chat-0.1.1.jar). Remove the old one before
-        // grabbing the new — Fabric will refuse to load if two copies
-        // of the same modid are present.
-        if let Some(stem_prefix) = mod_stem_prefix(m.filename) {
-            if let Ok(entries) = std::fs::read_dir(mods_dir) {
-                for e in entries.flatten() {
-                    let fname = e.file_name().to_string_lossy().to_string();
-                    if fname == m.filename { continue; }
-                    if fname.starts_with(stem_prefix) && fname.ends_with(".jar") {
-                        progress(format!(
-                            "  Shadow Chat: removing stale {} (replacing with {})",
-                            fname, m.filename
-                        ));
-                        let _ = std::fs::remove_file(e.path());
-                    }
-                }
-            }
-        }
+
+        // Try the download FIRST, then sweep stale prior-version jars.
+        // The earlier ordering removed the old jar before fetch — which
+        // left the user with NO chat mod if the new version's release
+        // hadn't been published yet (e.g. launcher version bumped
+        // ahead of the mod tag). Fetch-then-sweep keeps the old jar in
+        // place as a working fallback when the new download 404s.
         progress(format!("  Shadow Chat: installing {} into profile…", m.filename));
         match download_file(client, m.url, &dest, None).await {
             Ok(()) => {
                 progress(format!("  Shadow Chat: {} installed", m.filename));
                 added.push(m.slug.to_string());
+                // Sweep prior-version jars NOW that the new one is on
+                // disk. Fabric refuses to load duplicate modids, so we
+                // need to delete the old jar — but only after the new
+                // one is confirmed present.
+                if let Some(stem_prefix) = mod_stem_prefix(m.filename) {
+                    if let Ok(entries) = std::fs::read_dir(mods_dir) {
+                        for e in entries.flatten() {
+                            let fname = e.file_name().to_string_lossy().to_string();
+                            if fname == m.filename { continue; }
+                            if fname.starts_with(stem_prefix) && fname.ends_with(".jar") {
+                                progress(format!(
+                                    "  Shadow Chat: removed stale {}", fname
+                                ));
+                                let _ = std::fs::remove_file(e.path());
+                            }
+                        }
+                    }
+                }
             }
             Err(e) => {
                 progress(format!(
-                    "  Shadow Chat: install failed ({e:#}) — chat will be disabled this session"
+                    "  Shadow Chat: download failed ({e:#}) — keeping existing mod jar if any. \
+                     Next launch will retry."
                 ));
             }
         }

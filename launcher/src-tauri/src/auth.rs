@@ -295,14 +295,34 @@ pub async fn microsoft_device_login(
         .json().await?;
 
     progress("Fetching Minecraft profile…".into());
-    let profile: McProfile = client
+    let profile_resp = client
         .get(MC_PROFILE_URL)
         .bearer_auth(&mc.access_token)
-        .send().await?
-        .error_for_status().with_context(|| {
-            "No Minecraft profile on this account — does it own a copy of Minecraft?"
-        })?
-        .json().await?;
+        .send().await?;
+    // Distinguish the common failure modes with actionable messages.
+    // 404 = the account is a valid MS account but doesn't own
+    // Minecraft. 401/403 = our XSTS exchange failed silently or the
+    // token was rejected; the previous step's error_for_status should
+    // have caught that but we double-check here.
+    if !profile_resp.status().is_success() {
+        let status = profile_resp.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            bail!(
+                "This Microsoft account doesn't own Minecraft. \
+                 Sign in with a different MS account, or buy Minecraft \
+                 at minecraft.net to use online play + chat. (Offline mode \
+                 still works for singleplayer and offline servers.)"
+            );
+        }
+        bail!(
+            "Couldn't fetch Minecraft profile (HTTP {}). \
+             Try signing in again, or check that your Microsoft account \
+             has a valid Minecraft license.",
+            status.as_u16()
+        );
+    }
+    let profile: McProfile = profile_resp.json().await
+        .context("parsing Minecraft profile response")?;
 
     // Mojang returns UUIDs un-hyphenated. The launch arg builder + the
     // server want hyphenated form, so we expand here.

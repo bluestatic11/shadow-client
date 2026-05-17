@@ -213,6 +213,28 @@ body {
   border-color: #4eb3ef;
 }
 
+/* v0.3.37: Microsoft device-code banner. Same banner shell as the
+   startup-banner.update but tuned for sign-in code display. */
+.startup-banner.ms-prompt {
+  background: rgba(14, 40, 64, 0.96);
+  border-color: #3a9eda;
+  /* Bigger than the auto-update banner since the code is the most
+     important part of the screen for the next 60 s. */
+  width: min(440px, calc(100vw - 32px));
+}
+.ms-prompt-code {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-family: 'Consolas', 'Cascadia Code', monospace;
+  font-size: 18px;
+  letter-spacing: 3px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
 .banner-action-secondary {
   background: transparent;
   color: #c8dfee;
@@ -959,6 +981,32 @@ body {
 }
 .chat-hint.disabled {
   color: var(--text-mute);
+}
+
+/* v0.3.37: when offline, the pill becomes a click-target that triggers
+   Microsoft sign-in. Brand-red border + accent text + cursor:pointer
+   so users don't miss the call to action. */
+.chat-hint.actionable {
+  cursor: pointer;
+  color: #ffd9d9;
+  background: rgba(220, 32, 48, 0.10);
+  border-color: rgba(220, 32, 48, 0.45);
+  font-weight: 600;
+}
+.chat-hint.actionable:hover {
+  background: rgba(220, 32, 48, 0.18);
+  border-color: var(--accent-2);
+  transform: translateY(-1px);
+}
+.chat-hint.actionable:active { transform: translateY(0); }
+.chat-hint.actionable .chat-hint-dot {
+  background: var(--accent-2);
+  box-shadow: 0 0 8px rgba(var(--accent-glow), 0.6);
+  animation: chatPulse 1.4s ease-in-out infinite;
+}
+.chat-hint.actionable:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 3px;
 }
 .chat-hint.checking .chat-hint-dot {
   background: #ffd24a;

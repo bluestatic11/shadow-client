@@ -517,19 +517,26 @@ function renderAccount() {
   }
   // Shadow Chat status pill — tells the user in-game chat is ready
   // (and reminds them of the keybinds). Same auth signal as everything
-  // else, hence updated from here.
+  // else, hence updated from here. When offline the pill is CLICKABLE
+  // and triggers Microsoft sign-in directly — users were missing the
+  // tiny "?" avatar in the corner and getting stuck. The pill in the
+  // middle of the home screen is much more discoverable.
   const chatHint = document.getElementById('chat-hint');
   if (chatHint) {
     const text = chatHint.querySelector('.chat-hint-text');
     chatHint.classList.remove('checking');
     if (isMsa) {
       chatHint.classList.add('ready');
-      chatHint.classList.remove('disabled');
+      chatHint.classList.remove('disabled', 'actionable');
+      chatHint.removeAttribute('role');
+      chatHint.removeAttribute('tabindex');
       if (text) text.textContent = 'Shadow Chat: ready · ; chat · V talk';
     } else {
-      chatHint.classList.add('disabled');
+      chatHint.classList.add('disabled', 'actionable');
       chatHint.classList.remove('ready');
-      if (text) text.textContent = 'Shadow Chat: sign in with Microsoft to enable';
+      chatHint.setAttribute('role', 'button');
+      chatHint.setAttribute('tabindex', '0');
+      if (text) text.textContent = '▶ Click to sign in with Microsoft (required for chat)';
     }
   }
 
@@ -570,6 +577,25 @@ accountAction.addEventListener('click', async () => {
     await doSignIn();
   }
 });
+
+// v0.3.37: the home-screen chat-hint pill is ALSO a sign-in entry point
+// when in offline mode. Users were missing the tiny "?" avatar in the
+// corner — this CTA in the middle of the page makes the path obvious.
+const chatHintPill = document.getElementById('chat-hint');
+if (chatHintPill) {
+  const trigger = async () => {
+    if (busy) return;
+    if (signedIn) return;
+    await doSignIn();
+  };
+  chatHintPill.addEventListener('click', trigger);
+  chatHintPill.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      trigger();
+    }
+  });
+}
 
 async function doSignIn() {
   setBusy(true, 'SIGNING IN…');
@@ -999,6 +1025,57 @@ function formatRelativeTime(epochSecs) {
 // the actual running state without polling.
 listen('mc-started', () => { mcRunning = true;  renderFriends(cachedFriends); });
 listen('mc-exited',  () => { mcRunning = false; renderFriends(cachedFriends); });
+
+// v0.3.37: Microsoft sign-in prompt banner. The Rust microsoft_login
+// command emits `ms-prompt` with the device code + verification URL the
+// moment Microsoft hands it to us. We render a big sticky banner with
+// both — clickable URL (opens in browser), copyable code — so the user
+// can complete sign-in EVEN IF the browser didn't auto-open.
+// `ms-prompt-done` fires when sign-in completes (success or failure)
+// and tears the banner down.
+let msPromptBanner = null;
+listen('ms-prompt', (event) => {
+  if (msPromptBanner) msPromptBanner.remove();
+  const p = event.payload || {};
+  const code = String(p.user_code || '').toUpperCase();
+  const url  = String(p.verification_uri_complete || p.verification_uri || '');
+  const banner = document.createElement('div');
+  banner.className = 'startup-banner ms-prompt';
+  banner.setAttribute('role', 'status');
+  banner.innerHTML = `
+    <div class="startup-banner-title">▲ Microsoft sign-in</div>
+    <div class="startup-banner-body">
+      A browser tab should have opened. If it didn't, click
+      <a id="ms-prompt-link" href="#">${url}</a>
+      and enter this code:
+      <code id="ms-prompt-code" class="ms-prompt-code">${code}</code>
+      <button class="banner-action-secondary" id="ms-prompt-copy" type="button">Copy code</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+  msPromptBanner = banner;
+  banner.querySelector('#ms-prompt-link')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openExternal(url);
+  });
+  banner.querySelector('#ms-prompt-copy')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      const btn = banner.querySelector('#ms-prompt-copy');
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      }
+    } catch (_) {}
+  });
+});
+listen('ms-prompt-done', () => {
+  if (msPromptBanner) {
+    msPromptBanner.remove();
+    msPromptBanner = null;
+  }
+});
 
 friendsAddForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2449,28 +2526,73 @@ async function refreshDiagnostics() {
 
 function renderDiagnostics(d) {
   // Plain-text format — fits in a chat message and is easy to grep.
-  const py = d.python || {};
-  const lines = [
+  // v0.3.37: dropped Python-era fields (resource_files_present, candidates_*,
+  // python probe) which the post-v0.3.0 Rust port no longer emits. The
+  // renderer was showing `undefined` for those and the user couldn't tell
+  // what was real vs broken. New shape matches the actual Rust struct.
+  const javaLine = d.java_detected
+    ? `${d.java_major || '?'} at ${d.java_detected}`
+    : '✗ no JDK installed (launcher will download one on first PLAY)';
+  return [
     `Launcher version:        ${d.launcher_version}`,
     `Executable:              ${d.exe_path}`,
     `Executable directory:    ${d.exe_dir}`,
     `Resolved project root:   ${d.project_root}`,
-    `Has client.py?           ${d.project_root_has_client_py ? 'YES' : 'NO'}`,
+    `Has game_dir?            ${d.project_root_has_game_dir ? 'YES' : 'NO'}`,
+    `Java:                    ${javaLine}`,
     `Working directory:       ${d.cwd}`,
-    `Python:                  ${py.ok ? '✓' : '✗'} ${py.detail || ''}`,
-    '',
-    'Files found in project root:',
-    ...(d.resource_files_present.length
-        ? d.resource_files_present.map(f => `  ✓ ${f}`)
-        : ['  (none — install is incomplete)']),
-    '',
-    'Candidate paths searched:',
-    ...d.candidates_checked.map(p => `  ${d.candidates_with_client_py.includes(p) ? '✓' : '·'} ${p}`),
-  ];
-  return lines.join('\n');
+  ].join('\n');
 }
 
 $('diag-refresh')?.addEventListener('click', refreshDiagnostics);
+
+// v0.3.37: focused Shadow Chat self-diagnosis. Runs every check that
+// matters for chat to actually work — sign-in state, mod jar present,
+// auth file present, relay reachable — and dumps the result as a
+// pasteable text block.
+$('diag-chat')?.addEventListener('click', async () => {
+  const btn = $('diag-chat');
+  const out = $('diag-output');
+  if (!btn || !out) return;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  try {
+    out.textContent = await invoke('chat_diagnostics');
+  } catch (e) {
+    out.textContent = 'chat_diagnostics command failed: ' + e;
+  }
+  btn.textContent = orig;
+  btn.disabled = false;
+});
+
+// Ping the relay. Just a fetch from JS — no Rust trip required.
+// Appends result to the diag-output rather than replacing so the user
+// can see both the full diagnose-chat output AND the ping result.
+$('diag-ping-relay')?.addEventListener('click', async () => {
+  const btn = $('diag-ping-relay');
+  const out = $('diag-output');
+  if (!btn || !out) return;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Pinging…';
+  const url = 'https://shadow-chat-relay.edisongushf.workers.dev/health';
+  const t0 = performance.now();
+  let resultLine;
+  try {
+    const r = await fetch(url, { method: 'GET' });
+    const body = (await r.text()).trim();
+    const ms = Math.round(performance.now() - t0);
+    resultLine = r.ok
+      ? `[ping ${ms}ms] ${url} → ${r.status} ${body || '(empty body)'}`
+      : `[ping] ${url} → ${r.status} ${r.statusText} (chat will not work)`;
+  } catch (e) {
+    resultLine = `[ping] ${url} → network error: ${e.message || e}`;
+  }
+  out.textContent = (out.textContent + '\n\n' + resultLine).trim();
+  btn.textContent = orig;
+  btn.disabled = false;
+});
 
 // Manual update-check button. Belt-and-suspenders fallback for users
 // whose auto-update silently fails (network hiccup at boot, CSP

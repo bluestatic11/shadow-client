@@ -1077,6 +1077,14 @@ closeSettings.addEventListener('click', () => {
   settingsDialog.close();
 });
 
+// v0.3.36: prominent "Done" button in the sticky dialog footer.
+// Belt-and-suspenders with the corner × — users were getting stuck in
+// settings because the × was hard to spot after the cosmetics tab's
+// character preview took up the upper area.
+document.getElementById('dialog-done')?.addEventListener('click', () => {
+  settingsDialog.close();
+});
+
 // Close when clicking the backdrop (outside the dialog content)
 settingsDialog.addEventListener('click', (e) => {
   if (e.target === settingsDialog) settingsDialog.close();
@@ -2177,9 +2185,11 @@ function buildCharacterPreview() {
     <div class="char-stage">
       <!-- Aura sits behind the canvas, set as a glow background -->
       <div class="char-aura" id="char-aura" aria-hidden="true"></div>
-      <!-- Real 3D Steve mesh (skinview3d → three.js) -->
+      <!-- Real 3D Steve mesh (skinview3d → three.js). 180×240 in v0.3.36
+           (was 240×320) — sized to fit the sticky right-side sidebar
+           of the cosmetics tab so it doesn't dominate the screen. -->
       <canvas id="char-canvas" class="char-canvas"
-              width="240" height="320" aria-label="Character preview"></canvas>
+              width="180" height="240" aria-label="Character preview"></canvas>
       <!-- Wings overlay — SVG positioned behind the canvas. Three.js
            ignores DOM overlap so we use z-index + position:absolute. -->
       <div class="char-wings-overlay" id="char-wings-overlay"
@@ -2241,8 +2251,8 @@ function initSkinViewer() {
   try {
     skinViewer = new skinview3d.SkinViewer({
       canvas,
-      width: 240,
-      height: 320,
+      width: 180,
+      height: 240,
       skin: 'textures/steve.png',
     });
     // Subtle idle pose — Lunar-style stationary stance with a slow rock.

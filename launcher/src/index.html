@@ -27,7 +27,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.35</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.36</span>
     </h1>
 
     <div class="topbar-actions">
@@ -369,6 +369,15 @@
         <pre class="diag-output" id="diag-output">Loading…</pre>
       </section>
 
+    </div>
+    <!-- v0.3.36: sticky dialog footer with a prominent Done button.
+         The corner × can be hard to find after the character preview
+         pushes everything around, and Esc-to-close isn't discoverable.
+         A labeled button at the bottom that's always visible solves
+         "I'm stuck in the settings" without users needing to know
+         keyboard shortcuts. -->
+    <div class="dialog-foot">
+      <button class="btn-done" id="dialog-done" type="button">Done</button>
     </div>
   </dialog>
 

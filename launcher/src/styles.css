@@ -1563,6 +1563,35 @@ body {
   flex: 1;
 }
 
+/* v0.3.36: sticky dialog footer. The corner × close button isn't always
+   easy to find after a tab pushes content around (cosmetics tab in
+   particular). A persistent, labeled Done button at the bottom makes
+   the escape hatch impossible to miss. */
+.dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-3);
+}
+.btn-done {
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent-2);
+  padding: 8px 24px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.08s;
+  min-width: 100px;
+}
+.btn-done:hover  { background: var(--accent-2); }
+.btn-done:active { transform: translateY(1px); }
+.btn-done:focus  { outline: 2px solid var(--accent-focus); outline-offset: 2px; }
+
 .dlg-page { display: none; }
 .dlg-page.active { display: block; }
 .dlg-page[hidden] { display: none !important; }
@@ -1770,22 +1799,41 @@ body {
    with the equipped cape wrapped around its back. Head accessory,
    wings, trail, aura are SVG overlays positioned on top of the canvas
    because they have no native Minecraft mesh slot. */
-.cosm-character-mount {
+/* v0.3.36: cosmetics tab is now a 2-column layout — slot sections on
+   the left, the character preview as a compact sticky panel on the
+   right. Previously the character mount was a 760 × 360 banner across
+   the whole top of the tab which dominated the view and pushed the
+   close button out of sight. */
+#cosm-sections-host {
   display: grid;
-  grid-template-columns: 260px 1fr;
-  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 20px;
+  align-items: start;
+}
+/* The mount lives in the right column, spans all rows, sticks to the
+   top of the scroll container as the user pages through cosmetics. */
+.cosm-character-mount {
+  grid-column: 2;
+  grid-row: 1 / 999;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   align-items: center;
   background: linear-gradient(180deg,
     rgba(8, 12, 20, 0.85) 0%,
     rgba(20, 24, 33, 0.85) 100%);
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 22px 24px;
-  margin-bottom: 22px;
-  min-height: 360px;
-  position: relative;
+  padding: 16px 14px;
+  margin-bottom: 0;
   overflow: hidden;
+  z-index: 1;
 }
+/* Validation badge + all .cosm-section blocks share the left column. */
+#cosm-sections-host > .cosm-validation,
+#cosm-sections-host > .cosm-section { grid-column: 1; }
 
 /* Faint checkered floor under the character — gives it a sense of
    standing on something rather than floating in space. */
@@ -1807,10 +1855,12 @@ body {
   pointer-events: none;
 }
 
+/* v0.3.36: shrunk from 240×320 to 180×240 so the whole sticky panel
+   fits comfortably in a 220 px sidebar column. */
 .char-stage {
   position: relative;
-  width: 240px;
-  height: 320px;
+  width: 180px;
+  height: 240px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1829,33 +1879,31 @@ body {
 .char-canvas:active { cursor: grabbing; }
 
 /* Soft radial aura behind the canvas. */
+/* All overlay numbers rescaled in v0.3.36 for the 180×240 canvas. */
 .char-aura {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 240px;
-  height: 280px;
+  width: 180px;
+  height: 210px;
   transform: translate(-50%, -50%);
   background: radial-gradient(ellipse,
     var(--aura-color, transparent) 0%,
     transparent 65%);
   opacity: 0.55;
-  filter: blur(14px);
+  filter: blur(12px);
   display: none;
   pointer-events: none;
   z-index: 1;
 }
 
-/* Head accessory overlay — floats above the canvas at the position
-   where the 3D head sits. Numbers tuned for SkinViewer's default camera
-   at zoom: 0.85 with a 240×320 canvas. */
 .char-head-overlay {
   position: absolute;
-  top: 24px;
+  top: 18px;
   left: 50%;
   transform: translateX(-50%);
-  width: 58px;
-  height: 58px;
+  width: 44px;
+  height: 44px;
   pointer-events: none;
   z-index: 3;
   filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
@@ -1864,40 +1912,34 @@ body {
   justify-content: center;
 }
 .char-head-overlay .cosm-svg {
-  width: 56px;
-  height: 56px;
+  width: 42px;
+  height: 42px;
 }
 
-/* Wings overlay — sits BEHIND the canvas (z-index: 0) so the model
-   visually sits in front of its wings. Sized to span the shoulder
-   region. */
 .char-wings-overlay {
   position: absolute;
-  top: 90px;
+  top: 68px;
   left: 50%;
   transform: translateX(-50%);
-  width: 240px;
-  height: 130px;
+  width: 180px;
+  height: 100px;
   pointer-events: none;
   z-index: 0;
   display: none;
 }
 .char-wings-overlay .cosm-svg {
-  width: 240px;
-  height: 130px;
+  width: 180px;
+  height: 100px;
   filter: drop-shadow(0 4px 6px rgba(0,0,0,0.45));
 }
 
-/* Trail particles at the feet — sits in front of the canvas so the
-   particles look like they're emanating from the ground at the
-   model's position. */
 .char-trail-overlay {
   position: absolute;
-  bottom: 18px;
+  bottom: 14px;
   left: 50%;
   transform: translateX(-50%);
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   pointer-events: none;
   z-index: 3;
   display: none;
@@ -1905,16 +1947,20 @@ body {
   justify-content: center;
 }
 .char-trail-overlay .cosm-svg {
-  width: 52px;
-  height: 52px;
+  width: 40px;
+  height: 40px;
   filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
 }
 
-/* Info column on the right — labels + equipped summary. */
+/* Info column — now stacked BELOW the stage in the sidebar layout
+   (was a right-side column in the wider v0.3.26 banner). Full-width
+   inside the 220 px sticky panel. */
 .char-info {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  width: 100%;
+  font-size: 11px;
 }
 .char-info-label {
   font-size: 10px;
@@ -1959,10 +2005,19 @@ body {
   margin-top: 4px;
 }
 
-/* On narrow dialogs, stack the character above the info column. */
+/* On narrow dialogs, collapse the cosmetics grid to a single column —
+   character preview drops above the cosmetic sections instead of beside
+   them. (Within the sidebar the mount is already stacked vertically;
+   the change here is the OUTER grid in #cosm-sections-host.) */
 @media (max-width: 600px) {
-  .cosm-character-mount { grid-template-columns: 1fr; justify-items: center; }
-  .char-info { width: 100%; align-items: center; text-align: center; }
+  #cosm-sections-host {
+    grid-template-columns: 1fr;
+  }
+  .cosm-character-mount {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
+  }
 }
 
 /* ───── Per-tile preview shapes ────────────────────────────────

@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -47,6 +48,14 @@ public final class RelayClient {
      */
     private final AtomicReference<Session> current = new AtomicReference<>();
 
+    /**
+     * True when the user (or app shutdown) explicitly closed the
+     * connection. Stops {@link #scheduleReconnect} from re-establishing
+     * a connection the user already walked away from. Reset to false
+     * on every explicit {@link #connect}.
+     */
+    private final AtomicBoolean manuallyDisconnected = new AtomicBoolean(false);
+
     public RelayClient(AuthConfig auth) {
         this.auth = auth;
         // Plain HttpClient with a sane connect timeout. The default
@@ -71,6 +80,11 @@ public final class RelayClient {
      * Failures are surfaced via {@link EventSink#onDisconnected(String, String)}.
      */
     public CompletableFuture<Void> connect(String channel, EventSink sink) {
+        // An explicit connect always re-enables auto-reconnect. The
+        // reconnect path itself calls back into this method, so this
+        // also handles "stay on this channel until the user says
+        // otherwise" semantics across retries.
+        manuallyDisconnected.set(false);
         closeCurrent("switching channel");
 
         if (!auth.isUsable()) {
@@ -123,9 +137,35 @@ public final class RelayClient {
         }
     }
 
-    /** Close the current socket if any. Safe to call multiple times. */
+    /** Close the current socket if any. Safe to call multiple times.
+     *  Suppresses any pending auto-reconnect — the user (or shutdown
+     *  hook) explicitly wants out, we don't second-guess that. */
     public void disconnect() {
+        manuallyDisconnected.set(true);
         closeCurrent("client closed");
+    }
+
+    /**
+     * Fire-and-forget single-retry reconnect. If the relay's still down
+     * after 3 seconds we give up; the next user action (switching
+     * channel, joining a server) will retry from scratch. Covers the
+     * common case — relay restart, transient network blip — without
+     * looping indefinitely on a hard failure (banned, no internet).
+     */
+    private void scheduleReconnect(String channel, EventSink sink) {
+        if (manuallyDisconnected.get()) return;
+        Thread t = new Thread(() -> {
+            try { Thread.sleep(3000); }
+            catch (InterruptedException e) { return; }
+            // Re-check intent — user may have disconnected during the
+            // 3-second wait, or another connect() may have already
+            // landed a new session.
+            if (manuallyDisconnected.get()) return;
+            if (current.get() != null) return;
+            connect(channel, sink);
+        }, "shadow-chat-reconnect");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void closeCurrent(String reason) {
@@ -222,6 +262,15 @@ public final class RelayClient {
             if (current.compareAndSet(session, null)) {
                 session.sink.onDisconnected(session.channel,
                         reason == null || reason.isBlank() ? "code " + statusCode : reason);
+                // Retry on anything except a clean close. NORMAL_CLOSURE
+                // (1000) means the close was deliberate (we asked for
+                // it, or the relay banned/rate-limited us) — don't loop.
+                // Everything else (1001 going-away from a Worker
+                // redeploy, 1006 abnormal closure from a dropped
+                // connection, etc.) is worth one retry.
+                if (statusCode != WebSocket.NORMAL_CLOSURE) {
+                    scheduleReconnect(session.channel, session.sink);
+                }
             }
             return null;
         }
@@ -230,6 +279,7 @@ public final class RelayClient {
         public void onError(WebSocket webSocket, Throwable error) {
             if (current.compareAndSet(session, null)) {
                 session.sink.onDisconnected(session.channel, rootCause(error));
+                scheduleReconnect(session.channel, session.sink);
             }
         }
     }

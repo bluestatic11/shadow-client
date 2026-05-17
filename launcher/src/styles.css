@@ -920,6 +920,55 @@ body {
   width: 100%;
 }
 
+/* ───── Shadow Chat status pill ─────────────────────────────
+   Small horizontal indicator under the version-row that tells the
+   user whether in-game chat is wired up. Three states:
+     ready    — green dot, "Shadow Chat: ready · ; chat · V talk"
+     disabled — muted dot, "Shadow Chat: sign in with Microsoft"
+     checking — yellow pulse, transient while we figure out auth state */
+.chat-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-mute);
+  letter-spacing: 0.2px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.chat-hint-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-mute);
+  box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.chat-hint.ready {
+  color: #b8e4c4;
+  border-color: rgba(34, 221, 85, 0.35);
+  background: rgba(34, 221, 85, 0.07);
+}
+.chat-hint.ready .chat-hint-dot {
+  background: #22dd55;
+  box-shadow: 0 0 8px rgba(34, 221, 85, 0.55);
+}
+.chat-hint.disabled {
+  color: var(--text-mute);
+}
+.chat-hint.checking .chat-hint-dot {
+  background: #ffd24a;
+  animation: chatPulse 1.4s ease-in-out infinite;
+}
+@keyframes chatPulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1.0; }
+}
+
 /* ───── Stat tiles ─────────────────────────────────────────── */
 .stat-row {
   display: grid;

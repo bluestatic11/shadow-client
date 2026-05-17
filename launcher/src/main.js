@@ -515,6 +515,24 @@ function renderAccount() {
     if (hint) hint.textContent =
       'Locked in offline mode — sign in with Microsoft to rename.';
   }
+  // Shadow Chat status pill — tells the user in-game chat is ready
+  // (and reminds them of the keybinds). Same auth signal as everything
+  // else, hence updated from here.
+  const chatHint = document.getElementById('chat-hint');
+  if (chatHint) {
+    const text = chatHint.querySelector('.chat-hint-text');
+    chatHint.classList.remove('checking');
+    if (isMsa) {
+      chatHint.classList.add('ready');
+      chatHint.classList.remove('disabled');
+      if (text) text.textContent = 'Shadow Chat: ready · ; chat · V talk';
+    } else {
+      chatHint.classList.add('disabled');
+      chatHint.classList.remove('ready');
+      if (text) text.textContent = 'Shadow Chat: sign in with Microsoft to enable';
+    }
+  }
+
   renderGreeting();  // greeting tracks the same name shown in the corner
   renderFriends(cachedFriends);  // "You" row tracks the same name too
 }

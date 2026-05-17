@@ -790,28 +790,25 @@ async fn install_update(
         let _ = std::fs::set_permissions(&dest, perms);
     }
 
-    // v0.3.33: switched from inline cmd /C to a proper batch script.
+    // v0.3.34: rewrote the previous batch-script approach as an inline
+    // `cmd /C` chain — same shape as v0.3.32 which compiled cleanly,
+    // just with stronger silence flags + a taskkill prelude.
     //
-    // Why: `<installer> /S` alone didn't reliably silence the wizard for
-    // users on prior versions. Two interacting problems:
-    //   1. The OLD launcher process (us) still holds a lock on
-    //      Shadow Client.exe when NSIS tries to write to it. NSIS shows
-    //      a "Shadow Client is still running" dialog that bypasses /S.
-    //   2. Tauri's NSIS template defaults to a "choose install dir" page
-    //      that /S alone doesn't suppress — only the combination of
-    //      `/S` PLUS `/D=<dir>` (which forces the install dir non-
-    //      interactively, must be the LAST arg, no quotes).
+    // Silence chain on Windows:
+    //   1. `taskkill /F /IM "<exe>" /T` — kill our own process group +
+    //      any WebView2 children that survive Tauri's app.exit(). This
+    //      releases the .exe lock NSIS would otherwise trip on.
+    //   2. `timeout /t 3` — give the OS time to fully release the lock.
+    //   3. `"<installer>" /S /D=<install_dir>` — NSIS silent flag PLUS
+    //      install-dir override. Both are required; /S alone leaves the
+    //      "choose install location" page that Tauri's NSIS template
+    //      renders even in silent mode.
+    //   4. `timeout /t 2` — let NSIS finish flushing files.
+    //   5. `start "" "<launcher>"` — restart the new launcher detached.
     //
-    // The new batch script:
-    //   - taskkill /F on any lingering Shadow Client.exe (covers WebView2
-    //     child processes that survive Tauri's app.exit())
-    //   - waits 3 s for the OS to release the .exe file lock
-    //   - runs the installer with both /S and /D
-    //   - waits 2 s for NSIS to finish writing
-    //   - relaunches the new .exe
-    //   - logs every step to %TEMP%\ShadowClient-update\apply-update.log
-    //     so if it STILL fails the user can paste the log and we can
-    //     pinpoint exactly what tripped up.
+    // No .bat file, no `?` inside a typed block — those caused the
+    // v0.3.33 Windows build to fail in CI. Errors get surfaced through
+    // `spawn_result.map_err(...)?` at the bottom of the function only.
     let current_exe = std::env::current_exe().ok();
 
     let spawn_result: std::io::Result<std::process::Child> = {
@@ -822,60 +819,41 @@ async fn install_update(
             //                        | CREATE_NO_WINDOW (0x08000000)
             const CREATE_FLAGS: u32 = 0x00000008 | 0x00000200 | 0x08000000;
 
-            // Build the batch script content. We escape NOTHING manually —
-            // these strings are written to a .bat file and cmd handles
-            // its own parsing of that file.
-            let installer_path = dest.display().to_string();
-            let install_dir = current_exe
-                .as_ref()
-                .and_then(|p| p.parent())
-                .map(|p| p.display().to_string())
-                .unwrap_or_default();
-            let launcher_path = current_exe
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default();
-            // The exe basename ("Shadow Client.exe") is what we taskkill.
-            let exe_name = current_exe
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Shadow Client.exe".to_string());
-            let log_path = temp_dir.join("apply-update.log");
-
-            // Write the .bat — note /D= MUST be the final installer arg
-            // with no quotes around the path; NSIS reads everything from
-            // /D= to end-of-line as the install directory.
-            let script = format!(
-                "@echo off\r\n\
-                 setlocal\r\n\
-                 set LOG=\"{log}\"\r\n\
-                 echo === apply-update starting %DATE% %TIME% === > %LOG%\r\n\
-                 echo Killing any running {exe_name} >> %LOG% 2>&1\r\n\
-                 taskkill /F /IM \"{exe_name}\" /T >> %LOG% 2>&1\r\n\
-                 echo Waiting 3s for file locks to release >> %LOG% 2>&1\r\n\
-                 timeout /t 3 /nobreak > nul\r\n\
-                 echo Running installer silently >> %LOG% 2>&1\r\n\
-                 \"{installer}\" /S /D={install_dir} >> %LOG% 2>&1\r\n\
-                 echo Installer exit=%ERRORLEVEL% >> %LOG% 2>&1\r\n\
-                 timeout /t 2 /nobreak > nul\r\n\
-                 echo Restarting launcher: {launcher} >> %LOG% 2>&1\r\n\
-                 start \"\" \"{launcher}\"\r\n\
-                 echo Done. >> %LOG% 2>&1\r\n",
-                log = log_path.display(),
-                exe_name = exe_name,
-                installer = installer_path,
-                install_dir = install_dir,
-                launcher = launcher_path,
-            );
-            let bat = temp_dir.join("apply-update.bat");
-            std::fs::write(&bat, script)
-                .map_err(|e| format!("writing apply-update.bat: {e}"))?;
-
-            std::process::Command::new("cmd")
-                .args(["/C", &bat.display().to_string()])
-                .creation_flags(CREATE_FLAGS)
-                .spawn()
+            if let Some(launcher_exe) = current_exe.as_ref() {
+                let install_dir = launcher_exe
+                    .parent()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
+                let exe_name = launcher_exe
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Shadow Client.exe".to_string());
+                // /D= MUST be the LAST arg to the installer (no quotes —
+                // NSIS reads everything after /D= verbatim to EOL).
+                let cmd_line = format!(
+                    r#"taskkill /F /IM "{exe}" /T >nul 2>&1 & timeout /t 3 /nobreak >nul & "{installer}" /S /D={dir} & timeout /t 2 /nobreak >nul & start "" "{launcher}""#,
+                    exe = exe_name,
+                    installer = dest.display(),
+                    dir = install_dir,
+                    launcher = launcher_exe.display(),
+                );
+                std::process::Command::new("cmd")
+                    .args(["/C", &cmd_line])
+                    .creation_flags(CREATE_FLAGS)
+                    .spawn()
+            } else {
+                // Couldn't resolve our own .exe path — best effort:
+                // install silently, skip relaunch. The user reopens
+                // the launcher manually.
+                let cmd_line = format!(
+                    r#"timeout /t 2 /nobreak >nul & "{}" /S"#,
+                    dest.display(),
+                );
+                std::process::Command::new("cmd")
+                    .args(["/C", &cmd_line])
+                    .creation_flags(CREATE_FLAGS)
+                    .spawn()
+            }
         }
         #[cfg(target_os = "macos")]
         {

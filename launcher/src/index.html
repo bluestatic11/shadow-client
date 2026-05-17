@@ -27,7 +27,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.33</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.34</span>
     </h1>
 
     <div class="topbar-actions">
@@ -147,6 +147,17 @@
              role="progressbar" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="0" aria-label="Setup progress">
           <div class="progress-fill" id="progress-fill"></div>
+        </div>
+
+        <!-- Shadow Chat status pill — populated by renderAccount() based
+             on Microsoft sign-in state. Tells the user at a glance
+             whether in-game chat is wired up + reminds them of the
+             keybinds so the overlay is discoverable. Starts in
+             "checking" state with a pulsing yellow dot until auth
+             load resolves; renderAccount swaps to ready / disabled. -->
+        <div class="chat-hint checking" id="chat-hint" role="status">
+          <span class="chat-hint-dot" aria-hidden="true"></span>
+          <span class="chat-hint-text">Shadow Chat: checking…</span>
         </div>
       </div>
 

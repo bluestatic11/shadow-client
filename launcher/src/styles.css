@@ -1789,18 +1789,26 @@ body {
 .char-head-block::before { left: 8px; }
 .char-head-block::after  { right: 8px; }
 
-/* Hat / halo overlay sits on top of the head. */
+/* Hat / halo overlay sits on top of the head block. v0.3.25: now hosts
+   the same SVG shape used in the tile preview so the mannequin shows
+   the actual equipped item (crown, top hat, wizard hat) — not a stand-in
+   emoji. The SVG is scaled to ~48 px so it visibly sits on the head. */
 .char-head-overlay {
   position: absolute;
-  bottom: 100%;
+  bottom: 80%;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 28px;
-  line-height: 1;
-  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
-               inherit;
+  width: 50px;
+  height: 50px;
   pointer-events: none;
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4));
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.char-head-overlay .cosm-svg {
+  width: 48px;
+  height: 48px;
 }
 
 .char-torso-block {
@@ -2036,58 +2044,51 @@ body {
   box-shadow: inset 0 -1px 2px rgba(0,0,0,0.5);
 }
 
-/* Wings preview — SVG inside, sized to the tile. */
-.wings-preview svg {
+/* Generic <svg.cosm-svg> sizing — each preview gets a fixed-size SVG
+   pulled from the COSM_SHAPES library. The shapes are drawn at fixed
+   viewBox sizes (64×64 for heads/trails, 80×50 for wings) and scaled
+   here for the tile + character mount contexts. */
+.cosm-svg {
+  width: 60px;
+  height: 60px;
+  display: block;
+}
+
+/* Wings preview — wider SVG, shorter height. */
+.wings-preview .cosm-svg {
+  width: 76px;
+  height: 48px;
   filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35));
 }
 
-/* Head preview — emoji on a soft tinted disk. */
+/* Head preview — SVG centered on a soft tinted disk. */
 .head-preview {
   position: relative;
 }
 .head-preview::before {
   content: '';
   position: absolute;
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   background: radial-gradient(circle,
-    color-mix(in srgb, var(--head-color, white) 30%, transparent) 0%,
+    color-mix(in srgb, var(--head-color, white) 24%, transparent) 0%,
     transparent 70%);
+  z-index: 0;
 }
-.head-emoji {
+.head-preview .cosm-svg {
   position: relative;
-  font-size: 30px;
-  line-height: 1;
-  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
-               inherit;
+  z-index: 1;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
 }
 
-/* Trail preview — emoji + three dots indicating motion. */
-.trail-preview {
-  flex-direction: column;
-  gap: 4px;
+/* Trail preview — the SVG inherits the item's color via currentColor
+   on the .cosm-preview parent (set inline). */
+.trail-preview .cosm-svg {
+  width: 56px;
+  height: 56px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));
 }
-.trail-emoji {
-  font-size: 24px;
-  line-height: 1;
-  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
-               inherit;
-}
-.trail-dots {
-  display: flex;
-  gap: 5px;
-}
-.trail-dots span {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--trail-color);
-  box-shadow: 0 0 4px var(--trail-color);
-}
-.trail-dots span:nth-child(1) { opacity: 0.35; }
-.trail-dots span:nth-child(2) { opacity: 0.65; }
-.trail-dots span:nth-child(3) { opacity: 1.0; }
 
 /* Aura preview — glowing disc using a radial gradient. */
 .aura-preview {

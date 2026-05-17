@@ -1449,6 +1449,504 @@ function buildCosmEntry(slot, item) {
 }
 
 /**
+ * Per-item SVG shape library. Every head, trail, and wings entry gets a
+ * hand-drawn SVG so the tile shows the actual item rather than a generic
+ * emoji. v0.3.25 — replaces the v0.3.24 emoji-on-disk approach the user
+ * called out as "not showing the actual model".
+ *
+ * Conventions:
+ *  - viewBox is "0 0 64 64" for heads and trails (square), "0 0 80 50"
+ *    for wings (wide).
+ *  - Trail SVGs use `currentColor` for fills so the parent .trail-preview
+ *    can tint them with the item's color via `color: var(--trail-color)`.
+ *  - Wing SVGs use `var(--wings-color)` so each instance tints the wings
+ *    independently from a CSS variable set inline.
+ *  - Head SVGs use hardcoded colors per item identity (gold crown, black
+ *    top hat) because a halo isn't just "any color" — its identity is
+ *    "gold ring".
+ */
+const COSM_SHAPES = {
+  // ─── HEADS ───────────────────────────────────────────────────────
+  head_halo:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<ellipse cx="32" cy="34" rx="26" ry="7" fill="none" stroke="#ffd24a" stroke-width="5"/>'
+    + '<ellipse cx="32" cy="32" rx="26" ry="5" fill="none" stroke="#fff7c0" stroke-width="1.5" opacity="0.8"/>'
+    + '</svg>',
+  head_crown:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 6 44 L 14 22 L 22 36 L 32 14 L 42 36 L 50 22 L 58 44 Z" fill="#ffd24a" stroke="#9c7b00" stroke-width="2" stroke-linejoin="round"/>'
+    + '<rect x="6" y="42" width="52" height="14" fill="#ffd24a" stroke="#9c7b00" stroke-width="2"/>'
+    + '<circle cx="32" cy="50" r="3.5" fill="#dc2030"/>'
+    + '<circle cx="18" cy="50" r="2.5" fill="#3a9eda"/>'
+    + '<circle cx="46" cy="50" r="2.5" fill="#22dd55"/>'
+    + '</svg>',
+  head_antlers:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g stroke="#bb8855" stroke-width="3" fill="none" stroke-linecap="round">'
+    + '<path d="M 20 54 Q 18 30, 14 22"/>'
+    + '<path d="M 14 22 L 8 14 M 16 30 L 9 26 M 18 38 L 10 36"/>'
+    + '<path d="M 44 54 Q 46 30, 50 22"/>'
+    + '<path d="M 50 22 L 56 14 M 48 30 L 55 26 M 46 38 L 54 36"/>'
+    + '</g>'
+    + '</svg>',
+  head_tophat:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<rect x="18" y="8" width="28" height="36" fill="#1a1a1a" rx="1"/>'
+    + '<rect x="18" y="38" width="28" height="5" fill="#dc2030"/>'
+    + '<ellipse cx="32" cy="46" rx="26" ry="5" fill="#1a1a1a"/>'
+    + '<rect x="18" y="10" width="3" height="32" fill="rgba(255,255,255,0.12)"/>'
+    + '</svg>',
+  head_tiara:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 8 40 Q 32 12, 56 40 L 56 44 Q 32 22, 8 44 Z" fill="#9ad8ea" stroke="#3a9eda" stroke-width="1.5"/>'
+    + '<circle cx="32" cy="18" r="4.5" fill="#3a9eda" stroke="white" stroke-width="1"/>'
+    + '<circle cx="32" cy="18" r="1.5" fill="white"/>'
+    + '<circle cx="18" cy="28" r="2.5" fill="#9ad8ea" stroke="white" stroke-width="0.6"/>'
+    + '<circle cx="46" cy="28" r="2.5" fill="#9ad8ea" stroke="white" stroke-width="0.6"/>'
+    + '</svg>',
+  head_helmet:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 12 46 Q 12 18, 32 14 Q 52 18, 52 46 Z" fill="#888888" stroke="#444" stroke-width="1.5"/>'
+    + '<rect x="12" y="42" width="40" height="10" fill="#666"/>'
+    + '<rect x="20" y="32" width="24" height="6" fill="#1a1a1a"/>'
+    + '<rect x="20" y="32" width="24" height="2" fill="#3a9eda" opacity="0.6"/>'
+    + '</svg>',
+  head_beanie:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 14 42 Q 14 16, 32 14 Q 50 16, 50 42 Z" fill="#3a9eda" stroke="#1c6090" stroke-width="1.5"/>'
+    + '<rect x="11" y="40" width="42" height="10" fill="#2a7eb8" rx="2"/>'
+    + '<circle cx="32" cy="12" r="5" fill="#dc2030" stroke="#7a0c1c" stroke-width="1"/>'
+    + '<path d="M 22 22 Q 32 18, 42 22" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" fill="none"/>'
+    + '</svg>',
+  head_headband:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<rect x="6" y="26" width="52" height="12" fill="#dc2030" rx="2" stroke="#7a0c1c" stroke-width="1"/>'
+    + '<line x1="6" y1="32" x2="58" y2="32" stroke="white" stroke-width="2"/>'
+    + '<path d="M 50 38 L 56 50 L 54 42 L 60 46 L 56 38" fill="#dc2030" stroke="#7a0c1c" stroke-width="1"/>'
+    + '</svg>',
+  head_wizard:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 32 4 L 50 42 L 14 42 Z" fill="#a050ff" stroke="#5a2cc4" stroke-width="1.5"/>'
+    + '<ellipse cx="32" cy="46" rx="22" ry="5" fill="#a050ff" stroke="#5a2cc4" stroke-width="1.5"/>'
+    + '<rect x="10" y="42" width="44" height="5" fill="#5a2cc4"/>'
+    + '<circle cx="36" cy="22" r="2" fill="#ffd24a"/>'
+    + '<circle cx="22" cy="32" r="1.5" fill="#ffd24a"/>'
+    + '<circle cx="40" cy="36" r="1.2" fill="#ffd24a"/>'
+    + '</svg>',
+  head_cowboy:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 4 36 Q 32 30, 60 36 L 60 44 Q 32 50, 4 44 Z" fill="#bb8855" stroke="#553311" stroke-width="1.5"/>'
+    + '<path d="M 18 36 Q 22 14, 32 14 Q 42 14, 46 36 Z" fill="#bb8855" stroke="#553311" stroke-width="1.5"/>'
+    + '<path d="M 26 24 Q 32 22, 38 24" stroke="#553311" stroke-width="2.5" fill="none"/>'
+    + '<rect x="18" y="32" width="28" height="3" fill="#553311"/>'
+    + '<circle cx="32" cy="33" r="1.5" fill="#ffd24a"/>'
+    + '</svg>',
+  head_cap:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 12 36 Q 12 18, 30 16 Q 50 18, 50 36 Z" fill="#dc2030" stroke="#7a0c1c" stroke-width="1.5"/>'
+    + '<path d="M 12 34 L 4 40 L 14 38 Z" fill="#dc2030" stroke="#7a0c1c" stroke-width="1.5"/>'
+    + '<circle cx="30" cy="24" r="4" fill="white" stroke="#7a0c1c" stroke-width="1.2"/>'
+    + '<path d="M 28 22 L 32 26 M 32 22 L 28 26" stroke="#7a0c1c" stroke-width="1"/>'
+    + '</svg>',
+  head_phones:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 10 38 Q 10 14, 32 14 Q 54 14, 54 38" stroke="#222" stroke-width="5" fill="none"/>'
+    + '<rect x="4" y="32" width="14" height="22" fill="#444" rx="3" stroke="#222" stroke-width="1.5"/>'
+    + '<rect x="46" y="32" width="14" height="22" fill="#444" rx="3" stroke="#222" stroke-width="1.5"/>'
+    + '<circle cx="11" cy="43" r="4" fill="#222"/>'
+    + '<circle cx="53" cy="43" r="4" fill="#222"/>'
+    + '<circle cx="11" cy="43" r="1.5" fill="#3a9eda"/>'
+    + '<circle cx="53" cy="43" r="1.5" fill="#3a9eda"/>'
+    + '</svg>',
+  head_mask:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 10 24 Q 32 16, 54 24 Q 54 38, 32 42 Q 10 38, 10 24 Z" fill="#e8e8ec" stroke="#888" stroke-width="1.5"/>'
+    + '<ellipse cx="22" cy="28" rx="3.5" ry="4.5" fill="#1a1a1a"/>'
+    + '<ellipse cx="42" cy="28" rx="3.5" ry="4.5" fill="#1a1a1a"/>'
+    + '<path d="M 24 36 Q 32 34, 40 36" stroke="#1a1a1a" stroke-width="1.5" fill="none"/>'
+    + '</svg>',
+  head_mohawk:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 32 6 L 28 30 L 24 26 L 22 34 L 18 30 L 14 38 L 30 40 L 34 40 L 50 38 L 46 30 L 42 34 L 40 26 L 36 30 Z" fill="#dc2030" stroke="#7a0c1c" stroke-width="1.5" stroke-linejoin="round"/>'
+    + '<path d="M 28 14 L 30 28 M 34 14 L 32 28 M 38 18 L 36 28" stroke="#ff5060" stroke-width="1.2" fill="none"/>'
+    + '</svg>',
+  head_cat_ears:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 10 38 L 18 12 L 28 32 Z" fill="#ffb0e0" stroke="#cc6090" stroke-width="1.5" stroke-linejoin="round"/>'
+    + '<path d="M 36 32 L 46 12 L 54 38 Z" fill="#ffb0e0" stroke="#cc6090" stroke-width="1.5" stroke-linejoin="round"/>'
+    + '<path d="M 14 32 L 18 18 L 24 30 Z" fill="#ff70b0"/>'
+    + '<path d="M 40 30 L 46 18 L 50 32 Z" fill="#ff70b0"/>'
+    + '</svg>',
+  head_glasses:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<circle cx="20" cy="32" r="11" fill="rgba(20,20,20,0.6)" stroke="#1a1a1a" stroke-width="2.5"/>'
+    + '<circle cx="44" cy="32" r="11" fill="rgba(20,20,20,0.6)" stroke="#1a1a1a" stroke-width="2.5"/>'
+    + '<line x1="31" y1="32" x2="33" y2="32" stroke="#1a1a1a" stroke-width="2.5"/>'
+    + '<line x1="8" y1="28" x2="3" y2="26" stroke="#1a1a1a" stroke-width="2.5"/>'
+    + '<line x1="56" y1="28" x2="61" y2="26" stroke="#1a1a1a" stroke-width="2.5"/>'
+    + '<path d="M 16 26 Q 22 24, 24 28" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" fill="none"/>'
+    + '<path d="M 40 26 Q 46 24, 48 28" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" fill="none"/>'
+    + '</svg>',
+  head_pirate:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 4 32 L 32 12 L 60 32 L 50 40 L 32 28 L 14 40 Z" fill="#202020" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/>'
+    + '<circle cx="32" cy="24" r="5" fill="white"/>'
+    + '<circle cx="30" cy="23" r="1.2" fill="#000"/>'
+    + '<circle cx="34" cy="23" r="1.2" fill="#000"/>'
+    + '<path d="M 28 27 L 29 30 M 32 27 L 32 30 M 36 27 L 35 30" stroke="#000" stroke-width="1.2"/>'
+    + '</svg>',
+  head_visor:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<rect x="6" y="24" width="52" height="12" fill="#0adada" stroke="#0a7878" stroke-width="1.5" rx="3"/>'
+    + '<rect x="9" y="27" width="46" height="3" fill="white" opacity="0.7"/>'
+    + '<rect x="6" y="22" width="52" height="2" fill="#0adada" opacity="0.5"/>'
+    + '<rect x="6" y="36" width="52" height="2" fill="#0adada" opacity="0.5"/>'
+    + '</svg>',
+
+  // ─── TRAILS (use currentColor — tinted by parent) ───────────────
+  trail_fairies:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<path d="M 32 8 L 34 16 L 42 18 L 34 20 L 32 28 L 30 20 L 22 18 L 30 16 Z"/>'
+    + '<path d="M 14 36 L 15 40 L 19 41 L 15 42 L 14 46 L 13 42 L 9 41 L 13 40 Z"/>'
+    + '<path d="M 50 36 L 51 40 L 55 41 L 51 42 L 50 46 L 49 42 L 45 41 L 49 40 Z"/>'
+    + '<circle cx="20" cy="52" r="2" opacity="0.6"/>'
+    + '<circle cx="44" cy="52" r="1.5" opacity="0.5"/>'
+    + '</g>'
+    + '</svg>',
+  trail_footsteps:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<ellipse cx="18" cy="24" rx="6" ry="9"/>'
+    + '<circle cx="13" cy="14" r="2.2"/>'
+    + '<circle cx="19" cy="12" r="2.2"/>'
+    + '<circle cx="24" cy="14" r="2"/>'
+    + '<ellipse cx="46" cy="44" rx="6" ry="9"/>'
+    + '<circle cx="41" cy="34" r="2.2"/>'
+    + '<circle cx="47" cy="32" r="2.2"/>'
+    + '<circle cx="52" cy="34" r="2"/>'
+    + '</g>'
+    + '</svg>',
+  trail_stars:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<path d="M 32 6 L 36 22 L 52 22 L 39 31 L 44 47 L 32 37 L 20 47 L 25 31 L 12 22 L 28 22 Z"/>'
+    + '<path d="M 12 50 L 13 54 L 17 54 L 14 57 L 15 61 L 12 58 L 9 61 L 10 57 L 7 54 L 11 54 Z" opacity="0.7"/>'
+    + '<path d="M 52 50 L 53 54 L 57 54 L 54 57 L 55 61 L 52 58 L 49 61 L 50 57 L 47 54 L 51 54 Z" opacity="0.7"/>'
+    + '</g>'
+    + '</svg>',
+  trail_bow:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g stroke="currentColor" fill="currentColor" stroke-linecap="round" stroke-linejoin="round">'
+    + '<line x1="8" y1="56" x2="52" y2="12" stroke-width="3.5"/>'
+    + '<polygon points="52,12 38,12 44,22" stroke-width="1"/>'
+    + '<line x1="6" y1="58" x2="14" y2="50" stroke-width="2.5"/>'
+    + '<line x1="6" y1="58" x2="14" y2="58" stroke-width="2.5"/>'
+    + '</g>'
+    + '</svg>',
+  trail_fire:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 32 8 Q 22 22, 24 36 Q 18 32, 18 46 Q 18 58, 32 58 Q 46 58, 46 46 Q 46 32, 40 36 Q 42 22, 32 8 Z" fill="currentColor"/>'
+    + '<path d="M 32 22 Q 28 32, 30 42 Q 30 50, 32 52 Q 34 50, 34 42 Q 36 32, 32 22 Z" fill="white" opacity="0.55"/>'
+    + '</svg>',
+  trail_ice:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none">'
+    + '<line x1="32" y1="6" x2="32" y2="58"/>'
+    + '<line x1="6" y1="32" x2="58" y2="32"/>'
+    + '<line x1="13" y1="13" x2="51" y2="51"/>'
+    + '<line x1="51" y1="13" x2="13" y2="51"/>'
+    + '<path d="M 32 14 L 28 10 M 32 14 L 36 10 M 32 50 L 28 54 M 32 50 L 36 54" stroke-width="2"/>'
+    + '<path d="M 14 32 L 10 28 M 14 32 L 10 36 M 50 32 L 54 28 M 50 32 L 54 36" stroke-width="2"/>'
+    + '</g>'
+    + '</svg>',
+  trail_lightning:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<polygon points="36,4 12,32 26,32 20,60 52,28 38,28 44,4" fill="currentColor" stroke="rgba(0,0,0,0.35)" stroke-width="1.5" stroke-linejoin="round"/>'
+    + '<polygon points="36,8 18,30 26,30 22,52 46,28 36,28 40,8" fill="white" opacity="0.25"/>'
+    + '</svg>',
+  trail_hearts:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 32 54 L 10 30 Q 4 20, 12 12 Q 22 6, 32 18 Q 42 6, 52 12 Q 60 20, 54 30 Z" fill="currentColor"/>'
+    + '<path d="M 22 18 Q 18 22, 22 30" stroke="white" stroke-width="2.5" fill="none" opacity="0.45"/>'
+    + '</svg>',
+  trail_petals:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<ellipse cx="32" cy="14" rx="6" ry="11"/>'
+    + '<ellipse cx="50" cy="32" rx="11" ry="6"/>'
+    + '<ellipse cx="32" cy="50" rx="6" ry="11"/>'
+    + '<ellipse cx="14" cy="32" rx="11" ry="6"/>'
+    + '<ellipse cx="20" cy="20" rx="7" ry="9" transform="rotate(-45 20 20)" opacity="0.82"/>'
+    + '<ellipse cx="44" cy="20" rx="7" ry="9" transform="rotate(45 44 20)" opacity="0.82"/>'
+    + '</g>'
+    + '<circle cx="32" cy="32" r="5" fill="#ffd24a" stroke="#9c7b00" stroke-width="1"/>'
+    + '</svg>',
+  trail_bubbles:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<circle cx="20" cy="20" r="11" opacity="0.5"/>'
+    + '<circle cx="44" cy="34" r="9" opacity="0.6"/>'
+    + '<circle cx="22" cy="46" r="6" opacity="0.7"/>'
+    + '<circle cx="48" cy="14" r="5" opacity="0.5"/>'
+    + '</g>'
+    + '<circle cx="16" cy="16" r="3" fill="white" opacity="0.7"/>'
+    + '<circle cx="40" cy="30" r="2.5" fill="white" opacity="0.65"/>'
+    + '<circle cx="19" cy="44" r="1.5" fill="white" opacity="0.6"/>'
+    + '</svg>',
+  trail_smoke:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<ellipse cx="18" cy="50" rx="15" ry="9" opacity="0.6"/>'
+    + '<ellipse cx="34" cy="36" rx="13" ry="8" opacity="0.55"/>'
+    + '<ellipse cx="44" cy="22" rx="11" ry="7" opacity="0.5"/>'
+    + '<ellipse cx="52" cy="10" rx="7" ry="5" opacity="0.4"/>'
+    + '</g>'
+    + '</svg>',
+  trail_leaves:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 32 6 Q 14 14, 14 32 Q 14 50, 32 58 Q 50 50, 50 32 Q 50 14, 32 6 Z" fill="currentColor"/>'
+    + '<line x1="32" y1="6" x2="32" y2="58" stroke="rgba(0,0,0,0.35)" stroke-width="1.8"/>'
+    + '<g stroke="rgba(0,0,0,0.25)" stroke-width="1.5" fill="none">'
+    + '<path d="M 32 16 L 22 24 M 32 26 L 18 34 M 32 36 L 22 44 M 32 46 L 26 50"/>'
+    + '<path d="M 32 16 L 42 24 M 32 26 L 46 34 M 32 36 L 42 44 M 32 46 L 38 50"/>'
+    + '</g>'
+    + '</svg>',
+  trail_magic:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<path d="M 32 2 L 34 28 L 32 32 L 30 28 Z"/>'
+    + '<path d="M 32 32 L 32 62 L 30 36 Z"/>'
+    + '<path d="M 2 32 L 28 30 L 32 32 L 28 34 Z"/>'
+    + '<path d="M 62 32 L 36 30 L 32 32 L 36 34 Z"/>'
+    + '<path d="M 12 12 L 28 28 L 30 30 L 14 14 Z"/>'
+    + '<path d="M 52 12 L 36 28 L 34 30 L 50 14 Z"/>'
+    + '<path d="M 12 52 L 28 36 L 30 34 L 14 50 Z"/>'
+    + '<path d="M 52 52 L 36 36 L 34 34 L 50 50 Z"/>'
+    + '</g>'
+    + '<circle cx="32" cy="32" r="5" fill="white"/>'
+    + '</svg>',
+  trail_cherry:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<path d="M 32 8 Q 22 14, 26 28 Q 32 28, 32 20 Z" opacity="0.9"/>'
+    + '<path d="M 52 22 Q 46 30, 36 28 Q 36 22, 44 20 Z" opacity="0.9"/>'
+    + '<path d="M 44 48 Q 32 44, 34 32 Q 40 34, 44 42 Z" opacity="0.9"/>'
+    + '<path d="M 12 22 Q 18 30, 28 28 Q 28 22, 20 20 Z" opacity="0.9"/>'
+    + '<path d="M 20 48 Q 32 44, 30 32 Q 24 34, 20 42 Z" opacity="0.9"/>'
+    + '</g>'
+    + '<circle cx="32" cy="32" r="4" fill="#ffd24a"/>'
+    + '<circle cx="32" cy="32" r="2" fill="white"/>'
+    + '</svg>',
+  trail_confetti:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g stroke="rgba(0,0,0,0.2)" stroke-width="0.5">'
+    + '<rect x="12" y="14" width="6" height="3" fill="currentColor" transform="rotate(-30 12 14)"/>'
+    + '<rect x="40" y="20" width="7" height="3" fill="#ffd24a" transform="rotate(45 40 20)"/>'
+    + '<rect x="22" y="40" width="6" height="3" fill="#3a9eda" transform="rotate(-60 22 40)"/>'
+    + '<rect x="48" y="46" width="7" height="3" fill="#22dd55" transform="rotate(30 48 46)"/>'
+    + '<rect x="14" y="34" width="5" height="3" fill="#ff8a40"/>'
+    + '<rect x="32" y="10" width="6" height="3" fill="#a050ff" transform="rotate(60 32 10)"/>'
+    + '<rect x="36" y="50" width="6" height="3" fill="currentColor" transform="rotate(-45 36 50)"/>'
+    + '</g>'
+    + '</svg>',
+  trail_skulls:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<path d="M 14 18 Q 14 6, 32 6 Q 50 6, 50 18 L 50 38 L 44 38 L 44 48 L 36 48 L 36 44 L 32 44 L 28 44 L 28 48 L 20 48 L 20 38 L 14 38 Z" fill="currentColor" stroke="rgba(0,0,0,0.4)" stroke-width="1.5" stroke-linejoin="round"/>'
+    + '<circle cx="24" cy="24" r="4" fill="#000"/>'
+    + '<circle cx="40" cy="24" r="4" fill="#000"/>'
+    + '<path d="M 28 34 L 32 30 L 36 34" stroke="#000" stroke-width="2" fill="none"/>'
+    + '</svg>',
+  trail_comet:
+    '<svg viewBox="0 0 64 64" class="cosm-svg">'
+    + '<g fill="currentColor">'
+    + '<path d="M 44 16 L 6 56 L 18 50 L 50 22 Z" opacity="0.45"/>'
+    + '<path d="M 46 18 L 14 54 L 24 50 L 48 22 Z" opacity="0.7"/>'
+    + '<circle cx="46" cy="18" r="7"/>'
+    + '</g>'
+    + '<circle cx="46" cy="18" r="3.5" fill="white"/>'
+    + '</svg>',
+
+  // ─── WINGS (use --wings-color CSS var) ──────────────────────────
+  wings_dragon:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.35)" stroke-width="1">'
+    + '<path d="M 40 24 Q 24 4, 4 8 Q 4 14, 10 22 L 4 18 Q 12 30, 20 32 L 14 34 Q 22 38, 32 32 Z"/>'
+    + '<path d="M 40 24 Q 56 4, 76 8 Q 76 14, 70 22 L 76 18 Q 68 30, 60 32 L 66 34 Q 58 38, 48 32 Z"/>'
+    + '</g>'
+    + '<g stroke="rgba(0,0,0,0.5)" stroke-width="1.2" fill="none">'
+    + '<path d="M 22 32 L 14 16 M 28 32 L 26 12 M 34 30 L 34 10"/>'
+    + '<path d="M 58 32 L 66 16 M 52 32 L 54 12 M 46 30 L 46 10"/>'
+    + '</g>'
+    + '</svg>',
+  wings_angel:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.18)" stroke-width="0.8">'
+    + '<path d="M 40 24 Q 24 6, 4 14 Q 4 22, 14 28 Q 26 32, 40 30 Z"/>'
+    + '<path d="M 40 26 Q 28 14, 16 20 Q 22 26, 28 28 Q 36 30, 40 28 Z" opacity="0.78"/>'
+    + '<path d="M 40 24 Q 56 6, 76 14 Q 76 22, 66 28 Q 54 32, 40 30 Z"/>'
+    + '<path d="M 40 26 Q 52 14, 64 20 Q 58 26, 52 28 Q 44 30, 40 28 Z" opacity="0.78"/>'
+    + '</g>'
+    + '<g stroke="rgba(255,255,255,0.35)" stroke-width="1" fill="none">'
+    + '<path d="M 10 18 L 18 26 M 18 14 L 26 24 M 26 12 L 32 22"/>'
+    + '<path d="M 70 18 L 62 26 M 62 14 L 54 24 M 54 12 L 48 22"/>'
+    + '</g>'
+    + '</svg>',
+  wings_demon:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.45)" stroke-width="1" stroke-linejoin="round">'
+    + '<path d="M 40 26 L 6 10 L 10 20 L 2 18 L 14 30 L 8 30 L 22 38 L 18 32 L 28 38 L 26 30 L 36 32 Z"/>'
+    + '<path d="M 40 26 L 74 10 L 70 20 L 78 18 L 66 30 L 72 30 L 58 38 L 62 32 L 52 38 L 54 30 L 44 32 Z"/>'
+    + '</g>'
+    + '</svg>',
+  wings_fairy:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.25)" stroke-width="0.8" opacity="0.75">'
+    + '<ellipse cx="20" cy="18" rx="14" ry="10"/>'
+    + '<ellipse cx="22" cy="32" rx="11" ry="8"/>'
+    + '<ellipse cx="60" cy="18" rx="14" ry="10"/>'
+    + '<ellipse cx="58" cy="32" rx="11" ry="8"/>'
+    + '</g>'
+    + '<g fill="rgba(255,255,255,0.6)">'
+    + '<circle cx="16" cy="14" r="1.5"/>'
+    + '<circle cx="22" cy="20" r="1"/>'
+    + '<circle cx="62" cy="14" r="1.5"/>'
+    + '<circle cx="58" cy="20" r="1"/>'
+    + '</g>'
+    + '</svg>',
+  wings_butterfly:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g stroke="rgba(0,0,0,0.45)" stroke-width="1">'
+    + '<path d="M 40 22 Q 20 4, 6 14 Q 4 22, 22 26 Q 32 26, 40 22 Z" fill="var(--wings-color)"/>'
+    + '<path d="M 40 22 Q 60 4, 74 14 Q 76 22, 58 26 Q 48 26, 40 22 Z" fill="var(--wings-color)"/>'
+    + '<path d="M 40 24 Q 28 34, 14 40 Q 16 46, 32 44 Q 38 38, 40 32 Z" fill="var(--wings-color)" opacity="0.85"/>'
+    + '<path d="M 40 24 Q 52 34, 66 40 Q 64 46, 48 44 Q 42 38, 40 32 Z" fill="var(--wings-color)" opacity="0.85"/>'
+    + '</g>'
+    + '<g>'
+    + '<circle cx="20" cy="18" r="3.5" fill="rgba(255,255,255,0.55)"/>'
+    + '<circle cx="60" cy="18" r="3.5" fill="rgba(255,255,255,0.55)"/>'
+    + '<circle cx="20" cy="18" r="1.5" fill="#1a1a1a"/>'
+    + '<circle cx="60" cy="18" r="1.5" fill="#1a1a1a"/>'
+    + '</g>'
+    + '</svg>',
+  wings_phoenix:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.25)" stroke-width="0.8">'
+    + '<path d="M 40 24 Q 22 6, 2 14 Q 4 24, 16 30 Q 28 32, 40 28 Z"/>'
+    + '<path d="M 40 24 Q 58 6, 78 14 Q 76 24, 64 30 Q 52 32, 40 28 Z"/>'
+    + '</g>'
+    + '<g fill="#ffd24a" opacity="0.7">'
+    + '<path d="M 14 24 L 10 18 L 16 22 L 12 14 L 18 20 Z"/>'
+    + '<path d="M 66 24 L 70 18 L 64 22 L 68 14 L 62 20 Z"/>'
+    + '</g>'
+    + '</svg>',
+  wings_bat:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.5)" stroke-width="1">'
+    + '<path d="M 40 26 Q 26 12, 4 16 L 12 22 L 6 26 L 16 30 L 10 34 L 22 36 Q 32 38, 40 30 Z"/>'
+    + '<path d="M 40 26 Q 54 12, 76 16 L 68 22 L 74 26 L 64 30 L 70 34 L 58 36 Q 48 38, 40 30 Z"/>'
+    + '</g>'
+    + '<g stroke="rgba(0,0,0,0.5)" stroke-width="1" fill="none">'
+    + '<path d="M 14 22 L 26 28 M 18 30 L 30 30 M 22 34 L 34 32"/>'
+    + '<path d="M 66 22 L 54 28 M 62 30 L 50 30 M 58 34 L 46 32"/>'
+    + '</g>'
+    + '</svg>',
+  wings_crystal:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(255,255,255,0.5)" stroke-width="1">'
+    + '<polygon points="40,26 6,8 4,18 12,22 2,30 16,32 8,42 24,36 22,46 36,30"/>'
+    + '<polygon points="40,26 74,8 76,18 68,22 78,30 64,32 72,42 56,36 58,46 44,30"/>'
+    + '</g>'
+    + '<g fill="rgba(255,255,255,0.45)">'
+    + '<polygon points="20,16 22,22 14,22"/>'
+    + '<polygon points="60,16 58,22 66,22"/>'
+    + '</g>'
+    + '</svg>',
+  wings_mech:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.4)" stroke-width="1">'
+    + '<rect x="4" y="14" width="34" height="6" rx="2"/>'
+    + '<rect x="6" y="22" width="30" height="5" rx="2"/>'
+    + '<rect x="10" y="29" width="24" height="4" rx="2"/>'
+    + '<rect x="42" y="14" width="34" height="6" rx="2"/>'
+    + '<rect x="44" y="22" width="30" height="5" rx="2"/>'
+    + '<rect x="46" y="29" width="24" height="4" rx="2"/>'
+    + '</g>'
+    + '<g fill="rgba(255,255,255,0.3)">'
+    + '<rect x="6" y="15" width="30" height="1.5"/>'
+    + '<rect x="44" y="15" width="30" height="1.5"/>'
+    + '</g>'
+    + '</svg>',
+  wings_astral:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.25)" stroke-width="0.8">'
+    + '<path d="M 40 24 Q 22 8, 4 14 Q 6 22, 18 28 Q 30 30, 40 28 Z"/>'
+    + '<path d="M 40 24 Q 58 8, 76 14 Q 74 22, 62 28 Q 50 30, 40 28 Z"/>'
+    + '</g>'
+    + '<g fill="#fff7c0">'
+    + '<circle cx="12" cy="20" r="1.5"/>'
+    + '<circle cx="22" cy="14" r="1.2"/>'
+    + '<circle cx="30" cy="22" r="1"/>'
+    + '<circle cx="68" cy="20" r="1.5"/>'
+    + '<circle cx="58" cy="14" r="1.2"/>'
+    + '<circle cx="50" cy="22" r="1"/>'
+    + '</g>'
+    + '</svg>',
+  wings_toxic:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.3)" stroke-width="0.8">'
+    + '<path d="M 40 24 Q 22 8, 4 16 Q 8 26, 22 30 Q 32 30, 40 26 Z"/>'
+    + '<path d="M 40 24 Q 58 8, 76 16 Q 72 26, 58 30 Q 48 30, 40 26 Z"/>'
+    + '</g>'
+    + '<g fill="var(--wings-color)" opacity="0.75">'
+    + '<ellipse cx="12" cy="38" rx="2" ry="3"/>'
+    + '<ellipse cx="22" cy="42" rx="1.5" ry="2.5"/>'
+    + '<ellipse cx="30" cy="40" rx="1.2" ry="2"/>'
+    + '<ellipse cx="68" cy="38" rx="2" ry="3"/>'
+    + '<ellipse cx="58" cy="42" rx="1.5" ry="2.5"/>'
+    + '<ellipse cx="50" cy="40" rx="1.2" ry="2"/>'
+    + '</g>'
+    + '</svg>',
+  wings_void:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.2)" stroke-width="0.8" style="filter: blur(0.6px)">'
+    + '<path d="M 40 24 Q 22 6, 4 14 Q 4 24, 16 30 Q 30 30, 40 28 Z"/>'
+    + '<path d="M 40 24 Q 58 6, 76 14 Q 76 24, 64 30 Q 50 30, 40 28 Z"/>'
+    + '</g>'
+    + '<g fill="white" opacity="0.3">'
+    + '<circle cx="14" cy="20" r="1"/>'
+    + '<circle cx="24" cy="24" r="0.8"/>'
+    + '<circle cx="66" cy="20" r="1"/>'
+    + '<circle cx="56" cy="24" r="0.8"/>'
+    + '</g>'
+    + '</svg>',
+  wings_origami:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.4)" stroke-width="1" stroke-linejoin="round">'
+    + '<polygon points="40,24 4,8 14,24 4,32 22,30 14,40 30,28"/>'
+    + '<polygon points="40,24 76,8 66,24 76,32 58,30 66,40 50,28"/>'
+    + '</g>'
+    + '<g stroke="rgba(0,0,0,0.3)" stroke-width="0.8" fill="none">'
+    + '<line x1="4" y1="8" x2="22" y2="30"/>'
+    + '<line x1="14" y1="24" x2="30" y2="28"/>'
+    + '<line x1="76" y1="8" x2="58" y2="30"/>'
+    + '<line x1="66" y1="24" x2="50" y2="28"/>'
+    + '</g>'
+    + '</svg>',
+  wings_shark:
+    '<svg viewBox="0 0 80 50" class="cosm-svg">'
+    + '<g fill="var(--wings-color)" stroke="rgba(0,0,0,0.4)" stroke-width="1.2" stroke-linejoin="round">'
+    + '<path d="M 40 44 Q 36 12, 28 6 Q 24 8, 22 16 Q 28 28, 32 44 Z"/>'
+    + '<path d="M 40 44 Q 44 12, 52 6 Q 56 8, 58 16 Q 52 28, 48 44 Z"/>'
+    + '</g>'
+    + '<g stroke="rgba(255,255,255,0.3)" stroke-width="1" fill="none">'
+    + '<path d="M 30 12 Q 32 22, 36 36"/>'
+    + '<path d="M 50 12 Q 48 22, 44 36"/>'
+    + '</g>'
+    + '</svg>',
+};
+
+/**
  * Build the visual preview block for a cosmetic tile. Routed by slot +
  * id-prefix so capes get cape-shapes, wings get wing-shapes, etc. Falls
  * back to the emoji icon for anything that doesn't have a dedicated
@@ -1482,54 +1980,40 @@ function buildCosmPreview(slot, item) {
     return cape;
   }
 
-  // Wings — two angled wing shapes flanking an invisible torso, SVG so
-  // the silhouette is exact rather than a div hack.
+  // Wings — pull the per-type SVG from the shape library so dragon wings
+  // look like dragon wings, butterfly wings have butterfly markings, etc.
+  // The SVG fills use var(--wings-color) so the inline color still tints
+  // the wing membranes.
   if (slot === 'back' && item.id.startsWith('wings_') && item.color) {
     const wings = document.createElement('div');
     wings.className = 'cosm-preview wings-preview';
     wings.style.setProperty('--wings-color', item.color);
     wings.setAttribute('aria-hidden', 'true');
-    wings.innerHTML =
-      '<svg viewBox="0 0 70 50" width="64" height="46">' +
-        // Left wing — feather-shaped path
-        '<path d="M 35 25 Q 20 5, 2 12 Q 8 28, 18 32 Q 25 32, 35 25 Z" ' +
-              'fill="var(--wings-color)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>' +
-        // Right wing — mirror
-        '<path d="M 35 25 Q 50 5, 68 12 Q 62 28, 52 32 Q 45 32, 35 25 Z" ' +
-              'fill="var(--wings-color)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>' +
-        // Highlight strokes for depth
-        '<path d="M 18 14 Q 12 22, 14 28" fill="none" ' +
-              'stroke="rgba(255,255,255,0.25)" stroke-width="1"/>' +
-        '<path d="M 52 14 Q 58 22, 56 28" fill="none" ' +
-              'stroke="rgba(255,255,255,0.25)" stroke-width="1"/>' +
-      '</svg>';
+    wings.innerHTML = COSM_SHAPES[item.id] || '';
     return wings;
   }
 
-  // Head — emoji on a tinted disk. Head items vary too much (hat, halo,
-  // mask, glasses) to draw a single canonical shape, so we lean on
-  // emoji which already convey the type clearly.
-  if (slot === 'head' && item.color) {
+  // Head — hand-drawn SVG of the actual item (crown, top hat, halo,
+  // glasses, etc). Each item's SVG carries its own identity colors;
+  // the tinted disk behind it just adds a soft accent.
+  if (slot === 'head' && COSM_SHAPES[item.id]) {
     const head = document.createElement('div');
     head.className = 'cosm-preview head-preview';
-    head.style.setProperty('--head-color', item.color);
+    if (item.color) head.style.setProperty('--head-color', item.color);
     head.setAttribute('aria-hidden', 'true');
-    head.innerHTML = `<span class="head-emoji">${item.icon}</span>`;
+    head.innerHTML = COSM_SHAPES[item.id];
     return head;
   }
 
-  // Trail — three small dots in the trail's color, hinting at a particle
-  // line. Plus the trail's emoji centered on top.
-  if (slot === 'trail' && item.color) {
+  // Trail — SVG drawing of the particle (fire flame, snowflake, lightning
+  // bolt, etc) with `color: var(--trail-color)` so the SVG's currentColor
+  // fills pick up the item's tint.
+  if (slot === 'trail' && COSM_SHAPES[item.id]) {
     const trail = document.createElement('div');
     trail.className = 'cosm-preview trail-preview';
-    trail.style.setProperty('--trail-color', item.color);
+    trail.style.color = item.color;
     trail.setAttribute('aria-hidden', 'true');
-    trail.innerHTML =
-      `<span class="trail-emoji">${item.icon}</span>` +
-      '<div class="trail-dots">' +
-        '<span></span><span></span><span></span>' +
-      '</div>';
+    trail.innerHTML = COSM_SHAPES[item.id];
     return trail;
   }
 
@@ -1685,12 +2169,22 @@ function updateCharacterPreview() {
     }
   }
 
-  // Head — overlay an emoji on the head block.
+  // Head — overlay the actual SVG of the equipped head cosmetic. Falls
+  // back to emoji rendering for any item that doesn't have a shape in
+  // COSM_SHAPES (shouldn't happen for catalog items, but keeps the
+  // character preview robust if the catalog ever grows faster than the
+  // shape library).
   const headId = cosmCache.head;
   const head = headId && headId !== 'none' ? lookup(headId) : null;
   const headOverlay = document.getElementById('char-head-overlay');
   if (headOverlay) {
-    headOverlay.textContent = head ? head.icon : '';
+    if (head && COSM_SHAPES[head.id]) {
+      headOverlay.innerHTML = COSM_SHAPES[head.id];
+    } else if (head) {
+      headOverlay.textContent = head.icon;
+    } else {
+      headOverlay.innerHTML = '';
+    }
   }
 
   // Trail — show 3 colored dots at the character's feet if equipped.

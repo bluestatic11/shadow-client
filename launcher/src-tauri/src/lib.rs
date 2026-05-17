@@ -370,6 +370,51 @@ fn project_path() -> String {
     project_root().display().to_string()
 }
 
+/// Write a user-provided .jar mod into the chosen profile's mods folder.
+///
+/// Called from the Mods settings tab when the user picks one or more
+/// .jar files through the native file picker. `bytes` arrives as a JSON
+/// array of u8 from the JS side (Tauri's default serde encoding for
+/// Vec<u8> over IPC).
+///
+/// Defensive measures:
+///   - Reject anything that doesn't end in `.jar`.
+///   - Strip path separators from the filename so a malicious manifest
+///     can't write outside the mods directory (e.g. `..\..\evil.jar`).
+///   - Refuse paths that contain `..` segments after sanitising.
+#[tauri::command]
+fn add_mod_jar(
+    version: Option<String>,
+    name: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    use std::path::Path;
+    let here = project_root();
+    let mods_dir = match version.as_deref() {
+        Some(v) if !v.is_empty() =>
+            here.join("game_dir").join("profiles").join(v).join("mods"),
+        _ => here.join("game_dir").join("mods"),
+    };
+    std::fs::create_dir_all(&mods_dir).map_err(|e| e.to_string())?;
+
+    // file_name() strips any directory components — so even a malicious
+    // input like "../../../evil.exe" reduces to "evil.exe".
+    let safe = Path::new(&name)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if safe.is_empty() || safe.contains("..") {
+        return Err(format!("invalid mod filename: {name}"));
+    }
+    if !safe.to_lowercase().ends_with(".jar") {
+        return Err(format!("only .jar files are accepted; got {safe}"));
+    }
+    let dest = mods_dir.join(&safe);
+    std::fs::write(&dest, &bytes)
+        .map_err(|e| format!("writing {}: {e}", dest.display()))?;
+    Ok(safe)
+}
+
 // ───── Cosmetics persistence ──────────────────────────────────
 //
 // Stored as a JSON object at <project_root>/cosmetics.json with one key
@@ -885,6 +930,7 @@ pub fn run() {
             read_state,
             read_account,
             list_mods,
+            add_mod_jar,
             project_path,
             check_python,
             diagnostics,

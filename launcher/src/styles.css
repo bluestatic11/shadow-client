@@ -1217,6 +1217,34 @@ body {
   border-color: var(--accent-focus);
 }
 
+/* v0.3.28: readonly username input. Visually de-emphasized so users
+   understand the field is locked, plus a tiny padlock affordance on
+   the right. Cursor is the standard "this field is read-only" arrow. */
+.account-menu-field input[readonly] {
+  background: rgba(20, 24, 33, 0.6);
+  color: var(--text-dim);
+  cursor: default;
+  /* Tiny "🔒" sigil so the lock state reads without needing the hint
+     line — using a background image (svg data URI) so it survives any
+     font fallback. */
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23606878' d='M5 7V5a3 3 0 1 1 6 0v2h.5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1H5zm1 0h4V5a2 2 0 1 0-4 0v2z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  padding-right: 30px;
+}
+.account-menu-field input[readonly]:focus {
+  border-color: var(--line);  /* don't flash the brand-red focus ring */
+}
+
+.account-menu-field-hint {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
 /* Original .username-row (no longer in DOM but keep selector defined so
    any straggling reference doesn't lay out weirdly) */
 .username-row input {

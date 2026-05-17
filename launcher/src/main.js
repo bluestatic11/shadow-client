@@ -1077,6 +1077,55 @@ async function refreshMods() {
 }
 
 $('refresh-mods')?.addEventListener('click', refreshMods);
+
+// ───── Add mod (.jar) ───────────────────────────────────────────
+// "Add mod" button proxies its click to the hidden <input type="file">
+// so the file picker opens. The picker fires `change` when files are
+// chosen; we then read each one as bytes and ship it to the Rust
+// command `add_mod_jar`, which drops the file into the per-version
+// mods folder. Skips non-.jar files silently (the picker already
+// filters via accept=".jar" but the browser doesn't strictly enforce).
+const addModBtn = $('add-mod-btn');
+const addModInput = $('add-mod-input');
+if (addModBtn && addModInput) {
+  addModBtn.addEventListener('click', () => addModInput.click());
+  addModInput.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';  // reset so re-picking the same file fires change
+    if (!files.length) return;
+    const version = getPickedVersion();
+    const list = $('mod-list');
+    if (list) list.innerHTML = '<li class="empty">Installing…</li>';
+
+    let added = 0, failed = 0;
+    for (const file of files) {
+      if (!file.name.toLowerCase().endsWith('.jar')) { failed++; continue; }
+      try {
+        const buf = await file.arrayBuffer();
+        // Tauri serializes Vec<u8> as an array of numbers in the JSON
+        // payload. For typical mods (50 KB – 8 MB) this is fine; we'd
+        // need a streaming approach if mods got significantly larger.
+        await invoke('add_mod_jar', {
+          version,
+          name: file.name,
+          bytes: Array.from(new Uint8Array(buf)),
+        });
+        added++;
+      } catch (err) {
+        console.warn('[shadow] add_mod_jar failed for', file.name, err);
+        failed++;
+      }
+    }
+    await refreshMods();
+    setStatus(
+      failed
+        ? `Added ${added} mod${added === 1 ? '' : 's'}, ${failed} failed`
+        : `Added ${added} mod${added === 1 ? '' : 's'} to ${version}`,
+      failed ? 'error' : 'ok'
+    );
+  });
+}
+
 $('update-mods')?.addEventListener('click', async () => {
   if (busy) return;
   const version = getPickedVersion();

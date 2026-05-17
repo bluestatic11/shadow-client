@@ -40,6 +40,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # tauri-action only needs HEAD, but `git log` for the release
+          # body below needs the actual commit history. fetch-depth: 0
+          # pulls everything.
+          fetch-depth: 0
+
+      - name: Extract commit message for release body
+        id: changelog
+        shell: bash
+        run: |
+          # Pull the FULL commit message of the tagged commit (subject +
+          # body). Without this every release gets the same hardcoded
+          # template and the launcher's "Latest updates" card looks
+          # identical for every version.
+          #
+          # We use github.ref_name (e.g. "v0.3.27"), resolve it to the
+          # commit it points at, and pretty-format the message. The
+          # GITHUB_OUTPUT heredoc preserves multi-line content correctly.
+          {
+            echo 'body<<CHANGELOG_EOF'
+            git log -1 --pretty=format:'%B' "${{ github.ref_name }}"
+            echo
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -86,26 +110,22 @@ jobs:
           projectPath: launcher
           tagName: ${{ github.ref_name || inputs.version }}
           releaseName: 'Shadow Client ${{ github.ref_name || inputs.version }}'
+          # Real per-version changelog drawn from the tagged commit
+          # message. The launcher's "Latest updates" card extracts the
+          # first readable line of this body — by including the actual
+          # commit content, each release card now shows what changed in
+          # that version instead of the same boilerplate.
           releaseBody: |
-            ## Shadow Client ${{ github.ref_name || inputs.version }}
+            ${{ steps.changelog.outputs.body }}
 
-            **Downloads:**
-            - **Windows:** `.exe` installer (NSIS) or `.msi` (MSI)
-            - **macOS:** `.dmg` (universal binary, Intel + Apple Silicon)
-            - **Linux:** `.AppImage` or `.deb`
+            ---
 
-            First-launch flow: pick a username, click PLAY, the launcher
-            downloads MC 1.21.11 + Fabric + the performance mod stack
-            automatically.
+            **Downloads:** `.exe` (Windows NSIS) · `.msi` (Windows) ·
+            `.dmg` (macOS universal) · `.AppImage` or `.deb` (Linux)
 
-            **System requirements:**
-            - Windows 10 / 11 (x64), macOS 12+, or Linux x86_64
-            - 4 GB RAM minimum, 8 GB recommended
-            - Python 3.11+ on PATH (the launcher subprocess-calls it for setup)
-
-            **Notes:**
-            - On Windows, SmartScreen may flag the unsigned `.exe`. Click "More info → Run anyway". Code signing comes in a later release.
-            - This is **v0.1.0** — early access. Report issues at https://github.com/bluestatic11/shadow-client/issues
+            Auto-update from v0.3.27+ is silent — no installer wizard.
+            Report issues at
+            https://github.com/bluestatic11/shadow-client/issues
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

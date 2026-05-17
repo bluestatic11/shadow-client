@@ -27,7 +27,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.27</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.28</span>
     </h1>
 
     <div class="topbar-actions">
@@ -51,9 +51,16 @@
           </div>
           <label class="account-menu-field" id="username-field-wrap">
             <span class="account-menu-field-label">Username</span>
+            <!-- v0.3.28: username locked. Field is now readonly +
+                 visually-disabled. Sign in with Microsoft to use a
+                 different (real Minecraft) username. -->
             <input type="text" id="username-input" maxlength="16" value="Player"
                    autocomplete="username" autocapitalize="off" spellcheck="false"
-                   aria-label="Offline username">
+                   aria-label="Offline username"
+                   readonly tabindex="-1">
+            <span class="account-menu-field-hint">
+              Locked — sign in with Microsoft to use your Minecraft username.
+            </span>
           </label>
           <button class="account-menu-action" id="account-action" type="button" role="menuitem">
             Sign in with Microsoft
@@ -280,10 +287,19 @@
       <!-- Mods -->
       <section class="dlg-page" id="dpage-mods"
                role="tabpanel" aria-labelledby="dtab-mods" tabindex="0" hidden>
-        <p class="page-blurb">The perf mod stack is installed and updated automatically.</p>
+        <p class="page-blurb">
+          The perf mod stack is installed and updated automatically.
+          Drop your own <code>.jar</code> mods in too — they install
+          into the currently-selected version's profile.
+        </p>
         <div class="page-actions">
           <button class="btn-sm" id="refresh-mods" type="button">Refresh</button>
           <button class="btn-sm primary" id="update-mods" type="button">Update perf stack</button>
+          <button class="btn-sm" id="add-mod-btn" type="button">+ Add mod (.jar)</button>
+          <!-- Hidden native file picker — the visible button above
+               proxies its click so we can keep our themed styling. -->
+          <input type="file" id="add-mod-input" accept=".jar"
+                 multiple hidden>
         </div>
         <ul class="mod-list" id="mod-list" aria-label="Installed mods">
           <li class="empty">No mods scanned yet</li>

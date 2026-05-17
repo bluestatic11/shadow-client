@@ -9,7 +9,13 @@
        silently broke auto-update for every user since v0.3.2 because
        api.github.com wasn't whitelisted, and the update-check fetch
        errored into a silent catch block. Widening it once + done. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https:">
+  <!-- img-src 'self' data: blob: is required for the cosmetics tab's 3D
+       character preview — skinview3d generates cape textures via
+       canvas.toDataURL() and feeds the resulting data: URLs to <img>
+       elements that three.js loads into WebGL. Without explicit data: +
+       blob: in img-src, the texture loads silently fail and the cape
+       renders transparent. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https:">
   <title>Shadow Client</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -21,7 +27,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.25</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.26</span>
     </h1>
 
     <div class="topbar-actions">
@@ -337,6 +343,12 @@
     </div>
   </dialog>
 
+  <!-- skinview3d — 3D Minecraft character renderer (three.js based). Used
+       by the cosmetics tab to draw a real Steve mesh with the equipped
+       cape wrapped around the model. MUST load before main.js because
+       buildCharacterPreview() references skinview3d.SkinViewer the moment
+       the cosmetics tab is opened. -->
+  <script src="vendor/skinview3d.bundle.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

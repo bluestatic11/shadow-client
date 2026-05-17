@@ -2040,13 +2040,15 @@ function buildCosmPreview(slot, item) {
 
 /**
  * Build the character mannequin shown at the top of the cosmetics tab.
- * Blocky Minecraft-style silhouette built from CSS-styled divs (no
- * external assets), with overlay layers for cape/wings/head/aura that
- * are toggled on/off by applyCosmeticsToUI().
  *
- * "Show the mesh" — we don't have a real 3D renderer in the launcher,
- * but a stylized 2D character is enough to communicate "here's what
- * you'll look like in-game".
+ * v0.3.26: real 3D Minecraft mesh via skinview3d + three.js. Renders the
+ * default Steve skin and wraps the equipped cape around the model. Other
+ * cosmetic slots (head accessory, wings, aura, trail) don't have a
+ * native Minecraft mesh slot — they're shown as SVG overlays positioned
+ * around the 3D canvas via CSS so the user still sees what's equipped.
+ *
+ * skinview3d.bundle.js is loaded as a global in index.html before
+ * main.js runs, so `skinview3d.SkinViewer` is guaranteed defined here.
  */
 function buildCharacterPreview() {
   const mount = document.createElement('div');
@@ -2054,27 +2056,21 @@ function buildCharacterPreview() {
   mount.id = 'cosm-character-mount';
   mount.innerHTML = `
     <div class="char-stage">
-      <!-- Aura sits behind everything else -->
-      <div class="char-aura"     id="char-aura"     aria-hidden="true"></div>
-      <!-- Wings render behind the body -->
-      <div class="char-wings"    id="char-wings"    aria-hidden="true"></div>
-      <!-- Cape behind the body, in front of wings -->
-      <div class="char-cape"     id="char-cape"     aria-hidden="true">
-        <div class="char-cape-collar"></div>
-      </div>
-      <!-- Trail particles drifting behind the legs -->
-      <div class="char-trail"    id="char-trail"    aria-hidden="true"></div>
-      <!-- Body parts in front -->
-      <div class="char-body" aria-hidden="true">
-        <div class="char-head-block">
-          <span class="char-head-overlay" id="char-head-overlay"></span>
-        </div>
-        <div class="char-torso-block"></div>
-        <div class="char-arm-l"></div>
-        <div class="char-arm-r"></div>
-        <div class="char-leg-l"></div>
-        <div class="char-leg-r"></div>
-      </div>
+      <!-- Aura sits behind the canvas, set as a glow background -->
+      <div class="char-aura" id="char-aura" aria-hidden="true"></div>
+      <!-- Real 3D Steve mesh (skinview3d → three.js) -->
+      <canvas id="char-canvas" class="char-canvas"
+              width="240" height="320" aria-label="Character preview"></canvas>
+      <!-- Wings overlay — SVG positioned behind the canvas. Three.js
+           ignores DOM overlap so we use z-index + position:absolute. -->
+      <div class="char-wings-overlay" id="char-wings-overlay"
+           aria-hidden="true"></div>
+      <!-- Head accessory overlay — SVG floating above the head. -->
+      <div class="char-head-overlay" id="char-head-overlay"
+           aria-hidden="true"></div>
+      <!-- Trail particles at the feet. -->
+      <div class="char-trail-overlay" id="char-trail-overlay"
+           aria-hidden="true"></div>
     </div>
     <div class="char-info">
       <div class="char-info-label">PREVIEW</div>
@@ -2091,11 +2087,95 @@ function buildCharacterPreview() {
                                <span class="char-slot-val">—</span></li>
       </ul>
       <div class="char-info-hint">
-        Click any item below to equip. Selections save instantly.
+        Drag to rotate. Click any item below to equip — selections save
+        instantly.
       </div>
     </div>
   `;
+  // Defer viewer init to the next tick so the canvas is fully in the DOM
+  // (and has its real layout dimensions) by the time three.js measures.
+  setTimeout(initSkinViewer, 0);
   return mount;
+}
+
+/** Live SkinViewer instance — null until the cosmetics tab opens. */
+let skinViewer = null;
+
+/**
+ * Initialize the skinview3d viewer on the cosmetics tab's canvas. Safe
+ * to call multiple times — the second call just re-binds to the new
+ * canvas if the tab was re-rendered.
+ */
+function initSkinViewer() {
+  const canvas = document.getElementById('char-canvas');
+  if (!canvas) return;
+  if (typeof skinview3d === 'undefined') {
+    console.warn('[shadow] skinview3d not loaded — character preview disabled');
+    return;
+  }
+  // Dispose any previous viewer so we don't leak WebGL contexts when the
+  // settings dialog is reopened.
+  if (skinViewer) {
+    try { skinViewer.dispose(); } catch (_) {}
+    skinViewer = null;
+  }
+  try {
+    skinViewer = new skinview3d.SkinViewer({
+      canvas,
+      width: 240,
+      height: 320,
+      skin: 'textures/steve.png',
+    });
+    // Subtle idle pose — Lunar-style stationary stance with a slow rock.
+    skinViewer.fov = 50;
+    skinViewer.zoom = 0.85;
+    // Disable orbital pan/zoom but keep rotation so the user can spin to
+    // see the cape on the back. Drag = rotate, scroll = no-op.
+    if (skinViewer.controls) {
+      skinViewer.controls.enableRotate = true;
+      skinViewer.controls.enableZoom   = false;
+      skinViewer.controls.enablePan    = false;
+    }
+    // Walking animation makes the cape sway naturally so it doesn't look
+    // pasted on. Fallback to no animation if the API differs.
+    try {
+      skinViewer.animation = new skinview3d.WalkingAnimation();
+      if (skinViewer.animation) skinViewer.animation.speed = 0.5;
+    } catch (_) { /* older skinview3d — leave static */ }
+  } catch (e) {
+    console.error('[shadow] failed to init SkinViewer:', e);
+    return;
+  }
+  // Apply whatever's currently selected.
+  updateCharacterPreview();
+}
+
+/**
+ * Build a 64×32 cape texture filled with `color` plus a faint horizontal
+ * weave so the cape doesn't look like a flat sticker on the model. The
+ * Minecraft cape texture format uses the top-left 22×17 region for the
+ * visible cape pixels — filling the whole canvas is overkill but
+ * harmless. Returns a data: URL suitable for `viewer.loadCape()`.
+ */
+function buildCapeTexture(color) {
+  const c = document.createElement('canvas');
+  c.width  = 64;
+  c.height = 32;
+  const ctx = c.getContext('2d');
+  // Base fill.
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 32);
+  // Horizontal weave hint — every other row gets a 12 %-darken band.
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  for (let y = 1; y < 32; y += 2) ctx.fillRect(0, y, 64, 1);
+  // Vertical weave — much subtler.
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  for (let x = 1; x < 64; x += 3) ctx.fillRect(x, 0, 1, 32);
+  // Top-edge highlight on the cape's visible front face — gives the
+  // appearance of light hitting the upper shoulder of the cloth.
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.fillRect(1, 1, 10, 1);
+  return c.toDataURL();
 }
 
 async function onCosmClick(e) {
@@ -2132,11 +2212,10 @@ function applyCosmeticsToUI() {
 }
 
 /**
- * Reflect the current cosmCache onto the character mannequin at the
- * top of the cosmetics tab. Each slot toggles a different visual
- * layer on the character — cape gets the cape color, head gets the
- * matching emoji on the head block, etc. Updated every time a tile
- * is clicked so the user sees the result before saving.
+ * Reflect the current cosmCache onto the 3D character mesh at the top
+ * of the cosmetics tab. Capes drive the real Minecraft cape slot via
+ * skinview3d.loadCape(); other slots are rendered as SVG overlays
+ * positioned around the canvas.
  */
 function updateCharacterPreview() {
   const mount = document.getElementById('cosm-character-mount');
@@ -2149,58 +2228,55 @@ function updateCharacterPreview() {
     return null;
   };
 
-  // Back slot — capes vs wings render differently on the body.
+  // Back slot:
+  //  - cape_*  → drive the 3D mesh's cape texture
+  //  - wings_* → render as SVG behind the canvas (no native MC slot)
   const backId = cosmCache.back;
   const back = backId && backId !== 'none' ? lookup(backId) : null;
-  const cape  = document.getElementById('char-cape');
-  const wings = document.getElementById('char-wings');
-  if (cape && wings) {
-    if (back && back.id.startsWith('cape_')) {
-      cape.style.setProperty('--cape-color', back.color);
-      cape.style.display = 'block';
-      wings.style.display = 'none';
-    } else if (back && back.id.startsWith('wings_')) {
-      wings.style.setProperty('--wings-color', back.color);
-      wings.style.display = 'block';
-      cape.style.display = 'none';
-    } else {
-      cape.style.display = 'none';
-      wings.style.display = 'none';
-    }
+  const wingsOverlay = document.getElementById('char-wings-overlay');
+  if (wingsOverlay) wingsOverlay.innerHTML = '';
+  if (skinViewer && back && back.id.startsWith('cape_')) {
+    try {
+      skinViewer.loadCape(buildCapeTexture(back.color));
+    } catch (e) { console.warn('[shadow] loadCape failed:', e); }
+  } else if (skinViewer) {
+    try { skinViewer.resetCape(); } catch (_) {}
+  }
+  if (wingsOverlay && back && back.id.startsWith('wings_')) {
+    wingsOverlay.style.setProperty('--wings-color', back.color);
+    wingsOverlay.innerHTML = COSM_SHAPES[back.id] || '';
+    wingsOverlay.style.display = 'block';
+  } else if (wingsOverlay) {
+    wingsOverlay.style.display = 'none';
   }
 
-  // Head — overlay the actual SVG of the equipped head cosmetic. Falls
-  // back to emoji rendering for any item that doesn't have a shape in
-  // COSM_SHAPES (shouldn't happen for catalog items, but keeps the
-  // character preview robust if the catalog ever grows faster than the
-  // shape library).
+  // Head — SVG overlay floating above the canvas. The 3D model's head
+  // is rendered at a known on-canvas position; CSS pins the overlay
+  // there.
   const headId = cosmCache.head;
   const head = headId && headId !== 'none' ? lookup(headId) : null;
   const headOverlay = document.getElementById('char-head-overlay');
   if (headOverlay) {
-    if (head && COSM_SHAPES[head.id]) {
-      headOverlay.innerHTML = COSM_SHAPES[head.id];
-    } else if (head) {
-      headOverlay.textContent = head.icon;
-    } else {
-      headOverlay.innerHTML = '';
-    }
+    headOverlay.innerHTML = head && COSM_SHAPES[head.id] ? COSM_SHAPES[head.id] : '';
+    headOverlay.style.display = head ? 'flex' : 'none';
   }
 
-  // Trail — show 3 colored dots at the character's feet if equipped.
+  // Trail — SVG overlay at the bottom of the canvas.
   const trailId = cosmCache.trail;
   const trail = trailId && trailId !== 'none' ? lookup(trailId) : null;
-  const trailEl = document.getElementById('char-trail');
-  if (trailEl) {
+  const trailOverlay = document.getElementById('char-trail-overlay');
+  if (trailOverlay) {
     if (trail) {
-      trailEl.style.setProperty('--trail-color', trail.color);
-      trailEl.style.display = 'block';
+      trailOverlay.style.color = trail.color;
+      trailOverlay.innerHTML = COSM_SHAPES[trail.id] || '';
+      trailOverlay.style.display = 'flex';
     } else {
-      trailEl.style.display = 'none';
+      trailOverlay.innerHTML = '';
+      trailOverlay.style.display = 'none';
     }
   }
 
-  // Aura — radial glow behind the whole character.
+  // Aura — radial glow behind the whole canvas.
   const auraId = cosmCache.aura;
   const aura = auraId && auraId !== 'none' ? lookup(auraId) : null;
   const auraEl = document.getElementById('char-aura');

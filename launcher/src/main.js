@@ -764,22 +764,50 @@ function buildUpdateCard(rel) {
 }
 
 /**
- * Pull the first useful line out of a release body. Skips blank lines,
- * "## Heading"-style auto-template chunks, and lines that look like our
- * commit-message subject ("vX.Y.Z — …") since that's already shown above.
+ * Pull a short, user-readable summary out of a release body.
+ *
+ * Convention (v0.3.31+): commit messages lead with one or more bullet
+ * points describing what changed in user-facing terms ("Added in-game
+ * chat", "Minor QoL fixes"). We surface the FIRST such bullet so the
+ * update card reads like a release-note snippet instead of a sentence
+ * out of context.
+ *
+ * Falls back through:
+ *   1. First markdown bullet ("- ..." or "* ...") whose text isn't
+ *      template boilerplate (Windows: / macOS: / Linux: download lines).
+ *   2. First plain prose line that isn't a heading / version marker.
+ *   3. Whatever the first line of the body happens to be.
  */
 function firstReadableLine(body) {
   if (!body) return '';
-  for (let raw of body.split(/\r?\n/)) {
+  const lines = body.split(/\r?\n/);
+
+  // Pass 1: prefer the first user-facing bullet. Most descriptive.
+  for (const raw of lines) {
+    const line = raw.trim();
+    const m = line.match(/^[-*]\s+(.+)$/);
+    if (!m) continue;
+    const text = m[1].trim();
+    // Skip workflow asset list ("- Windows: .exe", etc).
+    if (/^(Windows|macOS|Linux):/i.test(text)) continue;
+    // Skip ultra-short bullets that read like fragments.
+    if (text.length < 4) continue;
+    return text;
+  }
+
+  // Pass 2: first non-templated prose line.
+  for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
     if (line.startsWith('#')) continue;          // markdown heading
     if (line.startsWith('**Downloads')) continue; // workflow template
-    if (line.startsWith('- ')) continue;         // template bullet
+    if (line.startsWith('- ') || line.startsWith('* ')) continue;
     if (/^v\d/i.test(line)) continue;            // duplicate version header
+    if (line.startsWith('---')) continue;         // hr separator
     return line;
   }
-  return body.split(/\r?\n/)[0].trim();
+
+  return lines[0].trim();
 }
 
 function relativeReleaseTime(iso) {

@@ -46,22 +46,53 @@ jobs:
           # pulls everything.
           fetch-depth: 0
 
-      - name: Extract commit message for release body
+      - name: Extract user-facing changelog for release body
         id: changelog
         shell: bash
         run: |
-          # Pull the FULL commit message of the tagged commit (subject +
-          # body). Without this every release gets the same hardcoded
-          # template and the launcher's "Latest updates" card looks
-          # identical for every version.
+          # Pull the commit message of the tagged commit and slice out a
+          # USER-FACING summary. Convention (v0.3.31+): the commit body
+          # contains a bullet list at the top describing what changed in
+          # end-user terms ("Added in-game chat", "Minor QoL fixes"). The
+          # technical detail comes after a "---" or below a "Technical:"
+          # heading and is hidden from the GitHub release page since most
+          # people reading the changelog don't care about which Rust
+          # function was edited.
           #
-          # We use github.ref_name (e.g. "v0.3.27"), resolve it to the
-          # commit it points at, and pretty-format the message. The
-          # GITHUB_OUTPUT heredoc preserves multi-line content correctly.
+          # Slicing rules:
+          #   - Drop the subject line ("v0.3.31 — Headline") — already
+          #     visible as the release title.
+          #   - Stop at the first "---" hr (separates summary from detail).
+          #   - Stop at the first "Technical:" / "Details:" line.
+          #   - Skip blank leading lines.
+          #
+          # Falls back to the full body if neither marker is present so
+          # old-style commits still render something.
+
+          raw=$(git log -1 --pretty=format:'%B' "${{ github.ref_name }}")
+
+          # Use awk to slice. `body` accumulates lines until a stop marker.
+          summary=$(echo "$raw" | awk '
+            BEGIN { skipped_subject = 0; printing = 0 }
+            # Drop the subject line + any blank lines immediately after it.
+            !skipped_subject && /^v[0-9]/ { next }
+            !skipped_subject && /^$/ { next }
+            { skipped_subject = 1 }
+            # Stop at horizontal rule or "Technical:" heading.
+            /^---+\s*$/ { exit }
+            /^(Technical|Details|Internal|Notes for devs):\s*$/ { exit }
+            { print }
+          ')
+
+          # If the summary came out empty (commit has no body), fall back
+          # to the subject so the release still has *some* content.
+          if [ -z "$(echo "$summary" | tr -d '[:space:]')" ]; then
+            summary=$(echo "$raw" | head -1)
+          fi
+
           {
             echo 'body<<CHANGELOG_EOF'
-            git log -1 --pretty=format:'%B' "${{ github.ref_name }}"
-            echo
+            echo "$summary"
             echo 'CHANGELOG_EOF'
           } >> "$GITHUB_OUTPUT"
 

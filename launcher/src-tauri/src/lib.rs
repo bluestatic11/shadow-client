@@ -746,24 +746,77 @@ async fn install_update(
 
     // Spawn the installer DETACHED — it must outlive us so it can replace
     // our .exe on disk after we exit.
+    //
+    // v0.3.27: pass `/S` (NSIS silent flag) so the "Shadow Client Setup"
+    // wizard NEVER pops up. Previously the user had to click through the
+    // installer's welcome/location/finish pages on every auto-update,
+    // which feels like "doing the setup again" — the whole point of
+    // auto-update is that it should be invisible.
+    //
+    // For auto-restart-after-install we wrap the installer call in a
+    // cmd.exe one-liner:
+    //     <installer> /S  &  start "" "<current launcher .exe>"
+    // cmd waits for the installer to finish (& runs sequentially with no
+    // short-circuit on error) then relaunches our own .exe path. NSIS
+    // installs to the same path it was originally installed at, so the
+    // path we capture BEFORE spawning is the same path the new launcher
+    // ends up at.
+    let current_exe = std::env::current_exe().ok();
+
     let spawn_result = {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            // DETACHED_PROCESS (0x00000008) | CREATE_NEW_PROCESS_GROUP (0x00000200)
-            std::process::Command::new(&dest)
-                .creation_flags(0x00000008 | 0x00000200)
-                .spawn()
+            // DETACHED_PROCESS (0x8) | CREATE_NEW_PROCESS_GROUP (0x200)
+            //                        | CREATE_NO_WINDOW (0x08000000)
+            // The NO_WINDOW flag keeps the cmd helper from flashing a
+            // console window during the silent install.
+            const CREATE_FLAGS: u32 = 0x00000008 | 0x00000200 | 0x08000000;
+            if let Some(launcher_exe) = current_exe.as_ref() {
+                // 2 s wait gives our process time to fully exit before
+                // NSIS tries to write to the locked .exe. Without this,
+                // the file overwrite races our shutdown and can fail
+                // with "file in use".
+                let cmd_line = format!(
+                    r#"timeout /t 2 /nobreak >nul & "{}" /S & start "" "{}""#,
+                    dest.display(),
+                    launcher_exe.display()
+                );
+                std::process::Command::new("cmd")
+                    .args(["/C", &cmd_line])
+                    .creation_flags(CREATE_FLAGS)
+                    .spawn()
+            } else {
+                // No idea where we live — best effort: install silently
+                // without auto-relaunch. The user reopens manually.
+                let cmd_line = format!(
+                    r#"timeout /t 2 /nobreak >nul & "{}" /S"#,
+                    dest.display()
+                );
+                std::process::Command::new("cmd")
+                    .args(["/C", &cmd_line])
+                    .creation_flags(CREATE_FLAGS)
+                    .spawn()
+            }
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         {
+            // DMG can't be silently installed; just open it and let the
+            // user drag the .app into Applications. Same behaviour as
+            // before — macOS auto-update was never one-click.
+            std::process::Command::new("open").arg(&dest).spawn()
+        }
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            // AppImage: just run it — it replaces itself in place.
             std::process::Command::new(&dest).spawn()
         }
     };
     spawn_result.map_err(|e| format!("running installer {}: {e}", dest.display()))?;
 
     // Give the installer a beat to actually start before we vanish, so
-    // the user isn't staring at a closed window wondering what happened.
+    // the cmd helper has time to spawn the installer process before our
+    // .exe gets a chance to be replaced on disk.
     tokio::time::sleep(Duration::from_millis(800)).await;
     app.exit(0);
     Ok(())

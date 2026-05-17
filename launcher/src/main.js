@@ -2549,8 +2549,8 @@ async function autoInstallUpdate(latest, downloadUrl) {
   banner.innerHTML = `
     <div class="startup-banner-title" id="auto-update-title">▲ Updating to v${latest}…</div>
     <div class="startup-banner-body" id="auto-update-body">
-      Downloading the new launcher. The window will close in a few seconds —
-      Shadow Client will reopen automatically when the installer finishes.
+      Replacing the launcher silently — no installer wizard, no setup
+      questions. Shadow Client will reopen on its own in a few seconds.
     </div>
   `;
   document.body.appendChild(banner);

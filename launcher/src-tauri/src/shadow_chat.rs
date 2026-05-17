@@ -29,9 +29,10 @@ use std::path::Path;
 
 use crate::auth::Account;
 
-/// Default relay URL. Overridable at launch via the `SHADOW_CHAT_RELAY`
+/// Default relay URL — the live Cloudflare Worker deployed from
+/// `chat-relay/`. Overridable at launch via the `SHADOW_CHAT_RELAY`
 /// env var so devs can point at a local Wrangler instance.
-pub const DEFAULT_RELAY_URL: &str = "wss://shadow-chat-relay.bluestatic11.workers.dev";
+pub const DEFAULT_RELAY_URL: &str = "wss://shadow-chat-relay.edisongushf.workers.dev";
 
 /// Filename written into the profile working directory on each launch.
 /// The mod looks for this exact name relative to its run dir.

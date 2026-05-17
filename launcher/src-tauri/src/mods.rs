@@ -160,3 +160,89 @@ pub async fn install_mods(
 
     Ok((installed, skipped))
 }
+
+/// Top-up pass that runs on every game launch. Walks DIRECT_URL_MODS and
+/// downloads anything missing from the profile mods folder.
+///
+/// Why: the full `install_mods` only runs during the initial setup
+/// pass. If we add a new direct-URL mod (e.g. shadow-chat) in a later
+/// launcher version, existing profiles never pick it up unless the
+/// user manually re-runs setup. This top-up function fills that gap —
+/// every launch checks for + installs any missing direct mods that
+/// are scoped to the current MC version.
+///
+/// Fast path (everything already installed) does no network IO — just
+/// a few file existence checks. Designed to be called from
+/// setup::launch right before spawning Java, no perceptible delay.
+pub async fn ensure_direct_mods_present(
+    client: &reqwest::Client,
+    mods_dir: &std::path::Path,
+    mc_version: &str,
+    progress: impl Fn(String) + Send + Sync,
+) -> anyhow::Result<Vec<String>> {
+    let mut added: Vec<String> = Vec::new();
+    std::fs::create_dir_all(mods_dir).ok();
+
+    for m in DIRECT_URL_MODS.iter() {
+        if !m.mc_versions.iter().any(|v| *v == mc_version) {
+            continue;
+        }
+        let dest = mods_dir.join(m.filename);
+        if dest.exists() {
+            continue;
+        }
+        // Also tolerate the case where a PRIOR version of this mod is
+        // sitting in the folder (e.g. shadow-chat-0.1.0.jar when we now
+        // want shadow-chat-0.1.1.jar). Remove the old one before
+        // grabbing the new — Fabric will refuse to load if two copies
+        // of the same modid are present.
+        if let Some(stem_prefix) = mod_stem_prefix(m.filename) {
+            if let Ok(entries) = std::fs::read_dir(mods_dir) {
+                for e in entries.flatten() {
+                    let fname = e.file_name().to_string_lossy().to_string();
+                    if fname == m.filename { continue; }
+                    if fname.starts_with(stem_prefix) && fname.ends_with(".jar") {
+                        progress(format!(
+                            "  Shadow Chat: removing stale {} (replacing with {})",
+                            fname, m.filename
+                        ));
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                }
+            }
+        }
+        progress(format!("  Shadow Chat: installing {} into profile…", m.filename));
+        match download_file(client, m.url, &dest, None).await {
+            Ok(()) => {
+                progress(format!("  Shadow Chat: {} installed", m.filename));
+                added.push(m.slug.to_string());
+            }
+            Err(e) => {
+                progress(format!(
+                    "  Shadow Chat: install failed ({e:#}) — chat will be disabled this session"
+                ));
+            }
+        }
+    }
+    Ok(added)
+}
+
+/// `"shadow-chat-0.1.1.jar"` → `Some("shadow-chat-")`. Used to detect
+/// stale prior-version jars of the same mod. Splits on the LAST `-`
+/// before what looks like a version digit; falls back to None if the
+/// filename doesn't have an obvious version suffix (in which case we
+/// just don't try to delete anything older).
+fn mod_stem_prefix(filename: &str) -> Option<&str> {
+    let stem = filename.strip_suffix(".jar")?;
+    // Walk back from the end to find the last "-N" boundary.
+    let mut bytes = stem.as_bytes().iter().enumerate().rev();
+    while let Some((i, b)) = bytes.next() {
+        if *b == b'-' {
+            // Confirm what follows is a digit (i.e. version starts here).
+            if i + 1 < stem.len() && stem.as_bytes()[i + 1].is_ascii_digit() {
+                return Some(&filename[..i + 1]);
+            }
+        }
+    }
+    None
+}

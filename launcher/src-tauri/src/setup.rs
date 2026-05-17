@@ -290,6 +290,30 @@ pub async fn launch(
     progress(format!("Launch command logged → {}", log_path.display()));
     progress("Starting Minecraft — first boot can take 30-60s…".into());
 
+    // v0.3.35: top-up the chat mod (and any future direct-URL mod) on
+    // every launch. Profiles set up before a particular mod was added
+    // to DIRECT_URL_MODS never received it via the initial setup pass,
+    // so this fills the gap. Also self-heals if the user deleted the
+    // jar manually OR if a new mod version is published (stale older
+    // jars get removed before the new one is installed).
+    // Fast path on the common case (everything already present) does
+    // zero network I/O — just a few file existence checks.
+    if let Some(mc_ver) = p.mc_version.as_deref() {
+        let mods_dir = profile_dir.join("mods");
+        let client = build_http_client()?;
+        // The launch path's progress callback isn't Clone, so wrap it in
+        // a borrow-capturing closure for the top-up call. Closure doesn't
+        // outlive this scope so the borrow is fine.
+        let topup_progress = |line: String| progress(line);
+        match mods::ensure_direct_mods_present(&client, &mods_dir, mc_ver, topup_progress).await {
+            Ok(added) if !added.is_empty() => {
+                progress(format!("Topped up {} direct-URL mod(s)", added.len()));
+            }
+            Ok(_) => {}
+            Err(e) => progress(format!("Mod top-up failed (non-fatal): {e:#}")),
+        }
+    }
+
     // Hand the Shadow Chat mod its auth + relay info via a small JSON file
     // dropped into profile_dir (== Java's CWD). Best-effort: if anything
     // here fails, log it and keep going — chat-mod is non-essential.

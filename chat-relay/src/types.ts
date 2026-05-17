@@ -4,6 +4,19 @@
 // Both directions are framed as { op, ...payload } so adding new message
 // kinds is just "add a new op". Unknown ops are silently ignored on
 // both sides for forward compatibility.
+//
+// ─── Voice (binary frames) ────────────────────────────────────────
+// The same WebSocket also carries binary frames for push-to-talk voice.
+// These are NOT JSON — they're raw byte buffers with this layout:
+//
+//   Uplink   (mod → relay):    [0x01][opus_packet ...]
+//   Downlink (relay → mod):    [0x01][sender_uuid 16 bytes][opus_packet ...]
+//
+// The relay only ever prepends the sender's *verified* UUID — clients
+// can't spoof identity. Voice frames are forwarded to every member of
+// the room EXCEPT the sender (no self-echo). Binary frames bypass the
+// JSON rate-limit; their natural rate cap is Opus's 50 fps × ~80 bytes.
+// Max frame size: 2 KB (rejected silently if larger).
 
 /** Anything the *client* (the in-game mod) sends to the relay. */
 export type ClientMessage =

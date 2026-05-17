@@ -8,6 +8,7 @@ import app.shadowclient.chat.ui.ChatInputScreen;
 import app.shadowclient.chat.ui.ChatOverlay;
 import app.shadowclient.chat.ui.InputState;
 import app.shadowclient.chat.ui.Keybinds;
+import app.shadowclient.chat.voice.VoiceController;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -55,6 +56,7 @@ public final class ShadowChatClient implements ClientModInitializer {
     private InputState uiState;
     private ChatOverlay overlay;
     private RelayClient relay;
+    private VoiceController voice;
 
     /** Last status line to show in the overlay banner (auth state, connection state, …). */
     private volatile String statusLine = "";
@@ -77,6 +79,12 @@ public final class ShadowChatClient implements ClientModInitializer {
         Keybinds.register();
 
         this.relay = new RelayClient(auth);
+        // Voice runs alongside text on the same WebSocket. Initialized
+        // here so audio hardware is open before the first channel join.
+        // If mic/output aren't available the controller logs once and
+        // stays a no-op; nothing else in the mod cares.
+        this.voice = new VoiceController();
+        this.voice.init(relay);
 
         // Set initial banner so the overlay says something useful even
         // before the player joins a server.
@@ -99,6 +107,7 @@ public final class ShadowChatClient implements ClientModInitializer {
             // Best-effort cleanup — Loom dev runs sometimes leave
             // sockets dangling otherwise.
             try { relay.disconnect(); } catch (Exception ignored) {}
+            try { voice.shutdown(); } catch (Exception ignored) {}
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
@@ -125,11 +134,21 @@ public final class ShadowChatClient implements ClientModInitializer {
         });
 
         // Hotkey poll. consumeClick() drains the queued GLFW press
-        // events so we react exactly once per tap.
+        // events so we react exactly once per tap. The PTT key is a
+        // hold-style binding so we read isDown() each tick rather than
+        // draining click events.
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (Keybinds.TOGGLE_CHAT.consumeClick()) {
                 handleToggleHotkey(client);
             }
+            // Push-to-talk: gate transmission on key-held state.
+            // Suppress while any Screen is open so the player can use
+            // the V key for paste in the chat input field without
+            // accidentally going hot-mic. Note that we don't suppress
+            // for our own ChatInputScreen because typing there also
+            // wants Ctrl+V to be a paste, not a PTT trigger.
+            boolean held = Keybinds.PUSH_TO_TALK.isDown() && client.screen == null;
+            voice.setTransmitting(held);
         });
 
         LOG.info("Shadow Chat initialized");
@@ -139,6 +158,23 @@ public final class ShadowChatClient implements ClientModInitializer {
 
     /** Banner line shown at the top of the overlay. May be empty. */
     public String statusLine() { return statusLine; }
+
+    /** Voice subsystem (capture/playback) — used by the overlay for the
+     *  "speaking" indicator and PTT hint. May be null very briefly
+     *  during startup before {@link #onInitializeClient()} finishes. */
+    public VoiceController voice() { return voice; }
+
+    /** Look up a display name for a UUID from the active channel's
+     *  presence list. Returns the short uuid prefix if not found —
+     *  better than rendering a 36-char UUID in the speaker indicator. */
+    public String displayNameForUuid(UUID uuid) {
+        if (uuid == null) return "?";
+        String key = uuid.toString();
+        for (Messages.ServerEvent.User u : uiState.presenceFor(uiState.activeChannel())) {
+            if (key.equalsIgnoreCase(u.uuid())) return u.name();
+        }
+        return key.substring(0, 8);
+    }
 
     /**
      * Called by {@link ChatInputScreen} when the user hits Enter.
@@ -247,6 +283,9 @@ public final class ShadowChatClient implements ClientModInitializer {
 
         statusLine = "Connecting to " + wireChannel + "…";
         final String activeChannelKey = channelKey;
+        // Channel changed → drop any decoder state for speakers from
+        // the old channel so their voice doesn't bleed in.
+        if (voice != null) voice.onChannelChange();
         relay.connect(wireChannel, new RelayClient.EventSink() {
             @Override
             public void onConnected(String ch) {
@@ -281,6 +320,16 @@ public final class ShadowChatClient implements ClientModInitializer {
                     }
                     // Unknown events: silently dropped (forward-compat).
                 });
+            }
+
+            @Override
+            public void onVoice(UUID sender, byte[] opus) {
+                // Voice frames are hot-path; skip the client-thread
+                // bounce and hand straight to the mixer (which runs on
+                // its own thread). UI side reads currentSpeakers()
+                // from render code which already hops to the right
+                // thread.
+                if (voice != null) voice.onVoiceFrame(sender, opus);
             }
         });
     }

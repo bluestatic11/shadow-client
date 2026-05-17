@@ -3,6 +3,7 @@ package app.shadowclient.chat.ui;
 import app.shadowclient.chat.ShadowChatClient;
 import app.shadowclient.chat.config.ModConfig;
 import app.shadowclient.chat.relay.Messages.ServerEvent;
+import app.shadowclient.chat.voice.VoiceController;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -12,6 +13,7 @@ import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Bottom-anchored chat overlay rendered via {@link HudRenderCallback}.
@@ -51,6 +53,12 @@ public final class ChatOverlay {
     /** Dim chip otherwise. */
     private static final int CHIP_INACTIVE = 0xFF2A2A2A;
     private static final int CHIP_TEXT = 0xFFFFFFFF;
+    /** Color of the speaking-indicator names — soft cyan, easy to spot. */
+    private static final int SPEAKER_COLOR = 0xFF6FE6E6;
+    /** PTT hint color when idle (greyish). */
+    private static final int PTT_IDLE_COLOR = 0xFF808080;
+    /** PTT hint color when transmitting (warm red). */
+    private static final int PTT_HOT_COLOR = 0xFFFF6B6B;
 
     private final InputState state;
     private final ModConfig config;
@@ -129,10 +137,40 @@ public final class ChatOverlay {
             statusY += font.lineHeight + 2;
         }
 
+        // ---- speaking indicator ----
+        // Pulled from the voice subsystem each frame. Names are looked
+        // up against the active channel's presence list; falls back to
+        // a short uuid if the speaker isn't in our presence yet (can
+        // happen briefly after a join).
+        VoiceController vc = ShadowChatClient.get().voice();
+        if (vc != null) {
+            List<UUID> speakers = vc.playback().currentSpeakers();
+            if (!speakers.isEmpty()) {
+                StringBuilder sb = new StringBuilder("Speaking: ");
+                int shown = 0;
+                for (UUID id : speakers) {
+                    if (shown > 0) sb.append(", ");
+                    sb.append(ShadowChatClient.get().displayNameForUuid(id));
+                    shown++;
+                    if (shown >= 4 && speakers.size() > 4) {
+                        sb.append(" +").append(speakers.size() - shown).append(" more");
+                        break;
+                    }
+                }
+                gfx.drawString(font, Component.literal(sb.toString()),
+                        x + PAD, statusY, SPEAKER_COLOR, false);
+                statusY += font.lineHeight + 2;
+            }
+        }
+
         // ---- message log ----
         int logTop = statusY + 2;
+        // Reserve a line at the bottom for the PTT hint. When the
+        // focused input field is also visible we stack: hint above
+        // input, both above the log floor.
+        int pttHintHeight = font.lineHeight + 2;
         int inputFieldHeight = showInputField ? font.lineHeight + 6 : 0;
-        int logBottom = y + panelHeight - PAD - inputFieldHeight;
+        int logBottom = y + panelHeight - PAD - inputFieldHeight - pttHintHeight;
         int maxLines = Math.max(0, (logBottom - logTop) / (font.lineHeight + LINE_GAP));
         if (maxLines > 0) {
             List<InputState.DisplayLine> lines = state.linesFor(active);
@@ -149,6 +187,30 @@ public final class ChatOverlay {
                 gfx.drawString(font, Component.literal(rendered), x + PAD, drawY, color, false);
                 drawY += font.lineHeight + LINE_GAP;
             }
+        }
+
+        // ---- ptt hint (just above the input field, or the panel floor if no input) ----
+        // Three states:
+        //   - mic unavailable → static "Voice unavailable" so the user
+        //     knows why the V key is doing nothing.
+        //   - PTT held → red "Talking…" to confirm the mic is hot.
+        //   - otherwise → grey "Hold V to talk" reminder.
+        int pttY = y + panelHeight - PAD - inputFieldHeight - pttHintHeight + 1;
+        VoiceController vcHint = ShadowChatClient.get().voice();
+        if (vcHint != null) {
+            String hint;
+            int color;
+            if (!vcHint.capture().isAvailable()) {
+                hint = "Voice unavailable (no microphone)";
+                color = PTT_IDLE_COLOR;
+            } else if (vcHint.isTransmitting()) {
+                hint = "Talking...";
+                color = PTT_HOT_COLOR;
+            } else {
+                hint = "Hold V to talk";
+                color = PTT_IDLE_COLOR;
+            }
+            gfx.drawString(font, Component.literal(hint), x + PAD, pttY, color, false);
         }
 
         // ---- input field ----

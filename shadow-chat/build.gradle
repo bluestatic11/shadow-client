@@ -30,6 +30,38 @@ dependencies {
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // Pure-Java Opus codec — no native libs, runs on any JVM with
+    // javax.sound.sampled. We vendor the jar locally under libs/
+    // because:
+    //   - Concentus isn't on Maven Central.
+    //   - The canonical artifact is built on demand from GitHub via
+    //     JitPack, whose generated POM versions ("master-SNAPSHOT",
+    //     commit hashes like "6c2328dc19") fail Fabric Loom's
+    //     `include`-task semver validation, so we can't ship it as a
+    //     proper JIJ ("jar in jar").
+    //   - The vendored copy makes the build hermetic and reproducible
+    //     without depending on JitPack uptime at build time.
+    // We "fat-jar" the codec classes into the mod jar at the bottom
+    // of this file (see the `jar` task config). The jar originated
+    // from https://jitpack.io/com/github/lostromb/concentus/Concentus/6c2328dc19/
+    // and exports `org.concentus.*` used by VoiceCodec.
+    compileOnly files('libs/concentus-6c2328dc19.jar')
+}
+
+/**
+ * Shade Concentus' classes into the produced mod jar so end users
+ * don't need to install it separately. We unzip the codec jar and
+ * fold its `org/concentus/...` class files into the main jar.
+ *
+ * <p>We deliberately drop the `META-INF/` entries from the codec —
+ * its own MANIFEST would otherwise overwrite ours, and the rest of
+ * META-INF is build noise (no signatures we need to preserve).
+ */
+jar {
+    from(zipTree(file('libs/concentus-6c2328dc19.jar'))) {
+        exclude 'META-INF/**'
+    }
 }
 
 processResources {

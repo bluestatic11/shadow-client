@@ -6,8 +6,10 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,7 +38,21 @@ public final class RelayClient {
         default void onDisconnected(String channel, String reason) {}
         /** A frame arrived — already parsed. */
         void onEvent(Messages.ServerEvent event);
+        /**
+         * A binary voice frame arrived from another participant on the
+         * same channel. {@code sender} is the verified UUID stamped by
+         * the relay; {@code opus} is the raw codec packet. Default no-op
+         * so callers that don't care about voice (older sinks, tests)
+         * keep working unchanged.
+         */
+        default void onVoice(UUID sender, byte[] opus) {}
     }
+
+    /** Voice frame marker byte — first byte of every binary frame on the wire. */
+    public static final byte FRAME_VOICE = 0x01;
+
+    /** Hard cap on inbound binary frame size; anything bigger is silently dropped. */
+    private static final int MAX_BINARY_FRAME_BYTES = 2048;
 
     private final HttpClient http;
     private final AuthConfig auth;
@@ -137,6 +153,33 @@ public final class RelayClient {
         }
     }
 
+    /**
+     * Send a binary voice frame on the active connection. Uplink wire
+     * format is {@code [FRAME_VOICE][opus...]} — the relay verifies the
+     * sender from the socket's auth and prepends the sender UUID before
+     * fanning out to peers, so we deliberately do NOT include any UUID
+     * here.
+     *
+     * <p>Silently dropped if no connection is open or the opus payload
+     * is empty / oversize. We don't surface errors here — voice frames
+     * are inherently lossy and the next packet is along in 20 ms.
+     */
+    public void sendVoice(byte[] opus) {
+        if (opus == null || opus.length == 0) return;
+        if (opus.length + 1 > MAX_BINARY_FRAME_BYTES) return;
+        Session s = current.get();
+        if (s == null || s.socket == null) return;
+        ByteBuffer buf = ByteBuffer.allocate(opus.length + 1);
+        buf.put(FRAME_VOICE);
+        buf.put(opus);
+        buf.flip();
+        try {
+            s.socket.sendBinary(buf, true);
+        } catch (Exception ignored) {
+            // Best-effort; the listener's onClose/onError handles real failures.
+        }
+    }
+
     /** Close the current socket if any. Safe to call multiple times.
      *  Suppresses any pending auto-reconnect — the user (or shutdown
      *  hook) explicitly wants out, we don't second-guess that. */
@@ -220,11 +263,18 @@ public final class RelayClient {
     /**
      * WebSocket listener. Buffers partial text frames since
      * {@link WebSocket.Listener#onText} can fire multiple times per
-     * logical message (the API allows for chunking).
+     * logical message (the API allows for chunking). Same buffering
+     * applies to binary frames — JDK can deliver a fragmented payload.
      */
     private final class Listener implements WebSocket.Listener {
         private final Session session;
         private final StringBuilder buf = new StringBuilder();
+        /**
+         * Accumulator for partial binary frames. Allocated on demand
+         * because most frames arrive in one piece on a healthy network
+         * and we don't want to hold a 2 KB buffer per idle socket.
+         */
+        private ByteBuffer binBuf = null;
 
         Listener(Session session) {
             this.session = session;
@@ -252,6 +302,67 @@ public final class RelayClient {
             }
             webSocket.request(1);
             return null;
+        }
+
+        @Override
+        public CompletionStage<?> onBinary(WebSocket webSocket, ByteBuffer data, boolean last) {
+            // Fast path: single-fragment frame and no accumulator yet.
+            // We avoid the extra copy in the steady state.
+            if (last && binBuf == null) {
+                dispatchBinary(data);
+            } else {
+                // Slow path: accumulate fragments into binBuf.
+                if (binBuf == null) {
+                    // Cap the initial allocation at our hard limit so a
+                    // misbehaving peer can't make us blow up memory.
+                    int cap = Math.min(MAX_BINARY_FRAME_BYTES, data.remaining() + 256);
+                    binBuf = ByteBuffer.allocate(cap);
+                }
+                if (binBuf.remaining() < data.remaining()) {
+                    // Would overflow our cap → frame is too big, drop it.
+                    binBuf = null;
+                } else {
+                    binBuf.put(data);
+                    if (last) {
+                        binBuf.flip();
+                        dispatchBinary(binBuf);
+                        binBuf = null;
+                    }
+                }
+            }
+            webSocket.request(1);
+            return null;
+        }
+
+        /**
+         * Decode a fully-assembled downlink binary frame and route it.
+         * Downlink format: {@code [FRAME_VOICE][16-byte sender UUID][opus...]}.
+         * Anything else is silently dropped — forward-compat for future
+         * frame markers without breaking older clients.
+         */
+        private void dispatchBinary(ByteBuffer data) {
+            try {
+                int remaining = data.remaining();
+                if (remaining < 1 || remaining > MAX_BINARY_FRAME_BYTES) return;
+                byte marker = data.get();
+                if (marker != FRAME_VOICE) return;
+                // Downlink must include the 16-byte sender UUID stamped
+                // by the relay. Anything shorter is a malformed/spoofed
+                // frame; drop it.
+                if (data.remaining() < 16 + 1) return;
+                long msb = data.getLong();
+                long lsb = data.getLong();
+                UUID sender = new UUID(msb, lsb);
+                byte[] opus = new byte[data.remaining()];
+                data.get(opus);
+                try {
+                    session.sink.onVoice(sender, opus);
+                } catch (Exception ignored) {
+                    // Never let a callback exception kill the socket.
+                }
+            } catch (Exception ignored) {
+                // Malformed frame — drop silently.
+            }
         }
 
         @Override

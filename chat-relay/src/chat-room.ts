@@ -74,8 +74,16 @@ export class ChatRoom implements DurableObject {
     this.members.set(uuid, member);
 
     serverSide.addEventListener('message', (event) => {
-      const raw = typeof event.data === 'string' ? event.data : '';
-      this.handleClientMessage(member, raw);
+      const data = event.data;
+      if (typeof data === 'string') {
+        // JSON control / chat frame.
+        this.handleClientMessage(member, data);
+      } else if (data instanceof ArrayBuffer) {
+        // Binary frame — currently only push-to-talk voice (marker 0x01).
+        // Forward as-is to other members with the sender UUID prepended.
+        this.handleBinary(member, data);
+      }
+      // Anything else (Blob — Workers shouldn't deliver this) silently dropped.
     });
     const close = () => {
       // Only remove if this specific socket is still the member's
@@ -96,6 +104,41 @@ export class ChatRoom implements DurableObject {
     this.broadcastPresence();
 
     return new Response(null, { status: 101, webSocket: clientSide });
+  }
+
+  /**
+   * Handle a binary frame from the client. Currently we only know one
+   * frame type — 0x01 = push-to-talk voice. The relay never decodes the
+   * audio; we just prepend the verified sender UUID and forward to
+   * every OTHER member of the room (the sender already hears themselves
+   * via their own mic monitoring; echoing it back would feedback-loop).
+   *
+   * Frame format reminder:
+   *   Uplink:    [0x01][opus_bytes …]
+   *   Downlink:  [0x01][sender_uuid 16 bytes][opus_bytes …]
+   */
+  private handleBinary(from: Member, raw: ArrayBuffer) {
+    if (raw.byteLength === 0 || raw.byteLength > 2048) return;
+    const view = new Uint8Array(raw);
+    const marker = view[0];
+    if (marker !== 0x01) return;  // unknown frame type — silently drop
+
+    const uuidBytes = uuidToBytes(from.uuid);
+    if (!uuidBytes) return;  // member uuid not valid — shouldn't happen
+
+    // Allocate the downlink buffer: 1 byte marker + 16 byte uuid + payload.
+    const payload = view.subarray(1);
+    const out = new Uint8Array(1 + 16 + payload.byteLength);
+    out[0] = 0x01;
+    out.set(uuidBytes, 1);
+    out.set(payload, 17);
+
+    // The .buffer property gives us a transferable ArrayBuffer for
+    // Workers' WebSocket.send(). Skipping the sender avoids self-echo.
+    for (const m of this.members.values()) {
+      if (m.uuid === from.uuid) continue;
+      try { m.socket.send(out.buffer); } catch (_) {}
+    }
   }
 
   private handleClientMessage(from: Member, raw: string) {
@@ -164,4 +207,25 @@ export class ChatRoom implements DurableObject {
     }));
     this.broadcast({ op: 'presence', users });
   }
+}
+
+/**
+ * Convert a dashed Minecraft UUID ("069a79f4-44e9-4726-a5be-fca90e38aaf5")
+ * to its 16-byte big-endian binary form, matching java.util.UUID's
+ * `getMostSignificantBits()` + `getLeastSignificantBits()` layout that
+ * the mod uses to reconstruct the UUID on the receive side.
+ *
+ * Returns null on malformed input — callers drop the frame in that
+ * case rather than guessing at member identity.
+ */
+function uuidToBytes(dashedUuid: string): Uint8Array | null {
+  const hex = dashedUuid.replace(/-/g, '');
+  if (hex.length !== 32) return null;
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) {
+    const byte = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    if (Number.isNaN(byte)) return null;
+    bytes[i] = byte;
+  }
+  return bytes;
 }

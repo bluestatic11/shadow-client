@@ -468,6 +468,13 @@ async function loadAccount() {
 function renderAccount() {
   const isMsa = !!(account && account.user_type === 'msa' && account.username);
   signedIn = isMsa;
+  // v0.3.29: lock username only in offline mode. Offline players all share
+  // "Player" (their offline UUID is generated from the name, so a fixed
+  // name avoids accidental world-save splits between sessions). When the
+  // user is signed in with Microsoft we open the field back up so they
+  // can rename freely — useful since the MC username change UI is buried
+  // and a launcher-side override is faster.
+  const hint = document.getElementById('username-hint');
   if (isMsa) {
     accountBtn.classList.add('signed-in');
     accountAvatar.textContent = account.username.charAt(0).toUpperCase();
@@ -476,20 +483,37 @@ function renderAccount() {
     accountMenuMode.textContent = 'Microsoft account · online play enabled';
     accountAction.textContent   = 'Sign out';
     accountAction.classList.add('danger');
-    if (usernameInput && !usernameInput.dataset.userEdited) {
-      usernameInput.value = account.username;
+    if (usernameInput) {
+      usernameInput.removeAttribute('readonly');
+      usernameInput.removeAttribute('tabindex');
+      // Seed with the Microsoft account name the FIRST time we see it.
+      // After that, leave whatever the user typed alone — they're free
+      // to rename per their preference.
+      if (!usernameInput.dataset.userEdited) {
+        usernameInput.value = account.username;
+      }
     }
+    if (hint) hint.textContent =
+      'Editable while signed in — change to whatever you want.';
   } else {
-    // Offline-mode display shows the user's chosen offline name instead
-    // of a generic "Sign in" so the corner widget feels personalised.
-    const offlineName = (usernameInput?.value || 'Player').trim() || 'Player';
+    // Offline mode is always the literal name "Player". No choice, no
+    // editing. Keeps every offline-mode user's identity consistent so
+    // saves and screenshots don't fragment.
     accountBtn.classList.remove('signed-in');
-    accountAvatar.textContent = offlineName.charAt(0).toUpperCase();
-    accountLabel.textContent  = offlineName;
-    accountMenuName.textContent = offlineName;
+    accountAvatar.textContent = 'P';
+    accountLabel.textContent  = 'Player';
+    accountMenuName.textContent = 'Player';
     accountMenuMode.textContent = 'Offline mode';
     accountAction.textContent   = 'Sign in with Microsoft';
     accountAction.classList.remove('danger');
+    if (usernameInput) {
+      usernameInput.value = 'Player';
+      usernameInput.setAttribute('readonly', '');
+      usernameInput.setAttribute('tabindex', '-1');
+      delete usernameInput.dataset.userEdited;
+    }
+    if (hint) hint.textContent =
+      'Locked in offline mode — sign in with Microsoft to rename.';
   }
   renderGreeting();  // greeting tracks the same name shown in the corner
   renderFriends(cachedFriends);  // "You" row tracks the same name too

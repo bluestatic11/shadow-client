@@ -27,7 +27,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.28</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.29</span>
     </h1>
 
     <div class="topbar-actions">
@@ -51,15 +51,17 @@
           </div>
           <label class="account-menu-field" id="username-field-wrap">
             <span class="account-menu-field-label">Username</span>
-            <!-- v0.3.28: username locked. Field is now readonly +
-                 visually-disabled. Sign in with Microsoft to use a
-                 different (real Minecraft) username. -->
+            <!-- v0.3.29: readonly state is toggled by renderAccount() —
+                 locked in offline mode (forced to "Player"), editable
+                 when signed in with a Microsoft account. The static
+                 readonly attribute below is the initial state; JS
+                 overrides it after first paint. -->
             <input type="text" id="username-input" maxlength="16" value="Player"
                    autocomplete="username" autocapitalize="off" spellcheck="false"
                    aria-label="Offline username"
                    readonly tabindex="-1">
-            <span class="account-menu-field-hint">
-              Locked — sign in with Microsoft to use your Minecraft username.
+            <span class="account-menu-field-hint" id="username-hint">
+              Locked in offline mode — sign in with Microsoft to rename.
             </span>
           </label>
           <button class="account-menu-action" id="account-action" type="button" role="menuitem">

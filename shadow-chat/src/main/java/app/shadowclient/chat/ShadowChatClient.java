@@ -369,9 +369,34 @@ public final class ShadowChatClient implements ClientModInitializer {
                         : "not signed in";
                 uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(msg));
             }
+            case "/coords" -> handleCoordsCommand();
             default -> uiState.append(uiState.activeChannel(),
                     InputState.DisplayLine.error("Unknown command: " + parts[0]));
         }
+    }
+
+    /**
+     * Send the player's current X/Y/Z to the active channel as a chat
+     * message. Triggered by typing {@code /coords} in the chat input.
+     * Picked a slash command over a click-target for v0.1.2 because the
+     * overlay doesn't yet have button hit-test infrastructure; the UI
+     * button comes in a follow-up release.
+     */
+    private void handleCoordsCommand() {
+        var coords = app.shadowclient.chat.cmd.CoordsHelper.currentCoords();
+        if (coords.isEmpty()) {
+            uiState.append(uiState.activeChannel(),
+                    InputState.DisplayLine.error("No player loaded — /coords only works in-world."));
+            return;
+        }
+        // If we're not connected to a channel, echo locally so the
+        // user at least sees the format. Otherwise send for real.
+        if (relay.currentChannel() == null) {
+            uiState.append(uiState.activeChannel(),
+                    InputState.DisplayLine.system("(would send) " + coords.get()));
+            return;
+        }
+        relay.sendMessage(coords.get());
     }
 
     private void handleGroupCommand(String[] parts, String fullLine) {

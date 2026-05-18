@@ -144,15 +144,23 @@ export class ChatRoom implements DurableObject {
     out.set(uuidBytes, 1);
     out.set(payload, 17);
 
-    // Voice fan-out:
-    //  - sender must be inVoice (otherwise we drop their upload — they
-    //    haven't opted in, no reason to broadcast their mic)
-    //  - receiver must be inVoice (otherwise they don't hear voice)
-    //  - sender themselves is always skipped (no self-echo)
-    // The double gate means voice traffic only flows between members
-    // who have BOTH explicitly joined the VC for this channel —
-    // matches the Discord-style "join voice" UX.
-    if (!from.inVoice) return;
+    // Voice fan-out — Discord-style opt-in with auto-join fallback.
+    //
+    // The opt-in design: only forward voice frames between members who
+    // explicitly sent `voice:join` for this channel. Saves DO ops on
+    // members who are connected for text-only.
+    //
+    // BUT: older mod versions (chat-mod-v0.1.1 and earlier) don't know
+    // about voice:join at all — they just send voice frames straight
+    // away. To stay backward-compatible during the v0.1.1 → v0.1.2
+    // rollout window, the FIRST voice frame from any member silently
+    // promotes them to inVoice. New v0.1.2+ mods send voice:join
+    // explicitly so this fallback never fires for them, and they get
+    // the proper roster events.
+    if (!from.inVoice) {
+      from.inVoice = true;
+      this.broadcastVoiceRoster();
+    }
     for (const m of this.members.values()) {
       if (m.uuid === from.uuid) continue;
       if (!m.inVoice) continue;

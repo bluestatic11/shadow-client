@@ -436,7 +436,7 @@ fn delete_profile(name: String, force: bool) -> Result<(), String> {
     if !state.profiles.contains_key(&name) {
         return Err(format!("profile '{name}' not installed"));
     }
-    if state.last_used.as_deref() == Some(&name) && !force {
+    if state.last_used.as_deref() == Some(name.as_str()) && !force {
         return Err(format!(
             "'{name}' is the currently-selected profile. Switch to another \
              one first, or pass force=true."
@@ -448,7 +448,7 @@ fn delete_profile(name: String, force: bool) -> Result<(), String> {
             .map_err(|e| format!("removing {}: {e}", profile_dir.display()))?;
     }
     state.profiles.remove(&name);
-    if state.last_used.as_deref() == Some(&name) {
+    if state.last_used.as_deref() == Some(name.as_str()) {
         // Pick a remaining profile, alphabetical fallback.
         state.last_used = state.profiles.keys().next().cloned();
     }

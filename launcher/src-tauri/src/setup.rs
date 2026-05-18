@@ -229,8 +229,11 @@ pub async fn launch(
     // without ever spawning Java.
     if auth::needs_refresh(&acct) {
         progress("Refreshing Microsoft sign-in (token is >12h old)…".into());
-        let refresh_progress = |line: String| progress(line);
-        match auth::refresh_account(&acct, refresh_progress).await {
+        // Pass `&progress` directly — Fn trait is implemented on
+        // references, so the borrow-capturing closure pattern is
+        // unnecessary and the borrow checker is happier without it
+        // crossing the await boundary.
+        match auth::refresh_account(&acct, &progress).await {
             Ok(fresh) => {
                 let _ = fresh.save(&account_file);
                 acct = fresh;
@@ -325,11 +328,10 @@ pub async fn launch(
     if let Some(mc_ver) = p.mc_version.as_deref() {
         let mods_dir = profile_dir.join("mods");
         let client = build_http_client()?;
-        // The launch path's progress callback isn't Clone, so wrap it in
-        // a borrow-capturing closure for the top-up call. Closure doesn't
-        // outlive this scope so the borrow is fine.
-        let topup_progress = |line: String| progress(line);
-        match mods::ensure_direct_mods_present(&client, &mods_dir, mc_ver, topup_progress).await {
+        // Pass &progress directly — Fn is implemented on references, so
+        // no wrapper closure is needed. Avoids a borrow-checker fight
+        // with the lifetime of the borrow across the await boundary.
+        match mods::ensure_direct_mods_present(&client, &mods_dir, mc_ver, &progress).await {
             Ok(added) if !added.is_empty() => {
                 progress(format!("Topped up {} direct-URL mod(s)", added.len()));
             }

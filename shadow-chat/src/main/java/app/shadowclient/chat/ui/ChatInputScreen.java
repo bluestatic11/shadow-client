@@ -5,6 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
@@ -88,6 +89,29 @@ public final class ChatInputScreen extends Screen {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    /**
+     * 1.21.11 signature: {@code mouseClicked(MouseButtonEvent, boolean)}.
+     * Detects clicks on the overlay's Coords button — when hit, pastes
+     * the player's current X/Y/Z into the input buffer at the cursor
+     * (cursor = end of buffer; no cursor-position tracking yet).
+     */
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (event.button() == 0 && overlay.isCoordsButtonHit(event.x(), event.y())) {
+            var coords = app.shadowclient.chat.cmd.CoordsHelper.currentCoords();
+            if (coords.isPresent()) {
+                // Add a separator before the coords if the buffer isn't empty.
+                if (buffer.length() > 0
+                        && buffer.charAt(buffer.length() - 1) != ' ') {
+                    appendSafe(" ");
+                }
+                appendSafe(coords.get());
+            }
+            return true;
+        }
+        return super.mouseClicked(event, doubleClick);
     }
 
     @Override

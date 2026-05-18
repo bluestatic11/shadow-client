@@ -63,9 +63,30 @@ public final class ChatOverlay {
     private final InputState state;
     private final ModConfig config;
 
+    /**
+     * Bounding box of the coords button drawn on the input row. Updated
+     * every render so the hit-test in {@link ChatInputScreen} stays in
+     * sync with the actual pixel position regardless of window resizes.
+     * x2/y2 = 0 means the button isn't currently rendered (input field
+     * not visible).
+     */
+    private int coordsBtnX1 = 0, coordsBtnY1 = 0, coordsBtnX2 = 0, coordsBtnY2 = 0;
+
     public ChatOverlay(InputState state, ModConfig config) {
         this.state = state;
         this.config = config;
+    }
+
+    /**
+     * Hit-test the coords button — return true iff the given mouse
+     * coordinates (in GUI-scaled pixels) fall inside the button's
+     * current bounds. Used by {@link ChatInputScreen#mouseClicked} to
+     * decide whether to paste coords into the input buffer.
+     */
+    public boolean isCoordsButtonHit(double mouseX, double mouseY) {
+        if (coordsBtnX2 == 0) return false;
+        return mouseX >= coordsBtnX1 && mouseX <= coordsBtnX2
+            && mouseY >= coordsBtnY1 && mouseY <= coordsBtnY2;
     }
 
     public void register() {
@@ -213,13 +234,45 @@ public final class ChatOverlay {
             gfx.drawString(font, Component.literal(hint), x + PAD, pttY, color, false);
         }
 
-        // ---- input field ----
+        // ---- input field + coords button ----
         if (showInputField) {
             int inputY = y + panelHeight - PAD - inputFieldHeight + 1;
-            gfx.fill(x + PAD, inputY, x + panelWidth - PAD, inputY + inputFieldHeight - 2, 0xFF1A1A1A);
-            // Trim to fit; rough char clamp avoids width measurement on every keystroke.
+            // Coords button — square-ish chip on the right side of the
+            // input row. Clicking it pastes the local player's X/Y/Z
+            // into the input buffer at the cursor (handled in
+            // ChatInputScreen.mouseClicked via isCoordsButtonHit).
+            String btnLabel = "Coords";
+            int btnWidth = font.width(btnLabel) + 10;
+            int btnX1 = x + panelWidth - PAD - btnWidth;
+            int btnY1 = inputY;
+            int btnX2 = x + panelWidth - PAD;
+            int btnY2 = inputY + inputFieldHeight - 2;
+            // Disable visually if there's no player loaded (main menu).
+            boolean enabled = app.shadowclient.chat.cmd.CoordsHelper.hasPlayer();
+            int btnBg = enabled ? 0xFF2D5A8C : 0xFF2A2A2A;
+            int btnFg = enabled ? 0xFFFFFFFF : 0xFF707070;
+            gfx.fill(btnX1, btnY1, btnX2, btnY2, btnBg);
+            gfx.drawString(font, Component.literal(btnLabel),
+                    btnX1 + 5, btnY1 + (inputFieldHeight - 2 - font.lineHeight) / 2 + 1,
+                    btnFg, false);
+            // Stash bounds for hit-testing. Only when the button is
+            // clickable (enabled + visible); set to 0 otherwise so the
+            // hit-test fast-path rejects all clicks.
+            if (enabled) {
+                coordsBtnX1 = btnX1; coordsBtnY1 = btnY1;
+                coordsBtnX2 = btnX2; coordsBtnY2 = btnY2;
+            } else {
+                coordsBtnX2 = 0; // signal "not interactive"
+            }
+
+            // Text input occupies the area to the LEFT of the button.
+            int textRight = btnX1 - 4;
+            gfx.fill(x + PAD, inputY, textRight, inputY + inputFieldHeight - 2, 0xFF1A1A1A);
             String prompt = "> " + inputText + (System.currentTimeMillis() % 1000 < 500 ? "_" : "");
             gfx.drawString(font, Component.literal(prompt), x + PAD + 3, inputY + 3, 0xFFFFFFFF, false);
+        } else {
+            // No input field → no button. Clear bounds so hit-test rejects.
+            coordsBtnX2 = 0;
         }
     }
 

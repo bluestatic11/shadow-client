@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.39</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.40</span>
     </h1>
 
     <div class="topbar-actions">
@@ -300,6 +300,22 @@
           <div class="setting full">
             <label for="proj-path">Install location</label>
             <code id="proj-path" class="code-block">…</code>
+          </div>
+          <div class="setting full">
+            <!-- v0.3.40: profile manager. Lists every installed MC
+                 version (per-profile mods/worlds/configs live under
+                 game_dir/profiles/<name>). Switch to make active,
+                 Delete to free disk space. The shared libraries +
+                 assets stay regardless — they're version-scoped, not
+                 profile-scoped. -->
+            <label>Installed profiles</label>
+            <ul class="profile-list" id="profile-list" aria-live="polite">
+              <li class="empty">Loading…</li>
+            </ul>
+            <div class="setting-hint">
+              Each profile has its own mods, worlds, and screenshots.
+              Switching makes that profile the default for PLAY.
+            </div>
           </div>
         </div>
       </section>

@@ -1258,6 +1258,7 @@ dialogTabs.forEach(tab => {
     activateDialogTab(tab);
     if (tab.dataset.tab === 'diag') refreshDiagnostics();
     if (tab.dataset.tab === 'cosm') loadCosmetics();
+    if (tab.dataset.tab === 'general') refreshProfiles();
   });
   tab.addEventListener('keydown', (e) => {
     const i = dialogTabs.indexOf(tab);
@@ -1300,6 +1301,101 @@ async function refreshMods() {
 }
 
 $('refresh-mods')?.addEventListener('click', refreshMods);
+
+// ───── Profiles manager (Settings → General) ────────────────────
+// v0.3.40: lets the user see + switch + delete installed MC version
+// profiles. Each profile owns its own mods/worlds/screenshots; the
+// shared libraries/assets dir is untouched by deletion.
+async function refreshProfiles() {
+  const list = $('profile-list');
+  if (!list) return;
+  list.innerHTML = '<li class="empty">Loading…</li>';
+  try {
+    const profiles = await invoke('list_profiles');
+    if (!profiles.length) {
+      list.innerHTML = '<li class="empty">No profiles installed yet. Press PLAY to set one up.</li>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const p of profiles) {
+      list.appendChild(buildProfileRow(p));
+    }
+  } catch (e) {
+    list.innerHTML = `<li class="empty">Error: ${e.message || e}</li>`;
+  }
+}
+
+function buildProfileRow(p) {
+  const row = document.createElement('li');
+  row.className = 'profile-row' + (p.is_last_used ? ' active' : '');
+  row.dataset.profile = p.name;
+
+  const meta = document.createElement('div');
+  meta.className = 'profile-meta';
+  const activeDot = p.is_last_used
+    ? '<span class="profile-active-dot" aria-label="Active"></span>'
+    : '';
+  meta.innerHTML = `
+    <div class="profile-name">${activeDot}${escapeHtml(p.name)}${p.is_last_used ? ' <span class="profile-active-tag">ACTIVE</span>' : ''}</div>
+    <div class="profile-sub">MC ${escapeHtml(p.mc_version || '?')} · Fabric ${escapeHtml(p.fabric_loader || '?')} · ${p.mods_installed} mods</div>
+  `;
+
+  const actions = document.createElement('div');
+  actions.className = 'profile-actions';
+  if (!p.is_last_used) {
+    const switchBtn = document.createElement('button');
+    switchBtn.type = 'button';
+    switchBtn.className = 'btn-sm';
+    switchBtn.textContent = 'Switch to';
+    switchBtn.addEventListener('click', async () => {
+      switchBtn.disabled = true;
+      try {
+        await invoke('switch_profile', { name: p.name });
+        // Reflect the switch on the home screen's version picker.
+        const sel = $('version-select');
+        if (sel && p.mc_version) {
+          sel.value = p.mc_version;
+          localStorage.setItem(SAVED_VERSION_KEY, p.mc_version);
+          loadState();
+        }
+        await refreshProfiles();
+        setStatus(`Switched to profile "${p.name}"`, 'ok');
+      } catch (e) {
+        setStatus(`Switch failed: ${e}`, 'error');
+        switchBtn.disabled = false;
+      }
+    });
+    actions.appendChild(switchBtn);
+  }
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'btn-sm';
+  delBtn.textContent = 'Delete';
+  delBtn.addEventListener('click', async () => {
+    const ok = confirm(
+      `Delete profile "${p.name}"?\n\n` +
+      `This removes the per-profile mods, worlds, and screenshots. ` +
+      `Shared libraries + assets stay (they're version-scoped, not profile-scoped).`
+    );
+    if (!ok) return;
+    delBtn.disabled = true;
+    delBtn.textContent = 'Deleting…';
+    try {
+      await invoke('delete_profile', { name: p.name, force: p.is_last_used });
+      await refreshProfiles();
+      setStatus(`Deleted profile "${p.name}"`, 'ok');
+    } catch (e) {
+      setStatus(`Delete failed: ${e}`, 'error');
+      delBtn.disabled = false;
+      delBtn.textContent = 'Delete';
+    }
+  });
+  actions.appendChild(delBtn);
+
+  row.appendChild(meta);
+  row.appendChild(actions);
+  return row;
+}
 
 // ───── Add mod (.jar) ───────────────────────────────────────────
 // "Add mod" button proxies its click to the hidden <input type="file">

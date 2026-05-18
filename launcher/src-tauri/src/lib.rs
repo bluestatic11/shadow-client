@@ -390,6 +390,90 @@ async fn install_mod_from_url(
 }
 
 #[derive(Serialize, Clone)]
+pub struct ProfileInfo {
+    pub name: String,
+    pub mc_version: Option<String>,
+    pub fabric_loader: Option<String>,
+    pub mods_installed: usize,
+    pub is_last_used: bool,
+}
+
+/// Enumerate all installed profiles for the profiles manager UI in
+/// Settings → General. Includes MC version + mod count + whether
+/// it's the currently-selected last_used.
+#[tauri::command]
+fn list_profiles() -> Result<Vec<ProfileInfo>, String> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let last = state.last_used.clone();
+    let mut out: Vec<ProfileInfo> = state.profiles.iter().map(|(name, p)| ProfileInfo {
+        name: name.clone(),
+        mc_version: p.mc_version.clone(),
+        fabric_loader: p.fabric_loader.clone(),
+        mods_installed: p.installed_mods.len(),
+        is_last_used: Some(name.clone()) == last,
+    }).collect();
+    out.sort_by(|a, b| {
+        // Last-used first, then alphabetical.
+        b.is_last_used.cmp(&a.is_last_used).then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(out)
+}
+
+/// Delete a profile. Removes the profile dir + the entry in
+/// installed.json. The shared dir (libraries/assets/versions) stays
+/// since it's shared across all profiles — only the per-profile
+/// mods/worlds/configs go.
+///
+/// Refuses to delete the last_used profile unless `force=true` — the
+/// launcher would otherwise have no default to launch.
+#[tauri::command]
+fn delete_profile(name: String, force: bool) -> Result<(), String> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let mut state = setup::load_state(&state_file);
+    if !state.profiles.contains_key(&name) {
+        return Err(format!("profile '{name}' not installed"));
+    }
+    if state.last_used.as_deref() == Some(&name) && !force {
+        return Err(format!(
+            "'{name}' is the currently-selected profile. Switch to another \
+             one first, or pass force=true."
+        ));
+    }
+    let profile_dir = here.join("game_dir").join("profiles").join(&name);
+    if profile_dir.exists() {
+        std::fs::remove_dir_all(&profile_dir)
+            .map_err(|e| format!("removing {}: {e}", profile_dir.display()))?;
+    }
+    state.profiles.remove(&name);
+    if state.last_used.as_deref() == Some(&name) {
+        // Pick a remaining profile, alphabetical fallback.
+        state.last_used = state.profiles.keys().next().cloned();
+    }
+    setup::save_state(&state_file, &state)
+        .map_err(|e| format!("saving installed.json: {e:#}"))?;
+    Ok(())
+}
+
+/// Switch the active profile. Updates last_used in installed.json so
+/// the next PLAY click runs this profile by default.
+#[tauri::command]
+fn switch_profile(name: String) -> Result<(), String> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let mut state = setup::load_state(&state_file);
+    if !state.profiles.contains_key(&name) {
+        return Err(format!("profile '{name}' not installed"));
+    }
+    state.last_used = Some(name);
+    setup::save_state(&state_file, &state)
+        .map_err(|e| format!("saving installed.json: {e:#}"))?;
+    Ok(())
+}
+
+#[derive(Serialize, Clone)]
 pub struct CrashReport {
     pub filename: String,
     pub path: String,
@@ -1191,6 +1275,9 @@ pub fn run() {
             chat_diagnostics,
             chat_test_token,
             read_latest_crash_report,
+            list_profiles,
+            delete_profile,
+            switch_profile,
             install_update,
             sweep_update_temp,
             disk_usage_mb,

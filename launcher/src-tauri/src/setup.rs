@@ -5,7 +5,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::{auth::Account, fabric, jdk, jvm, mods, mojang, shadow_chat};
+use crate::{auth::{self, Account}, fabric, jdk, jvm, mods, mojang, shadow_chat};
 
 /// Per-profile install state stored under `installed.json`.
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]

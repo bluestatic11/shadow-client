@@ -1024,7 +1024,75 @@ function formatRelativeTime(epochSecs) {
 // Listen for MC start/exit events so the "You" row re-renders to reflect
 // the actual running state without polling.
 listen('mc-started', () => { mcRunning = true;  renderFriends(cachedFriends); });
-listen('mc-exited',  () => { mcRunning = false; renderFriends(cachedFriends); });
+listen('mc-exited',  (event) => {
+  mcRunning = false;
+  renderFriends(cachedFriends);
+  // v0.3.39: on non-zero exit, surface the most-recent crash report so
+  // the user doesn't have to dig into game_dir/profiles/X/crash-reports/
+  // to figure out what blew up. Mod-loader crashes write nicely
+  // formatted reports there; uncaught exceptions in core MC do too.
+  const code = event?.payload?.code;
+  if (typeof code === 'number' && code !== 0) {
+    setTimeout(showLatestCrashReport, 200);
+  }
+});
+
+async function showLatestCrashReport() {
+  let report;
+  try {
+    report = await invoke('read_latest_crash_report', { version: getPickedVersion() });
+  } catch (e) {
+    console.warn('[shadow] read_latest_crash_report failed:', e);
+    return;
+  }
+  if (!report) return;
+  // Only show the report if it's from THIS launch (mtime within last
+  // 60 s). Otherwise we'd surface stale crashes on every clean exit.
+  const ageSeconds = (Date.now() / 1000) - (report.mtime_unix || 0);
+  if (ageSeconds > 120) return;
+
+  // Lightweight modal — overlay + dismissable panel. Reusing the
+  // <dialog> element gets us focus trapping + Esc-to-close for free.
+  let modal = document.getElementById('crash-report-modal');
+  if (!modal) {
+    modal = document.createElement('dialog');
+    modal.id = 'crash-report-modal';
+    modal.className = 'crash-modal';
+    modal.innerHTML = `
+      <div class="dialog-head">
+        <h2>Minecraft crashed</h2>
+        <button class="icon-btn" id="crash-close" type="button" aria-label="Close">
+          <span aria-hidden="true">×</span>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <p class="page-blurb" id="crash-filename"></p>
+        <pre class="crash-content" id="crash-content"></pre>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn-sm" id="crash-copy" type="button">Copy</button>
+        <button class="btn-sm" id="crash-open-folder" type="button">Open folder</button>
+        <button class="btn-done" id="crash-done" type="button">Close</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('#crash-close')?.addEventListener('click', () => modal.close());
+    modal.querySelector('#crash-done')?.addEventListener('click', () => modal.close());
+    modal.querySelector('#crash-copy')?.addEventListener('click', async () => {
+      const pre = modal.querySelector('#crash-content');
+      try { await navigator.clipboard.writeText(pre?.textContent || ''); } catch (_) {}
+      const btn = modal.querySelector('#crash-copy');
+      if (btn) { const t = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = t, 1500); }
+    });
+    modal.querySelector('#crash-open-folder')?.addEventListener('click', async () => {
+      try { await invoke('open_folder'); } catch (_) {}
+    });
+  }
+  modal.querySelector('#crash-filename').textContent =
+    `${report.filename} · ${Math.round(report.size_bytes / 1024)} KB`;
+  modal.querySelector('#crash-content').textContent = report.head || '(empty)';
+  modal.showModal();
+}
 
 // v0.3.37: Microsoft sign-in prompt banner. The Rust microsoft_login
 // command emits `ms-prompt` with the device code + verification URL the
@@ -1279,6 +1347,149 @@ if (addModBtn && addModInput) {
       failed ? 'error' : 'ok'
     );
   });
+}
+
+// ───── Modrinth search ─────────────────────────────────────────
+// v0.3.39: real mod browser. Type any query, hit Search → fetches
+// api.modrinth.com/v2/search filtered to Fabric mods on the current
+// MC version. Each result has a one-click Install button that
+// resolves the matching version and downloads via the Rust
+// install_mod_from_url command (streams to disk, doesn't go through
+// IPC bytes).
+const MODRINTH_API = 'https://api.modrinth.com/v2';
+const modrinthForm    = $('modrinth-search-form');
+const modrinthQuery   = $('modrinth-query');
+const modrinthResults = $('modrinth-results');
+
+if (modrinthForm) {
+  modrinthForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await runModrinthSearch();
+  });
+}
+
+async function runModrinthSearch() {
+  const q = (modrinthQuery?.value || '').trim();
+  if (!modrinthResults) return;
+  if (!q) {
+    modrinthResults.hidden = true;
+    modrinthResults.innerHTML = '';
+    return;
+  }
+  modrinthResults.hidden = false;
+  modrinthResults.innerHTML = '<li class="modrinth-empty">Searching Modrinth…</li>';
+
+  const mcVer = getPickedVersion();
+  // Facets restrict to fabric mods that target the current MC version.
+  const facets = JSON.stringify([
+    ['project_type:mod'],
+    [`versions:${mcVer}`],
+    ['categories:fabric'],
+  ]);
+  const url = `${MODRINTH_API}/search?query=${encodeURIComponent(q)}&limit=15&facets=${encodeURIComponent(facets)}`;
+  try {
+    const resp = await fetch(url, { headers: { 'User-Agent': 'shadow-client (github.com/bluestatic11/shadow-client)' } });
+    if (!resp.ok) {
+      modrinthResults.innerHTML = `<li class="modrinth-empty">Modrinth returned ${resp.status}</li>`;
+      return;
+    }
+    const data = await resp.json();
+    const hits = data.hits || [];
+    if (!hits.length) {
+      modrinthResults.innerHTML = `<li class="modrinth-empty">No fabric mods for MC ${mcVer} match "${q}".</li>`;
+      return;
+    }
+    modrinthResults.innerHTML = '';
+    for (const hit of hits) {
+      modrinthResults.appendChild(buildModrinthResult(hit, mcVer));
+    }
+  } catch (err) {
+    modrinthResults.innerHTML = `<li class="modrinth-empty">Search failed: ${err.message || err}</li>`;
+  }
+}
+
+function buildModrinthResult(hit, mcVer) {
+  const li = document.createElement('li');
+  li.className = 'modrinth-result';
+
+  const icon = document.createElement('img');
+  icon.className = 'modrinth-icon';
+  icon.src = hit.icon_url || '';
+  icon.alt = '';
+  icon.referrerPolicy = 'no-referrer';
+  icon.onerror = () => { icon.style.visibility = 'hidden'; };
+
+  const meta = document.createElement('div');
+  meta.className = 'modrinth-meta';
+  meta.innerHTML = `
+    <div class="modrinth-title">${escapeHtml(hit.title)} <span class="modrinth-author">by ${escapeHtml(hit.author)}</span></div>
+    <div class="modrinth-desc">${escapeHtml(hit.description || '')}</div>
+    <div class="modrinth-stats">↓ ${formatCount(hit.downloads)} · ${escapeHtml(hit.client_side || '')}</div>
+  `;
+
+  const installBtn = document.createElement('button');
+  installBtn.type = 'button';
+  installBtn.className = 'btn-sm primary modrinth-install';
+  installBtn.textContent = 'Install';
+  installBtn.addEventListener('click', async () => {
+    await installModrinthProject(hit.slug, hit.title, mcVer, installBtn);
+  });
+
+  li.appendChild(icon);
+  li.appendChild(meta);
+  li.appendChild(installBtn);
+  return li;
+}
+
+async function installModrinthProject(slug, displayName, mcVer, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Fetching…';
+  try {
+    // Get the most recent version that targets this MC version + Fabric.
+    const verResp = await fetch(
+      `${MODRINTH_API}/project/${encodeURIComponent(slug)}/version` +
+      `?loaders=${encodeURIComponent('["fabric"]')}` +
+      `&game_versions=${encodeURIComponent('["' + mcVer + '"]')}`,
+      { headers: { 'User-Agent': 'shadow-client' } }
+    );
+    if (!verResp.ok) throw new Error(`Modrinth /version returned ${verResp.status}`);
+    const versions = await verResp.json();
+    if (!versions.length) throw new Error(`No Fabric version of ${displayName} for MC ${mcVer}`);
+    // First version is the most recent.
+    const v = versions[0];
+    const file = (v.files || []).find(f => f.primary) || (v.files || [])[0];
+    if (!file) throw new Error('No downloadable file in latest version');
+
+    btn.textContent = 'Installing…';
+    await invoke('install_mod_from_url', {
+      version: mcVer,
+      name: file.filename,
+      url: file.url,
+    });
+    btn.textContent = '✓ Installed';
+    setStatus(`Installed ${displayName} (${file.filename})`, 'ok');
+    // Refresh the installed-mods list below so the user sees it land.
+    await refreshMods();
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2500);
+  } catch (e) {
+    btn.textContent = 'Failed';
+    setStatus(`Install failed: ${e.message || e}`, 'error');
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function formatCount(n) {
+  n = Number(n) || 0;
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1000)    return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(n);
 }
 
 $('update-mods')?.addEventListener('click', async () => {

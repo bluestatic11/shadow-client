@@ -15,12 +15,14 @@
        elements that three.js loads into WebGL. Without explicit data: +
        blob: in img-src, the texture loads silently fail and the cape
        renders transparent. -->
-  <!-- connect-src expanded in v0.3.38 to include `wss:` so the
-       Diagnostics tab's "Test chat" button can open a WebSocket from
-       JS to the relay. CSP treats `https:` and `wss:` as separate
-       scheme-sources — connect-src needs both. The existing `https:`
-       covers fetches; `wss:` covers WebSocket upgrades. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https: wss:">
+  <!-- connect-src includes `wss:` for the chat-relay WebSocket
+       (Diagnostics → Test chat) since CSP treats https: and wss: as
+       distinct scheme-sources. img-src includes `https:` so the
+       Modrinth mod-search results can render their official mod icons
+       from cdn.modrinth.com / images.cf.modrinth.com — the
+       restriction is just to allow HTTPS sources (no http:// images
+       and no arbitrary data: URIs beyond the cape-texture path). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https: wss:">
   <title>Shadow Client</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -32,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.38</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.39</span>
     </h1>
 
     <div class="topbar-actions">
@@ -307,9 +309,21 @@
                role="tabpanel" aria-labelledby="dtab-mods" tabindex="0" hidden>
         <p class="page-blurb">
           The perf mod stack is installed and updated automatically.
-          Drop your own <code>.jar</code> mods in too — they install
-          into the currently-selected version's profile.
+          Search Modrinth below to add more mods, drop your own
+          <code>.jar</code> files, or refresh the installed list.
         </p>
+
+        <!-- v0.3.39: Modrinth search — type a name, hit Search, click
+             Install on any result. Goes straight to api.modrinth.com,
+             auto-filters to fabric mods matching the active MC version. -->
+        <form class="modrinth-search" id="modrinth-search-form">
+          <input type="search" id="modrinth-query"
+                 placeholder="Search Modrinth for mods (e.g. sodium, jei, journeymap)…"
+                 autocomplete="off" spellcheck="false">
+          <button type="submit" class="btn-sm primary" id="modrinth-search-btn">Search</button>
+        </form>
+        <ul class="modrinth-results" id="modrinth-results" aria-live="polite" hidden></ul>
+
         <div class="page-actions">
           <button class="btn-sm" id="refresh-mods" type="button">Refresh</button>
           <button class="btn-sm primary" id="update-mods" type="button">Update perf stack</button>
@@ -319,6 +333,7 @@
           <input type="file" id="add-mod-input" accept=".jar"
                  multiple hidden>
         </div>
+        <h4 class="mod-section-title">Installed</h4>
         <ul class="mod-list" id="mod-list" aria-label="Installed mods">
           <li class="empty">No mods scanned yet</li>
         </ul>

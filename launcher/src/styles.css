@@ -1611,6 +1611,46 @@ body {
   flex: 1;
 }
 
+/* v0.3.39: crash report modal. Same chassis as the settings dialog
+   (so it inherits dialog-head + dialog-body + dialog-foot rules) but
+   forced to a larger max-width since crash reports are wider than
+   settings forms. */
+.crash-modal {
+  width: min(900px, 92vw);
+  max-height: 86vh;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--accent-2);
+  border-radius: 14px;
+  padding: 0;
+  box-shadow:
+    0 30px 100px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(var(--accent-glow), 0.4);
+}
+.crash-modal::backdrop {
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+.crash-modal[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.crash-content {
+  background: #0a0c10;
+  color: #e8e8ec;
+  font-family: 'Consolas', 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  overflow: auto;
+  max-height: 60vh;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* v0.3.36: sticky dialog footer. The corner × close button isn't always
    easy to find after a tab pushes content around (cosmetics tab in
    particular). A persistent, labeled Done button at the bottom makes
@@ -1656,6 +1696,104 @@ body {
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+/* v0.3.39: Modrinth search */
+.modrinth-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.modrinth-search input[type="search"] {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.modrinth-search input[type="search"]:focus {
+  outline: none;
+  border-color: var(--accent-focus);
+}
+.modrinth-results {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.modrinth-results:empty { display: none; }
+.modrinth-empty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--text-mute);
+  text-align: center;
+}
+.modrinth-result {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.modrinth-result:last-child { border-bottom: none; }
+.modrinth-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 5px;
+  background: var(--bg-3);
+  object-fit: cover;
+}
+.modrinth-meta { min-width: 0; }
+.modrinth-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modrinth-author {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-left: 6px;
+}
+.modrinth-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.modrinth-stats {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 2px;
+}
+.modrinth-install {
+  white-space: nowrap;
+}
+.mod-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin: 14px 0 8px 0;
 }
 
 /* ───── Generic small buttons ─────────────────────────────── */

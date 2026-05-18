@@ -333,6 +333,124 @@ fn read_account() -> Result<Option<AccountInfo>, String> {
 /// The token is already at the relay-callable boundary (the launcher
 /// writes it to shadow-chat-auth.json on every launch), so exposing
 /// it to the launcher's own JS layer doesn't widen the trust boundary.
+/// Download a .jar from a URL into the active profile's mods folder.
+/// Counterpart to `add_mod_jar` which takes pre-fetched bytes — this
+/// one streams the file directly in Rust, which avoids shoveling a
+/// 50 MB Modrinth payload through the JS↔Rust IPC.
+///
+/// Caller (the Modrinth search UI) passes the URL + filename + version
+/// scope. The download is sandboxed to the per-version mods folder
+/// and the filename is sanitized identically to add_mod_jar.
+#[tauri::command]
+async fn install_mod_from_url(
+    version: Option<String>,
+    name: String,
+    url: String,
+) -> Result<String, String> {
+    use std::path::Path;
+    let here = project_root();
+    let mods_dir = match version.as_deref() {
+        Some(v) if !v.is_empty() =>
+            here.join("game_dir").join("profiles").join(v).join("mods"),
+        _ => here.join("game_dir").join("mods"),
+    };
+    std::fs::create_dir_all(&mods_dir).map_err(|e| e.to_string())?;
+
+    let safe = Path::new(&name)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if safe.is_empty() || safe.contains("..") {
+        return Err(format!("invalid mod filename: {name}"));
+    }
+    if !safe.to_lowercase().ends_with(".jar") {
+        return Err(format!("only .jar files are accepted; got {safe}"));
+    }
+    // Whitelist the source host so this command can't be abused to
+    // grab arbitrary files. We accept cdn.modrinth.com (their CDN) and
+    // github.com release assets (existing direct-URL mods).
+    let url_lower = url.to_lowercase();
+    let allowed = url_lower.starts_with("https://cdn.modrinth.com/")
+        || url_lower.starts_with("https://github.com/")
+        || url_lower.starts_with("https://objects.githubusercontent.com/");
+    if !allowed {
+        return Err(format!("URL not in allowed mod-source list: {url}"));
+    }
+
+    let dest = mods_dir.join(&safe);
+    let client = reqwest::Client::builder()
+        .user_agent(mojang::UA)
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+    mojang::download_file(&client, &url, &dest, None)
+        .await
+        .map_err(|e| format!("download failed: {e:#}"))?;
+    Ok(safe)
+}
+
+#[derive(Serialize, Clone)]
+pub struct CrashReport {
+    pub filename: String,
+    pub path: String,
+    pub mtime_unix: u64,
+    /// First N lines of the report — enough to show stack + likely
+    /// culprit without forcing the user to scroll a 5000-line file.
+    pub head: String,
+    pub size_bytes: u64,
+}
+
+/// Find the most-recent crash-report file under the active profile and
+/// return its head. MC writes these to `<gameDir>/crash-reports/` named
+/// `crash-<timestamp>-<thread>.txt`; the newest by mtime is the one
+/// that corresponds to the most recent exit. Returns Ok(None) when
+/// there's no profile or no crash-reports directory.
+#[tauri::command]
+fn read_latest_crash_report(version: Option<String>) -> Result<Option<CrashReport>, String> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let profile = version
+        .or(state.last_used.clone())
+        .ok_or_else(|| "no profile to query".to_string())?;
+    let crash_dir = here.join("game_dir").join("profiles").join(&profile).join("crash-reports");
+    if !crash_dir.exists() {
+        return Ok(None);
+    }
+    let Ok(entries) = std::fs::read_dir(&crash_dir) else { return Ok(None) };
+    let mut latest: Option<(std::path::PathBuf, std::time::SystemTime, u64)> = None;
+    for e in entries.flatten() {
+        let path = e.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("txt") {
+            continue;
+        }
+        let Ok(meta) = e.metadata() else { continue };
+        let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        let size = meta.len();
+        match latest {
+            Some((_, prev_t, _)) if prev_t >= mtime => {}
+            _ => latest = Some((path, mtime, size)),
+        }
+    }
+    let Some((path, mtime, size)) = latest else { return Ok(None) };
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    // First 200 lines. Crash reports are usually 50-200 lines of
+    // useful info followed by a "Detail" section that's mostly system
+    // info. The head is what the user wants to see.
+    let head: String = raw.lines().take(200).collect::<Vec<_>>().join("\n");
+    let mtime_unix = mtime
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Ok(Some(CrashReport {
+        filename: path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(),
+        path: path.display().to_string(),
+        mtime_unix,
+        head,
+        size_bytes: size,
+    }))
+}
+
 #[tauri::command]
 fn chat_test_token() -> Result<String, String> {
     let here = project_root();
@@ -1066,11 +1184,13 @@ pub fn run() {
             read_account,
             list_mods,
             add_mod_jar,
+            install_mod_from_url,
             project_path,
             check_python,
             diagnostics,
             chat_diagnostics,
             chat_test_token,
+            read_latest_crash_report,
             install_update,
             sweep_update_temp,
             disk_usage_mb,

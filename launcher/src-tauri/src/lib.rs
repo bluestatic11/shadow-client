@@ -325,6 +325,30 @@ fn read_account() -> Result<Option<AccountInfo>, String> {
     }))
 }
 
+/// Hand the JS layer the user's current MSA access token so it can run
+/// a diagnostic WebSocket round-trip against the chat relay. Returns
+/// Err in offline mode — the diagnostic UI gates on that to disable
+/// the "Test chat" button before this is even called.
+///
+/// The token is already at the relay-callable boundary (the launcher
+/// writes it to shadow-chat-auth.json on every launch), so exposing
+/// it to the launcher's own JS layer doesn't widen the trust boundary.
+#[tauri::command]
+fn chat_test_token() -> Result<String, String> {
+    let here = project_root();
+    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let acct = auth::Account::load(&account_file)
+        .ok_or_else(|| "No account file — sign in with Microsoft first.".to_string())?;
+    if acct.user_type != "msa" {
+        return Err("Not signed in with Microsoft (offline mode). \
+                    Click the chat pill on the home screen to sign in.".to_string());
+    }
+    if acct.access_token.len() < 10 {
+        return Err("Account file has no real access token. Re-sign-in.".to_string());
+    }
+    Ok(acct.access_token)
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct InstalledState {
     pub mc_version: Option<String>,
@@ -1046,6 +1070,7 @@ pub fn run() {
             check_python,
             diagnostics,
             chat_diagnostics,
+            chat_test_token,
             install_update,
             sweep_update_temp,
             disk_usage_mb,

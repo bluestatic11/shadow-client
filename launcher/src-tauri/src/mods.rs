@@ -119,8 +119,20 @@ pub async fn install_mods(
         let sha1 = file
             .get("hashes").and_then(|h| h.get("sha1")).and_then(|v| v.as_str());
         let dest = mods_dir.join(filename);
-        download_file(client, url, &dest, sha1).await?;
-        installed.push(slug.to_string());
+        // Fail soft: one Modrinth hiccup shouldn't abort the entire
+        // setup pass. Log + skip + keep going so the user at least gets
+        // a partially-working install (which they can complete by
+        // re-running "Update perf stack" from the mods tab later).
+        // Previously a single `?` here turned a transient CDN flake
+        // into "setup failed, deleted half the profile" pain.
+        match download_file(client, url, &dest, sha1).await {
+            Ok(()) => installed.push(slug.to_string()),
+            Err(e) => {
+                let msg = if *critical { " (critical!)" } else { "" };
+                progress(format!("  skip {slug} — download failed: {e:#}{msg}"));
+                skipped.push(slug.to_string());
+            }
+        }
     }
 
     // Direct-URL mods (Shadow Chat etc). Scoped to specific MC versions

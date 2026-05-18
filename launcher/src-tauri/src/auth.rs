@@ -247,7 +247,20 @@ pub async fn microsoft_device_login(
         }
     };
 
-    // ms_access → Xbox Live → XSTS → Minecraft Services → profile.
+    // ms_access → Account via the shared XBL/XSTS/MC chain.
+    exchange_ms_to_account(&client, ms_access, ms_refresh, progress).await
+}
+
+/// Walk the Xbox Live → XSTS → Minecraft Services → profile chain
+/// starting from a Microsoft access token. Shared between
+/// {@link microsoft_device_login} (first sign-in) and
+/// {@link refresh_account} (silent token renewal on later launches).
+async fn exchange_ms_to_account(
+    client: &reqwest::Client,
+    ms_access: String,
+    ms_refresh: String,
+    progress: impl Fn(String) + Send,
+) -> Result<Account> {
     progress("Exchanging Microsoft token for Xbox Live…".into());
     let xbl: XblResp = client
         .post(XBL_URL)
@@ -299,11 +312,6 @@ pub async fn microsoft_device_login(
         .get(MC_PROFILE_URL)
         .bearer_auth(&mc.access_token)
         .send().await?;
-    // Distinguish the common failure modes with actionable messages.
-    // 404 = the account is a valid MS account but doesn't own
-    // Minecraft. 401/403 = our XSTS exchange failed silently or the
-    // token was rejected; the previous step's error_for_status should
-    // have caught that but we double-check here.
     if !profile_resp.status().is_success() {
         let status = profile_resp.status();
         if status == reqwest::StatusCode::NOT_FOUND {
@@ -324,8 +332,6 @@ pub async fn microsoft_device_login(
     let profile: McProfile = profile_resp.json().await
         .context("parsing Minecraft profile response")?;
 
-    // Mojang returns UUIDs un-hyphenated. The launch arg builder + the
-    // server want hyphenated form, so we expand here.
     if profile.id.len() != 32 {
         bail!("Mojang returned an unexpected UUID format: {}", profile.id);
     }
@@ -348,4 +354,68 @@ pub async fn microsoft_device_login(
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0),
     })
+}
+
+/// Refresh an MSA account using its stored refresh_token. Microsoft
+/// access tokens expire after ~24 hours; without this the launcher
+/// would silently fail to authenticate against Mojang on launch ~24 h
+/// after sign-in, leaving the user with broken online play AND broken
+/// chat (the relay's token verification 401s on expired tokens).
+///
+/// Returns the refreshed Account on success. On failure the caller
+/// should fall back to whatever's on disk — better to attempt the
+/// launch with a stale token (might still work briefly) than block
+/// completely.
+pub async fn refresh_account(
+    stale: &Account,
+    progress: impl Fn(String) + Send,
+) -> Result<Account> {
+    if stale.user_type != "msa" {
+        bail!("only msa accounts can be refreshed (got user_type='{}')", stale.user_type);
+    }
+    if stale.refresh_token.is_empty() {
+        bail!("account has no refresh_token — re-sign-in required");
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(crate::mojang::UA)
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+
+    progress("Refreshing Microsoft token…".into());
+    let resp = client
+        .post(TOKEN_URL)
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("client_id", MS_CLIENT_ID),
+            ("refresh_token", stale.refresh_token.as_str()),
+            ("scope", "XboxLive.signin offline_access"),
+        ])
+        .send().await?;
+    if !resp.status().is_success() {
+        bail!("Microsoft refresh-token grant failed: HTTP {}", resp.status());
+    }
+    let tok: TokenResp = resp.json().await
+        .context("parsing refresh_token response")?;
+
+    let ms_access = tok.access_token;
+    // The new refresh_token rotates on every refresh — if Microsoft
+    // returned one, use it; otherwise keep the old one as a fallback.
+    let ms_refresh = tok.refresh_token.unwrap_or_else(|| stale.refresh_token.clone());
+
+    exchange_ms_to_account(&client, ms_access, ms_refresh, progress).await
+}
+
+/// True when the cached MSA token is older than ~12 hours and worth
+/// refreshing before launch. Microsoft tokens nominally live 24 h, so
+/// refreshing at the 12 h mark gives us comfortable headroom.
+pub fn needs_refresh(account: &Account) -> bool {
+    if account.user_type != "msa" { return false; }
+    if account.refresh_token.is_empty() { return false; }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    let age = now - account.refresh_updated_at;
+    age > 12.0 * 3600.0
 }

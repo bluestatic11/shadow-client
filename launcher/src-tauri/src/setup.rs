@@ -215,10 +215,34 @@ pub async fn launch(
 
     // Account
     let account_file = shared_dir.join("mc-client-account.json");
-    let acct = Account::load(&account_file).unwrap_or_else(|| {
+    let mut acct = Account::load(&account_file).unwrap_or_else(|| {
         Account::offline(username.as_deref().unwrap_or("Player"))
     });
     if !account_file.exists() { let _ = acct.save(&account_file); }
+
+    // v0.3.37: refresh the Microsoft token if it's older than 12 h. MS
+    // access tokens nominally expire at 24 h; refreshing at the half-life
+    // gives us comfortable headroom and stops the launcher from silently
+    // breaking online play + chat a day after sign-in. On failure (no
+    // network, refresh token revoked), fall back to the cached token —
+    // better to try and fail visibly in Mojang's auth than to bail
+    // without ever spawning Java.
+    if auth::needs_refresh(&acct) {
+        progress("Refreshing Microsoft sign-in (token is >12h old)…".into());
+        let refresh_progress = |line: String| progress(line);
+        match auth::refresh_account(&acct, refresh_progress).await {
+            Ok(fresh) => {
+                let _ = fresh.save(&account_file);
+                acct = fresh;
+                progress("Microsoft sign-in refreshed.".into());
+            }
+            Err(e) => {
+                progress(format!(
+                    "MS token refresh failed (non-fatal, using cached token): {e:#}"
+                ));
+            }
+        }
+    }
 
     let jvm_extra = jvm::flags(heap_mb, &gc);
 

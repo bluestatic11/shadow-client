@@ -15,7 +15,12 @@
        elements that three.js loads into WebGL. Without explicit data: +
        blob: in img-src, the texture loads silently fail and the cape
        renders transparent. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https:">
+  <!-- connect-src expanded in v0.3.38 to include `wss:` so the
+       Diagnostics tab's "Test chat" button can open a WebSocket from
+       JS to the relay. CSP treats `https:` and `wss:` as separate
+       scheme-sources — connect-src needs both. The existing `https:`
+       covers fetches; `wss:` covers WebSocket upgrades. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https: wss:">
   <title>Shadow Client</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -27,7 +32,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.37</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.38</span>
     </h1>
 
     <div class="topbar-actions">
@@ -367,6 +372,7 @@
           <button class="btn-sm" id="diag-check-update" type="button">Check for updates now</button>
           <button class="btn-sm" id="diag-chat" type="button">Diagnose Shadow Chat</button>
           <button class="btn-sm" id="diag-ping-relay" type="button">Ping relay</button>
+          <button class="btn-sm" id="diag-test-chat" type="button">Test chat (round-trip)</button>
         </div>
         <pre class="diag-output" id="diag-output">Loading…</pre>
       </section>

@@ -2566,6 +2566,85 @@ $('diag-chat')?.addEventListener('click', async () => {
   btn.disabled = false;
 });
 
+// End-to-end chat round-trip test. Opens a WebSocket using the user's
+// real MS token, joins a "test:diag" channel, sends a message, waits
+// for the relay to echo it back. Validates the whole pipeline (token
+// verification, channel routing, message broadcast) WITHOUT needing
+// Minecraft to launch. If this passes, in-game chat will work; if it
+// fails, the error message tells the user exactly where it broke.
+$('diag-test-chat')?.addEventListener('click', async () => {
+  const btn = $('diag-test-chat');
+  const out = $('diag-output');
+  if (!btn || !out) return;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Testing…';
+  const append = (line) => { out.textContent = (out.textContent + '\n' + line).trim(); };
+
+  let token;
+  try {
+    token = await invoke('chat_test_token');
+  } catch (e) {
+    append(`[test-chat] ✗ ${e}`);
+    btn.textContent = orig; btn.disabled = false;
+    return;
+  }
+
+  const ts = Date.now();
+  const channel = `dm:diagtest-${ts}-${Math.random().toString(36).slice(2, 8)}`;
+  const url = `wss://shadow-chat-relay.edisongushf.workers.dev/ws?token=${encodeURIComponent(token)}&channel=${encodeURIComponent(channel)}`;
+  append(`[test-chat] opening WebSocket to channel ${channel}…`);
+
+  const echoMarker = `diagnostic-${ts}`;
+  // 15s overall timeout so the button doesn't hang forever if the
+  // server never responds.
+  const deadline = setTimeout(() => {
+    append('[test-chat] ✗ timeout — no echo received in 15s');
+    try { ws.close(); } catch (_) {}
+    btn.textContent = orig; btn.disabled = false;
+  }, 15000);
+
+  const ws = new WebSocket(url);
+  const t0 = performance.now();
+  ws.onopen = () => {
+    append(`[test-chat] ✓ connected (${Math.round(performance.now() - t0)}ms)`);
+    ws.send(JSON.stringify({ op: 'msg', text: echoMarker }));
+    append('[test-chat] sent diagnostic message, waiting for echo…');
+  };
+  ws.onmessage = (e) => {
+    let m;
+    try { m = JSON.parse(e.data); } catch { return; }
+    if (m.op === 'msg' && m.text === echoMarker) {
+      clearTimeout(deadline);
+      append(`[test-chat] ✓ echo received (round-trip ${Math.round(performance.now() - t0)}ms total)`);
+      append('[test-chat] ✓ Shadow Chat is working end-to-end.');
+      try { ws.close(1000, 'test complete'); } catch (_) {}
+      btn.textContent = orig; btn.disabled = false;
+    } else if (m.op === 'error') {
+      append(`[test-chat] relay error: ${m.msg}`);
+    } else if (m.op === 'presence') {
+      append(`[test-chat] presence event (${(m.users || []).length} member${(m.users || []).length === 1 ? '' : 's'} in test channel)`);
+    }
+  };
+  ws.onerror = () => {
+    // The browser hides WebSocket error details for security.
+    // Real error info comes via onclose's code/reason.
+    append('[test-chat] ✗ WebSocket error');
+  };
+  ws.onclose = (e) => {
+    clearTimeout(deadline);
+    if (e.code !== 1000) {
+      // 1006 abnormal closure usually means auth failure (the relay
+      // rejected the upgrade with 401 before the upgrade completed).
+      const why = e.code === 1006
+        ? '✗ relay rejected the connection. Most likely: Microsoft token expired or account doesn\'t own Minecraft.'
+        : `✗ socket closed unexpectedly (code ${e.code}${e.reason ? ' ' + e.reason : ''})`;
+      append(`[test-chat] ${why}`);
+      btn.textContent = orig; btn.disabled = false;
+    }
+  };
+});
+
 // Ping the relay. Just a fetch from JS — no Rust trip required.
 // Appends result to the diag-output rather than replacing so the user
 // can see both the full diagnose-chat output AND the ping result.

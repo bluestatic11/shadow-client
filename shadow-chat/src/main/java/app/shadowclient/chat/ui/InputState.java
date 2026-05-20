@@ -55,6 +55,14 @@ public final class InputState {
     private final Map<String, List<ServerEvent.User>> presenceByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
     /** UUIDs of users opted-in to voice, keyed by channel. Populated by voice:roster pushes. */
     private final Map<String, List<String>> voiceRosterByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
+    /**
+     * Unread chat-message count per channel. Incremented by
+     * {@link #incrementUnread} when a real message lands on a non-active
+     * channel and reset to zero by {@link #setActiveChannel} for that
+     * channel. System / error / presence updates do NOT count — only
+     * actual chat lines from other people.
+     */
+    private final Map<String, Integer> unreadByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
 
     private volatile boolean overlayVisible = false;
     private volatile String activeChannel = "server";
@@ -63,7 +71,22 @@ public final class InputState {
     public void setOverlayVisible(boolean v) { this.overlayVisible = v; }
 
     public String activeChannel() { return activeChannel; }
-    public void setActiveChannel(String c) { this.activeChannel = c; }
+    public void setActiveChannel(String c) {
+        this.activeChannel = c;
+        if (c != null) unreadByChannel.put(c, 0);
+    }
+
+    /** Get the unread chat-message count for the given channel. Zero by default. */
+    public int unreadFor(String channel) {
+        Integer v = unreadByChannel.get(channel);
+        return v == null ? 0 : v;
+    }
+
+    /** Bump unread count for the given channel by one (capped at 99 for display sanity). */
+    public void incrementUnread(String channel) {
+        if (channel == null || channel.equals(activeChannel)) return;
+        unreadByChannel.merge(channel, 1, (a, b) -> Math.min(99, a + b));
+    }
 
     /** Get a snapshot of the lines for the active channel (oldest first). */
     public List<DisplayLine> linesFor(String channel) {
@@ -107,6 +130,7 @@ public final class InputState {
         linesByChannel.remove(channel);
         presenceByChannel.remove(channel);
         voiceRosterByChannel.remove(channel);
+        unreadByChannel.remove(channel);
     }
 
     public static String formatTimestamp(long ts) {

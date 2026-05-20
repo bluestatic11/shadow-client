@@ -169,7 +169,7 @@ public final class DiscordChatScreen extends Screen {
         rowY = drawChannelRow(gfx, x, rowY, w, "# " + displayedServer,
                 serverOk ? ModConfig.CHANNEL_SERVER : null,
                 ModConfig.CHANNEL_SERVER.equals(activeChannel),
-                mouseX, mouseY, presenceCount(st, ModConfig.CHANNEL_SERVER), serverOk);
+                mouseX, mouseY, st.unreadFor(ModConfig.CHANNEL_SERVER), serverOk);
         rowY += 6;
 
         // -- GROUPS --
@@ -179,7 +179,7 @@ public final class DiscordChatScreen extends Screen {
             String name = (g.name == null || g.name.isBlank()) ? shortId(g.id) : g.name;
             rowY = drawChannelRow(gfx, x, rowY, w, "# " + name, key,
                     key.equals(activeChannel), mouseX, mouseY,
-                    presenceCount(st, key), true);
+                    st.unreadFor(key), true);
         }
         rowY = drawCreateGroupRow(gfx, x, rowY, w, mouseX, mouseY);
         rowY += 6;
@@ -210,11 +210,12 @@ public final class DiscordChatScreen extends Screen {
      * Returns y-after-row so callers can stack rows.
      *
      * @param channelKey  if non-null, registers a click hit-test for switching
+     * @param unreadBadge unread message count; rendered as a red pill on the right when > 0
      * @param enabled     when false, the row is dimmed and not clickable
      */
     private int drawChannelRow(GuiGraphics gfx, int x, int y, int w, String label,
                                String channelKey, boolean active,
-                               int mouseX, int mouseY, int presenceCount, boolean enabled) {
+                               int mouseX, int mouseY, int unreadBadge, boolean enabled) {
         int rowX = x + 6;
         int rowW = w - 12;
         boolean hover = enabled && channelKey != null
@@ -222,12 +223,16 @@ public final class DiscordChatScreen extends Screen {
                 && mouseY >= y && mouseY <= y + CHAN_ROW_H;
         int bg = active ? CHIP_ACTIVE : (hover ? CHIP_HOVER : 0);
         if (bg != 0) gfx.fill(rowX, y, rowX + rowW, y + CHAN_ROW_H, bg);
-        int color = !enabled ? TEXT_DIM : (active ? TEXT_BRIGHT : TEXT);
+        // Rows with unread messages get brighter label text so the eye
+        // catches them even before the pill registers.
+        int color = !enabled ? TEXT_DIM
+                : (active ? TEXT_BRIGHT
+                : (unreadBadge > 0 ? TEXT_BRIGHT : TEXT));
         gfx.drawString(this.font, label,
                 rowX + 8, y + (CHAN_ROW_H - this.font.lineHeight) / 2 + 1,
                 color, false);
-        if (presenceCount > 0) {
-            String txt = String.valueOf(presenceCount);
+        if (unreadBadge > 0) {
+            String txt = unreadBadge >= 99 ? "99+" : String.valueOf(unreadBadge);
             int tw = this.font.width(txt) + 8;
             int badgeX = rowX + rowW - tw - 4;
             gfx.fill(badgeX, y + 4, badgeX + tw, y + CHAN_ROW_H - 4, RED_PILL);

@@ -401,6 +401,13 @@ public final class ShadowChatClient implements ClientModInitializer {
                     if (event instanceof Messages.ServerEvent.ChatMessage cm) {
                         uiState.append(activeChannelKey,
                                 InputState.DisplayLine.chat(cm.name(), cm.text(), cm.ts()));
+                        // Bump unread count if this channel isn't currently
+                        // active. Skip our own echoed messages so the badge
+                        // doesn't light up immediately after we sent something.
+                        boolean isSelf = auth.isUsable()
+                                && cm.fromUuid() != null
+                                && cm.fromUuid().equalsIgnoreCase(auth.uuid());
+                        if (!isSelf) uiState.incrementUnread(activeChannelKey);
                     } else if (event instanceof Messages.ServerEvent.Presence p) {
                         uiState.setPresence(activeChannelKey, p.users());
                     } else if (event instanceof Messages.ServerEvent.ErrorMsg em) {

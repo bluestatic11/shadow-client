@@ -120,6 +120,8 @@ public final class DiscordChatScreen extends Screen {
      *  exclusive with viewingVoiceRoom — opening one closes the other. */
     private boolean viewingSettings = false;
     private int settingsBtnX1, settingsBtnY1, settingsBtnX2, settingsBtnY2;
+    /** Inline "Join voice" button on the voice-room empty state. */
+    private int emptyJoinBtnX1, emptyJoinBtnY1, emptyJoinBtnX2, emptyJoinBtnY2;
     /** Per-toggle hit-rects inside the settings panel. Cleared each
      *  render and repopulated by drawSettings. */
     private final List<ToggleHit> settingsToggleHits = new ArrayList<>();
@@ -153,6 +155,7 @@ public final class DiscordChatScreen extends Screen {
         voiceRoomBtnX2 = 0;
         settingsBtnX2 = 0;
         settingsToggleHits.clear();
+        emptyJoinBtnX2 = 0;
 
         drawServerRail(gfx, 0, 0, SERVER_RAIL_W, this.height);
         drawSidebar(gfx, SERVER_RAIL_W, 0, SIDEBAR_W, this.height, mouseX, mouseY);
@@ -624,19 +627,40 @@ public final class DiscordChatScreen extends Screen {
                 vc != null ? vc.playback().currentSpeakers() : List.of());
 
         if (rosterUuids.isEmpty()) {
-            // Empty-state card — push the user toward Join Voice.
-            int cardW = Math.min(420, w - 80);
-            int cardH = 96;
+            // Empty-state card — push the user toward Join Voice with
+            // an inline button so they don't have to find the sidebar
+            // one separately.
+            int cardW = Math.min(440, w - 80);
+            int cardH = 138;
             int cardX = x + (w - cardW) / 2;
             int cardY = y + (h - cardH) / 2;
             gfx.fill(cardX, cardY, cardX + cardW, cardY + cardH, SIDEBAR_BG);
             gfx.fill(cardX, cardY, cardX + 4, cardY + cardH, ACCENT);
             gfx.drawString(this.font, "No one's in voice on this channel yet.",
-                    cardX + 18, cardY + 22, TEXT_BRIGHT, false);
-            gfx.drawString(this.font, "Click Join voice in the sidebar to be first in.",
-                    cardX + 18, cardY + 22 + this.font.lineHeight + 6, TEXT_DIM, false);
-            gfx.drawString(this.font, "Then click Mic in the input row to start talking.",
-                    cardX + 18, cardY + 22 + (this.font.lineHeight + 6) * 2, TEXT_DIM, false);
+                    cardX + 18, cardY + 18, TEXT_BRIGHT, false);
+            gfx.drawString(this.font, "Be the first to join — others' avatars will appear here as",
+                    cardX + 18, cardY + 18 + this.font.lineHeight + 6, TEXT_DIM, false);
+            gfx.drawString(this.font, "they opt in. Then click Mic in the input row to talk.",
+                    cardX + 18, cardY + 18 + (this.font.lineHeight + 6) * 2, TEXT_DIM, false);
+
+            // Inline action button — disabled if we aren't connected
+            // because toggleVoiceOptIn would just print a "Not
+            // connected" error.
+            boolean alreadyIn = sc.isInVoice();
+            String btnLabel = alreadyIn ? "Leave voice" : "Join voice";
+            int btnW = Math.max(120, this.font.width(btnLabel) + 28);
+            int btnH = 26;
+            int btnX = cardX + 18;
+            int btnY = cardY + cardH - btnH - 14;
+            int bg = alreadyIn ? RED_PILL : 0xFF2A6638;
+            gfx.fill(btnX, btnY, btnX + btnW, btnY + btnH, bg);
+            int lw = this.font.width(btnLabel);
+            gfx.drawString(this.font, btnLabel,
+                    btnX + (btnW - lw) / 2,
+                    btnY + (btnH - this.font.lineHeight) / 2 + 1,
+                    TEXT_BRIGHT, false);
+            emptyJoinBtnX1 = btnX; emptyJoinBtnY1 = btnY;
+            emptyJoinBtnX2 = btnX + btnW; emptyJoinBtnY2 = btnY + btnH;
             return;
         }
 
@@ -1016,6 +1040,15 @@ public final class DiscordChatScreen extends Screen {
         if (voiceToggleX2 > 0
                 && mx >= voiceToggleX1 && mx <= voiceToggleX2
                 && my >= voiceToggleY1 && my <= voiceToggleY2) {
+            ShadowChatClient.get().toggleVoiceOptIn();
+            return true;
+        }
+
+        // Inline "Join voice" / "Leave voice" on the voice-room
+        // empty-state card.
+        if (emptyJoinBtnX2 > 0
+                && mx >= emptyJoinBtnX1 && mx <= emptyJoinBtnX2
+                && my >= emptyJoinBtnY1 && my <= emptyJoinBtnY2) {
             ShadowChatClient.get().toggleVoiceOptIn();
             return true;
         }

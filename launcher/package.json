@@ -1,6 +1,6 @@
 {
   "name": "shadow-client-launcher",
-  "version": "0.3.66",
+  "version": "0.3.67",
   "description": "Shadow Client launcher — Minecraft client with Lunar-grade UX and 3× FPS",
   "private": true,
   "scripts": {

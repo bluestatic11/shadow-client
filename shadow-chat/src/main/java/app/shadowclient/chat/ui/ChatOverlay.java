@@ -25,8 +25,8 @@ import java.util.UUID;
  *       the player has no screen open. The overlay still renders so
  *       the player can glance at chat without opening a focused UI.</li>
  *   <li><b>Focused mode</b>: when the player presses the toggle key,
- *       we open a {@link ChatScreen} which paints on top of the HUD
- *       and grabs keyboard input for the message field.</li>
+ *       we open a {@link DiscordChatScreen} which paints on top of the
+ *       HUD and grabs keyboard input for the message field.</li>
  * </ul>
  *
  * <p>The visibility flag in {@link InputState} controls whether the
@@ -64,11 +64,11 @@ public final class ChatOverlay {
     private final ModConfig config;
 
     /**
-     * Bounding box of the coords button drawn on the input row. Updated
-     * every render so the hit-test in {@link ChatInputScreen} stays in
-     * sync with the actual pixel position regardless of window resizes.
-     * x2/y2 = 0 means the button isn't currently rendered (input field
-     * not visible).
+     * Bounding box of the coords button. The fullscreen DiscordChatScreen
+     * draws its own coords button now; this is kept only because the
+     * HUD-mode overlay still renders {@code showInputField=false} via
+     * {@link #render} (no button shown then).
+     * x2/y2 = 0 means the button isn't currently rendered.
      */
     private int coordsBtnX1 = 0, coordsBtnY1 = 0, coordsBtnX2 = 0, coordsBtnY2 = 0;
 
@@ -80,8 +80,8 @@ public final class ChatOverlay {
     /**
      * Hit-test the coords button — return true iff the given mouse
      * coordinates (in GUI-scaled pixels) fall inside the button's
-     * current bounds. Used by {@link ChatInputScreen#mouseClicked} to
-     * decide whether to paste coords into the input buffer.
+     * current bounds. Retained for the HUD-mode passive overlay; the
+     * fullscreen chat screen does its own hit testing.
      */
     public boolean isCoordsButtonHit(double mouseX, double mouseY) {
         if (coordsBtnX2 == 0) return false;
@@ -94,12 +94,13 @@ public final class ChatOverlay {
     }
 
     private void onRender(GuiGraphics gfx, DeltaTracker dt) {
-        // Suppress rendering while a non-ChatInputScreen UI is open — we
+        // Suppress rendering when any Screen is open — the fullscreen
+        // DiscordChatScreen paints its own message log and the HUD
+        // overlay would just stack on top with the same data. We also
         // don't want our overlay painting over the pause menu, an
-        // inventory, etc. The focused mode (ChatInputScreen) renders
-        // us itself, so that case is also handled.
+        // inventory, etc.
         Minecraft mc = Minecraft.getInstance();
-        if (mc.screen != null && !(mc.screen instanceof ChatInputScreen)) return;
+        if (mc.screen != null) return;
 
         if (!state.isOverlayVisible()) return;
 
@@ -107,8 +108,8 @@ public final class ChatOverlay {
     }
 
     /**
-     * Internal render. Called by the HUD callback (no input field)
-     * and by {@link ChatScreen} (with the current input buffer drawn).
+     * Internal render. Called by the HUD callback (no input field).
+     * The fullscreen DiscordChatScreen no longer reuses this path.
      */
     void render(GuiGraphics gfx, Minecraft mc, boolean showInputField, String inputText) {
         int screenWidth = mc.getWindow().getGuiScaledWidth();
@@ -238,9 +239,8 @@ public final class ChatOverlay {
         if (showInputField) {
             int inputY = y + panelHeight - PAD - inputFieldHeight + 1;
             // Coords button — square-ish chip on the right side of the
-            // input row. Clicking it pastes the local player's X/Y/Z
-            // into the input buffer at the cursor (handled in
-            // ChatInputScreen.mouseClicked via isCoordsButtonHit).
+            // input row. (HUD-mode overlay path; the fullscreen
+            // DiscordChatScreen draws its own button.)
             String btnLabel = "Coords";
             int btnWidth = font.width(btnLabel) + 10;
             int btnX1 = x + panelWidth - PAD - btnWidth;

@@ -4,8 +4,8 @@ import app.shadowclient.chat.config.AuthConfig;
 import app.shadowclient.chat.config.ModConfig;
 import app.shadowclient.chat.relay.Messages;
 import app.shadowclient.chat.relay.RelayClient;
-import app.shadowclient.chat.ui.ChatInputScreen;
 import app.shadowclient.chat.ui.ChatOverlay;
+import app.shadowclient.chat.ui.DiscordChatScreen;
 import app.shadowclient.chat.ui.InputState;
 import app.shadowclient.chat.ui.Keybinds;
 import app.shadowclient.chat.voice.VoiceController;
@@ -144,9 +144,8 @@ public final class ShadowChatClient implements ClientModInitializer {
             // Push-to-talk: gate transmission on key-held state.
             // Suppress while any Screen is open so the player can use
             // the V key for paste in the chat input field without
-            // accidentally going hot-mic. Note that we don't suppress
-            // for our own ChatInputScreen because typing there also
-            // wants Ctrl+V to be a paste, not a PTT trigger.
+            // accidentally going hot-mic — including our own
+            // DiscordChatScreen where Ctrl+V is paste, not PTT.
             boolean held = Keybinds.PUSH_TO_TALK.isDown() && client.screen == null;
             voice.setTransmitting(held);
         });
@@ -164,6 +163,45 @@ public final class ShadowChatClient implements ClientModInitializer {
      *  during startup before {@link #onInitializeClient()} finishes. */
     public VoiceController voice() { return voice; }
 
+    /** Mod-owned saved config (groups, last active channel). */
+    public ModConfig modConfig() { return modConfig; }
+
+    /** In-memory UI state (history, presence, active channel). */
+    public InputState uiState() { return uiState; }
+
+    /** Launcher-written auth config (token, uuid, name). */
+    public AuthConfig authConfig() { return auth; }
+
+    /**
+     * Return the host of the currently-joined MC server (e.g. "hypixel.net"),
+     * or an empty string if not in multiplayer / on singleplayer. Used by the
+     * Discord-style screen to render a meaningful channel name in the
+     * sidebar's SERVER row instead of the cryptic "server" key.
+     */
+    public String currentServerHost() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) return "";
+        String c = deriveServerChannel(mc);
+        if (c == null) return "";
+        return c.startsWith("server:") ? c.substring("server:".length()) : c;
+    }
+
+    /**
+     * Called by the fullscreen chat screen's "+ Create group" button. Mirrors
+     * the {@code /group create} slash command but doesn't require text input —
+     * spins up a default-named group with a fresh UUID and switches to it.
+     */
+    public void createGroupFromUi() {
+        String label = "Group " + (modConfig.joinedGroups().size() + 1);
+        String id = UUID.randomUUID().toString();
+        ModConfig.Group g = new ModConfig.Group(id, label);
+        modConfig.addGroup(g);
+        uiState.append(uiState.activeChannel(),
+                InputState.DisplayLine.system("Created group '" + label
+                        + "'. Share this ID to invite: " + id));
+        switchChannel("group:" + id);
+    }
+
     /** Look up a display name for a UUID from the active channel's
      *  presence list. Returns the short uuid prefix if not found —
      *  better than rendering a 36-char UUID in the speaker indicator. */
@@ -177,7 +215,7 @@ public final class ShadowChatClient implements ClientModInitializer {
     }
 
     /**
-     * Called by {@link ChatInputScreen} when the user hits Enter.
+     * Called by {@link DiscordChatScreen} when the user hits Enter.
      * Splits slash commands off; anything else is a chat message.
      */
     public void submitInput(String raw) {
@@ -204,7 +242,7 @@ public final class ShadowChatClient implements ClientModInitializer {
         // Two-step semantics so the player gets both halves of "open
         // AND focus" from one keypress, matching the task spec:
         //   1. Make the overlay visible if it wasn't.
-        //   2. Open the focused input screen.
+        //   2. Open the focused fullscreen chat screen.
         // A second press while focused (Screen is open) is impossible
         // because the keymapping is consumed by the Screen first, so
         // toggling off lives on Esc.
@@ -213,7 +251,7 @@ public final class ShadowChatClient implements ClientModInitializer {
         }
         // Only push a Screen if one isn't already open — avoid stacking.
         if (client.screen == null) {
-            client.setScreen(new ChatInputScreen(overlay));
+            client.setScreen(new DiscordChatScreen(overlay));
         }
     }
 

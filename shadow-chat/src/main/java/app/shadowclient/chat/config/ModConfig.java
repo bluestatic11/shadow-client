@@ -56,14 +56,26 @@ public final class ModConfig {
 
     private final List<Group> joinedGroups = new ArrayList<>();
     private String activeChannel = CHANNEL_SERVER;
+    /**
+     * Whether the user has opted in to voice. Mirrored across sessions so
+     * that joining a server and pressing PTT just works without re-clicking
+     * the Join Voice button every time.
+     */
+    private boolean autoJoinVoice = false;
 
     private ModConfig() {}
 
     public List<Group> joinedGroups() { return joinedGroups; }
     public String activeChannel() { return activeChannel; }
+    public boolean autoJoinVoice() { return autoJoinVoice; }
 
     public void setActiveChannel(String channel) {
         this.activeChannel = channel;
+        save();
+    }
+
+    public void setAutoJoinVoice(boolean v) {
+        this.autoJoinVoice = v;
         save();
     }
 
@@ -114,6 +126,9 @@ public final class ModConfig {
             if (obj.has("active_channel") && !obj.get("active_channel").isJsonNull()) {
                 cfg.activeChannel = obj.get("active_channel").getAsString();
             }
+            if (obj.has("auto_join_voice") && !obj.get("auto_join_voice").isJsonNull()) {
+                cfg.autoJoinVoice = obj.get("auto_join_voice").getAsBoolean();
+            }
             if (obj.has("joined_groups") && obj.get("joined_groups").isJsonArray()) {
                 JsonArray arr = obj.getAsJsonArray("joined_groups");
                 for (var el : arr) {
@@ -141,6 +156,7 @@ public final class ModConfig {
         try {
             JsonObject root = new JsonObject();
             root.addProperty("active_channel", activeChannel);
+            root.addProperty("auto_join_voice", autoJoinVoice);
             JsonArray arr = new JsonArray();
             for (Group g : joinedGroups) {
                 JsonObject o = new JsonObject();

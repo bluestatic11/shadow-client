@@ -200,8 +200,10 @@ public final class ShadowChatClient implements ClientModInitializer {
     /**
      * Flip the voice opt-in state for the current connection. Sends
      * {@code voice:join} or {@code voice:leave} depending on direction.
-     * No-op if not connected — the user gets a system-line nudge so
-     * they're not confused by silent failure.
+     * Also persists the choice to {@link ModConfig} so we auto-rejoin
+     * after a reconnect / channel switch. No-op if not connected —
+     * the user gets a system-line nudge so they're not confused by
+     * silent failure.
      */
     public void toggleVoiceOptIn() {
         if (relay.currentChannel() == null) {
@@ -212,11 +214,13 @@ public final class ShadowChatClient implements ClientModInitializer {
         if (inVoice) {
             relay.leaveVoice();
             inVoice = false;
+            modConfig.setAutoJoinVoice(false);
             uiState.append(uiState.activeChannel(),
                     InputState.DisplayLine.system("Left voice"));
         } else {
             relay.joinVoice();
             inVoice = true;
+            modConfig.setAutoJoinVoice(true);
             uiState.append(uiState.activeChannel(),
                     InputState.DisplayLine.system("Joined voice — hold V to talk"));
         }
@@ -369,6 +373,15 @@ public final class ShadowChatClient implements ClientModInitializer {
                     statusLine = "Connected: " + ch;
                     uiState.append(activeChannelKey,
                             InputState.DisplayLine.system("Joined " + ch));
+                    // Auto-rejoin voice if the user previously opted in.
+                    // Done after we've appended the "Joined" line so the
+                    // ordering reads sensibly.
+                    if (modConfig.autoJoinVoice()) {
+                        relay.joinVoice();
+                        inVoice = true;
+                        uiState.append(activeChannelKey,
+                                InputState.DisplayLine.system("Auto-rejoined voice"));
+                    }
                 });
             }
 

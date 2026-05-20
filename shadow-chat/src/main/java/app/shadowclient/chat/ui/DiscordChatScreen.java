@@ -88,6 +88,9 @@ public final class DiscordChatScreen extends Screen {
     private int coordsBtnX1, coordsBtnY1, coordsBtnX2, coordsBtnY2;
     private int createGroupX1, createGroupY1, createGroupX2, createGroupY2;
     private int voiceToggleX1, voiceToggleY1, voiceToggleX2, voiceToggleY2;
+    private int copyIdBtnX1, copyIdBtnY1, copyIdBtnX2, copyIdBtnY2;
+    /** Set when the Copy ID button was clicked — paints "Copied!" for ~1s. */
+    private long copiedFlashUntil = 0;
 
     public DiscordChatScreen(ChatOverlay legacyOverlay) {
         super(Component.literal("Shadow Chat"));
@@ -112,6 +115,7 @@ public final class DiscordChatScreen extends Screen {
         coordsBtnX2 = 0;
         createGroupX2 = 0;
         voiceToggleX2 = 0;
+        copyIdBtnX2 = 0;
 
         drawServerRail(gfx, 0, 0, SERVER_RAIL_W, this.height);
         drawSidebar(gfx, SERVER_RAIL_W, 0, SIDEBAR_W, this.height, mouseX, mouseY);
@@ -330,26 +334,47 @@ public final class DiscordChatScreen extends Screen {
         // ---- header ----
         gfx.fill(x, y, x + w, y + HEADER_H, HEADER_BG);
         String headerLabel = "# " + channelDisplayName(activeChannel);
-        gfx.drawString(this.font, headerLabel,
-                x + 12, y + (HEADER_H - this.font.lineHeight) / 2 + 1,
-                TEXT_BRIGHT, false);
+        int labelY = y + (HEADER_H - this.font.lineHeight) / 2 + 1;
+        gfx.drawString(this.font, headerLabel, x + 12, labelY, TEXT_BRIGHT, false);
+        int cursor = x + 12 + this.font.width(headerLabel);
         int presence = presenceCount(st, activeChannel);
         if (presence > 0) {
             String count = presence + " online";
-            int headerLabelW = this.font.width(headerLabel);
-            gfx.drawString(this.font, count,
-                    x + 12 + headerLabelW + 12,
-                    y + (HEADER_H - this.font.lineHeight) / 2 + 1,
-                    TEXT_DIM, false);
+            cursor += 12;
+            gfx.drawString(this.font, count, cursor, labelY, TEXT_DIM, false);
+            cursor += this.font.width(count);
         }
+
+        // Group ID chip + Copy button on group channels — makes invitation
+        // a one-click affair instead of fishing through the chat history.
+        if (activeChannel != null && activeChannel.startsWith("group:")) {
+            String id = activeChannel.substring("group:".length());
+            String idShort = id.length() > 8 ? id.substring(0, 8) + "…" : id;
+            cursor += 16;
+            gfx.drawString(this.font, "ID  " + idShort, cursor, labelY, TEXT_DIM, false);
+            cursor += this.font.width("ID  " + idShort) + 8;
+            // Copy button — fixed width chip.
+            boolean copied = System.currentTimeMillis() < copiedFlashUntil;
+            String btn = copied ? "Copied" : "Copy ID";
+            int btnW = this.font.width(btn) + 10;
+            int btnX1 = cursor;
+            int btnY1 = y + 6;
+            int btnX2 = cursor + btnW;
+            int btnY2 = y + HEADER_H - 6;
+            gfx.fill(btnX1, btnY1, btnX2, btnY2, copied ? GREEN : ACCENT);
+            gfx.drawString(this.font, btn,
+                    btnX1 + 5, btnY1 + ((btnY2 - btnY1) - this.font.lineHeight) / 2 + 1,
+                    TEXT_BRIGHT, false);
+            copyIdBtnX1 = btnX1; copyIdBtnY1 = btnY1;
+            copyIdBtnX2 = btnX2; copyIdBtnY2 = btnY2;
+        }
+
         // Status line on the right.
         String status = sc.statusLine();
         if (status != null && !status.isBlank()) {
             int statusW = this.font.width(status);
             gfx.drawString(this.font, status,
-                    x + w - statusW - 12,
-                    y + (HEADER_H - this.font.lineHeight) / 2 + 1,
-                    TEXT_DIM, false);
+                    x + w - statusW - 12, labelY, TEXT_DIM, false);
         }
         gfx.fill(x, y + HEADER_H - 1, x + w, y + HEADER_H, DIVIDER);
 
@@ -592,6 +617,19 @@ public final class DiscordChatScreen extends Screen {
                 && mx >= voiceToggleX1 && mx <= voiceToggleX2
                 && my >= voiceToggleY1 && my <= voiceToggleY2) {
             ShadowChatClient.get().toggleVoiceOptIn();
+            return true;
+        }
+
+        // Copy group ID button — pulls the active channel's group UUID
+        // onto the system clipboard and flashes "Copied" for ~1.2s.
+        if (copyIdBtnX2 > 0
+                && mx >= copyIdBtnX1 && mx <= copyIdBtnX2
+                && my >= copyIdBtnY1 && my <= copyIdBtnY2) {
+            String ch = ShadowChatClient.get().uiState().activeChannel();
+            if (ch != null && ch.startsWith("group:") && this.minecraft != null) {
+                this.minecraft.keyboardHandler.setClipboard(ch.substring("group:".length()));
+                copiedFlashUntil = System.currentTimeMillis() + 1200;
+            }
             return true;
         }
 

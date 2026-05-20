@@ -112,24 +112,24 @@
     <g>
       <circle cx="10" cy="10" r="10" fill="#3aff60" opacity="0.2"/>
       <clipPath id="vfa1"><circle cx="10" cy="10" r="8"/></clipPath>
-      <g clip-path="url(#vfa1)"><use href="#face" x="-2" y="-2" width="24" height="24"/></g>
+      <g clip-path="url(#vfa1)"><image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAdUlEQVRIiWN8t2X+fwYaAiZaGj5qweCwgAWZI+STCGe/2zKfJINw6R36QcQ4mtEIAZRU9OXTZzhbLiqPJIMeLZsEZ/Pw8cLZwyCInjx+CufoZdbA2f//k5a4GBkZ4exL01vg7GEQRLgkkL1MCRj6QTRqAUEAAJ0VG2bqelx7AAAAAElFTkSuQmCC" x="-2" y="-2" width="24" height="24"/></g>
       <text x="28" y="14" fill="#dbdee1" font-size="12">Notch</text>
       <text x="190" y="14" fill="#f23f42" font-size="10">🎤</text>
     </g>
     <g transform="translate(0,22)">
       <clipPath id="vfa2"><circle cx="10" cy="10" r="8"/></clipPath>
-      <g clip-path="url(#vfa2)"><use href="#face" x="-2" y="-2" width="24" height="24"/></g>
+      <g clip-path="url(#vfa2)"><image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAA/UlEQVRIiWNk8GT4zwAFFzsPwZgML1+9hrO5uDjhbEZGJjj769evcPa7dx/g7IjZyXA2QjWNAM0tYPxyvAUeRNycbFQx9Ov3X3D20A8iFmTOZRYrrIqUPh/AKn6P1wG7egaE+mEWRBpqZnC2vAgfnP3sUBOcjZxC3K1c4Oy7L97B2f8uHoCzh34QkZzRkIOIhRnhPnY2Fqxqhn4QsXCws8I5f//BQ4vhq0ocQc1/kTk35sOZyEE9DIJo3zsVOEdLUx/O5kVSxHx1LlbNf7URNdcb6TA4+937F3D20A8ixgcPr8CTjqCgMFZFnz9/xSrOy8uNVfz9+7dw9tAPIgAVL0fsIRR1rwAAAABJRU5ErkJggg==" x="-2" y="-2" width="24" height="24"/></g>
       <text x="28" y="14" fill="#dbdee1" font-size="12">jeb_</text>
     </g>
     <g transform="translate(0,44)">
       <clipPath id="vfa3"><circle cx="10" cy="10" r="8"/></clipPath>
-      <g clip-path="url(#vfa3)"><use href="#face" x="-2" y="-2" width="24" height="24"/></g>
+      <g clip-path="url(#vfa3)"><image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAuklEQVRIiWP8fWP7fwYswM0zFM7m/PsHmxKG3yxscPbGTcsQ4r8R6pmw6qQioLkFLL+QvMPGygJny3Iywtk6SqZYNV+5dwHOZmVhxqpm6AcR48fzG+CpiAXJm8jBlZ9RiVVze38DnM3FyY5VzdAPIhZkr7Goe8DZwXZdcPaCKY1YNSfk3ICz1x4qg7P/3NwBZw/9IGKUk5PDWhZRCwz9IGLBJcHERJrd//79w24Oae4hHYxaMGrBELAAAIOSJzC3H86KAAAAAElFTkSuQmCC" x="-2" y="-2" width="24" height="24"/></g>
       <text x="28" y="14" fill="#dbdee1" font-size="12">dinnerbone</text>
     </g>
     <g transform="translate(0,66)">
       <circle cx="10" cy="10" r="10" fill="#3aff60" opacity="0.2"/>
       <clipPath id="vfa4"><circle cx="10" cy="10" r="8"/></clipPath>
-      <g clip-path="url(#vfa4)"><use href="#face" x="-2" y="-2" width="24" height="24"/></g>
+      <g clip-path="url(#vfa4)"><image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAJ0lEQVRIiWNkYGD4z0BDwERLw0ctGLVg1IJRC0YtGLVg1IJRC6gHAO7LAS/zP8atAAAAAElFTkSuQmCC" x="-2" y="-2" width="24" height="24"/></g>
       <text x="28" y="14" fill="#fff" font-size="12" font-weight="600">Edisongu (you)</text>
       <text x="190" y="14" fill="#f23f42" font-size="10">🎤</text>
     </g>
@@ -139,7 +139,7 @@
   <rect x="64" y="668" width="240" height="52" fill="#0a0c12"/>
   <g transform="translate(72,676)">
     <clipPath id="meav"><circle cx="18" cy="18" r="18"/></clipPath>
-    <g clip-path="url(#meav)"><use href="#face" x="0" y="0" width="36" height="36"/></g>
+    <g clip-path="url(#meav)"><image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAALklEQVRYhe3OMQEAMAyAMFr/njcZfYIBMtXrsL2cAwAAAAAAAAAAAAAAAAAAVH0hEgE/1YngfwAAAABJRU5ErkJggg==" x="0" y="0" width="36" height="36"/></g>
     <circle cx="34" cy="32" r="6" fill="#23a559" stroke="#232428" stroke-width="3"/>
   </g>
   <g transform="translate(118,684)">

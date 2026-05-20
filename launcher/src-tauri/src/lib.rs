@@ -14,6 +14,7 @@ mod mc_servers;
 mod mods;
 mod mojang;
 mod presence;
+mod resource_packs;
 mod server_ping;
 mod setup;
 mod shadow_chat;
@@ -612,6 +613,43 @@ fn list_local_mc_servers() -> Vec<mc_servers::McServerEntry> {
     let here = project_root();
     let game_dir = here.join("game_dir");
     mc_servers::collect_all(&game_dir).unwrap_or_default()
+}
+
+/// Install a dropped .zip into the active profile's resourcepacks/
+/// dir. Called from the front-end's drag-drop handler. `version`
+/// scopes which profile gets the pack; falls back to last_used.
+#[tauri::command]
+fn install_resource_pack(path: String, version: Option<String>) -> Result<resource_packs::InstalledPack, String> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let profile = version.or(state.last_used);
+    let (profile_dir, _) = setup::resolve_dirs(&here, profile.as_deref());
+    resource_packs::install_pack(&profile_dir, std::path::Path::new(&path))
+        .map_err(|e| e.to_string())
+}
+
+/// List currently-installed resource packs for the active profile.
+#[tauri::command]
+fn list_resource_packs(version: Option<String>) -> Vec<resource_packs::InstalledPack> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let profile = version.or(state.last_used);
+    let (profile_dir, _) = setup::resolve_dirs(&here, profile.as_deref());
+    resource_packs::list_packs(&profile_dir)
+}
+
+/// Remove a resource pack by filename.
+#[tauri::command]
+fn remove_resource_pack(filename: String, version: Option<String>) -> Result<bool, String> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let profile = version.or(state.last_used);
+    let (profile_dir, _) = setup::resolve_dirs(&here, profile.as_deref());
+    resource_packs::remove_pack(&profile_dir, &filename)
+        .map_err(|e| e.to_string())
 }
 
 /// Write a one-shot IPC command file the running mod will pick up on
@@ -1392,6 +1430,9 @@ pub fn run() {
             ping_minecraft_server,
             list_local_mc_servers,
             signal_mod,
+            install_resource_pack,
+            list_resource_packs,
+            remove_resource_pack,
             read_cosmetics,
             save_cosmetics,
         ])

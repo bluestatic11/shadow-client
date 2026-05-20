@@ -1343,6 +1343,83 @@ async function pollTrackedServers() {
 
 setInterval(pollTrackedServers, 90_000);
 
+// ───── Resource-pack drag-drop ─────────────────────────────────
+// Tauri 2 routes file drops on the webview through its own event
+// system (HTML5 native drop hides the absolute file path for
+// security). We subscribe via the webview API and install any .zip
+// dropped on the launcher window into the active profile's
+// resourcepacks/ dir.
+
+async function registerDragDropHandler() {
+  // Probe for the API — Tauri 2 exposes window.__TAURI__.webview when
+  // withGlobalTauri:true (which we do, per tauri.conf.json).
+  const webviewApi = window.__TAURI__ && window.__TAURI__.webview;
+  if (!webviewApi || typeof webviewApi.getCurrentWebview !== 'function') {
+    console.warn('[shadow] webview drag-drop API not available; resource-pack drop disabled');
+    return;
+  }
+  const wv = webviewApi.getCurrentWebview();
+  // The handler returns an unlisten() which we ignore — we want this
+  // to run for the lifetime of the window.
+  wv.onDragDropEvent(async (e) => {
+    if (!e || !e.payload) return;
+    if (e.payload.type !== 'drop' && e.payload.type !== 'over') return;
+    if (e.payload.type === 'over') {
+      document.body.classList.add('drag-active');
+      return;
+    }
+    document.body.classList.remove('drag-active');
+    const paths = e.payload.paths || [];
+    const zips = paths.filter(p => /\.zip$/i.test(p));
+    if (!zips.length) {
+      if (paths.length) {
+        setStatus('Drop a .zip resource pack to install it.', 'error');
+      }
+      return;
+    }
+    for (const p of zips) {
+      try {
+        const result = await invoke('install_resource_pack', {
+          path: p, version: getPickedVersion(),
+        });
+        setStatus(
+          `Installed pack: ${result.filename} (${formatBytes(result.bytes)}). \
+Enable it in MC's Options → Resource Packs.`,
+          'ok',
+        );
+      } catch (err) {
+        setStatus(`Pack install failed: ${err}`, 'error');
+      }
+    }
+  });
+}
+
+function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return `${n} B`;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+// Fire once on startup. Don't await — if the API is missing we still
+// want the rest of the launcher to keep loading.
+registerDragDropHandler().catch(e =>
+  console.warn('[shadow] registerDragDropHandler:', e));
+
+// Also clear the drag-active class on leave events the webview routes
+// through the same channel — covers the user dragging back out.
+(async () => {
+  const webviewApi = window.__TAURI__ && window.__TAURI__.webview;
+  if (!webviewApi || typeof webviewApi.getCurrentWebview !== 'function') return;
+  const wv = webviewApi.getCurrentWebview();
+  wv.onDragDropEvent((e) => {
+    if (e && e.payload && (e.payload.type === 'leave' || e.payload.type === 'cancel')) {
+      document.body.classList.remove('drag-active');
+    }
+  });
+})().catch(() => {});
+
 // Expose for UI binding.
 window.shadowAddTrackedServer = (input) => {
   const addr = parseServerAddr(input);

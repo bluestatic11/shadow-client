@@ -222,10 +222,16 @@
     <text x="36" y="26" fill="#b5bac1" font-size="14" text-anchor="middle" font-weight="700">+</text>
     <!-- input placeholder text -->
     <text x="56" y="28" fill="#8a8c98" font-size="13">Message #hypixel.net …</text>
-    <!-- right-side action buttons inside the pill -->
+    <!-- right-side action buttons inside the pill: Coords, then Mic.
+         Mic is shown in its "on" (hot-mic) state with a red pill +
+         pulsing red ring (rendered as a static stroke here) so the
+         affordance is obvious. The leading ● is the same on/off
+         indicator the mod paints. -->
     <g transform="translate(800,8)" fill="#b5bac1" font-size="13">
       <rect x="0" y="0" width="60" height="28" rx="4" fill="#2D5A8C"/>
       <text x="30" y="18" fill="#fff" text-anchor="middle" font-weight="700">Coords</text>
+      <rect x="68" y="0" width="62" height="28" rx="4" fill="#EC4747"/>
+      <text x="99" y="18" fill="#fff" text-anchor="middle" font-weight="700">● Mic</text>
     </g>
   </g>
 

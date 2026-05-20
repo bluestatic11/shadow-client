@@ -62,12 +62,20 @@ public final class ModConfig {
      * the Join Voice button every time.
      */
     private boolean autoJoinVoice = false;
+    /**
+     * When true the mod opens the fullscreen chat screen automatically
+     * about 1 s after every multiplayer world load — saves the user
+     * from pressing the chat hotkey on every join. Toggled via
+     * {@code /auto-open-chat on|off}.
+     */
+    private boolean autoOpenChatOnJoin = false;
 
     private ModConfig() {}
 
     public List<Group> joinedGroups() { return joinedGroups; }
     public String activeChannel() { return activeChannel; }
     public boolean autoJoinVoice() { return autoJoinVoice; }
+    public boolean autoOpenChatOnJoin() { return autoOpenChatOnJoin; }
 
     public void setActiveChannel(String channel) {
         this.activeChannel = channel;
@@ -76,6 +84,11 @@ public final class ModConfig {
 
     public void setAutoJoinVoice(boolean v) {
         this.autoJoinVoice = v;
+        save();
+    }
+
+    public void setAutoOpenChatOnJoin(boolean v) {
+        this.autoOpenChatOnJoin = v;
         save();
     }
 
@@ -129,6 +142,9 @@ public final class ModConfig {
             if (obj.has("auto_join_voice") && !obj.get("auto_join_voice").isJsonNull()) {
                 cfg.autoJoinVoice = obj.get("auto_join_voice").getAsBoolean();
             }
+            if (obj.has("auto_open_chat_on_join") && !obj.get("auto_open_chat_on_join").isJsonNull()) {
+                cfg.autoOpenChatOnJoin = obj.get("auto_open_chat_on_join").getAsBoolean();
+            }
             if (obj.has("joined_groups") && obj.get("joined_groups").isJsonArray()) {
                 JsonArray arr = obj.getAsJsonArray("joined_groups");
                 for (var el : arr) {
@@ -157,6 +173,7 @@ public final class ModConfig {
             JsonObject root = new JsonObject();
             root.addProperty("active_channel", activeChannel);
             root.addProperty("auto_join_voice", autoJoinVoice);
+            root.addProperty("auto_open_chat_on_join", autoOpenChatOnJoin);
             JsonArray arr = new JsonArray();
             for (Group g : joinedGroups) {
                 JsonObject o = new JsonObject();

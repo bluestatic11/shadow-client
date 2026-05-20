@@ -148,6 +148,14 @@ public final class ShadowChatClient implements ClientModInitializer {
             // the server channel first; the chip switcher lets them
             // jump back.
             connectTo(ModConfig.CHANNEL_SERVER);
+
+            // Optional: pop the chat screen open ~1 s after world load
+            // when the user has opted in via /auto-open-chat. We delay
+            // so the world finishes rendering first — opening Screen
+            // mid-load can wedge MC's resource manager.
+            if (modConfig.autoOpenChatOnJoin()) {
+                scheduleAutoOpenChat(20);
+            }
         });
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
@@ -161,6 +169,7 @@ public final class ShadowChatClient implements ClientModInitializer {
         // hold-style binding so we read isDown() each tick rather than
         // draining click events.
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            tickAutoOpenChat(client);
             while (Keybinds.TOGGLE_CHAT.consumeClick()) {
                 handleToggleHotkey(client);
             }
@@ -482,6 +491,27 @@ public final class ShadowChatClient implements ClientModInitializer {
         mc.execute(r);
     }
 
+    /** Tick countdown to auto-open chat on world load. -1 = inactive. */
+    private volatile int autoOpenChatCountdown = -1;
+
+    /** Arm the auto-open countdown — fires once after the given tick delay. */
+    private void scheduleAutoOpenChat(int ticks) {
+        autoOpenChatCountdown = Math.max(1, ticks);
+    }
+
+    /** Called from the client-tick handler to drive the countdown. */
+    private void tickAutoOpenChat(Minecraft client) {
+        if (autoOpenChatCountdown < 0) return;
+        if (--autoOpenChatCountdown > 0) return;
+        autoOpenChatCountdown = -1;
+        // Same guards as the IPC command path — don't preempt a
+        // different Screen the user already has open, and bail if the
+        // player isn't actually loaded in.
+        if (client == null || client.player == null || client.screen != null) return;
+        uiState.setOverlayVisible(true);
+        client.setScreen(new app.shadowclient.chat.ui.DiscordChatScreen(overlay));
+    }
+
     // ---------------------------------------------------------------- slash commands
 
     /**
@@ -504,6 +534,7 @@ public final class ShadowChatClient implements ClientModInitializer {
             case "/help" -> printHelp();
             case "/group" -> handleGroupCommand(parts, line);
             case "/voice" -> handleVoiceCommand(parts);
+            case "/auto-open-chat" -> handleAutoOpenChatCommand(parts);
             case "/whoami" -> {
                 String msg = auth.isUsable()
                         ? auth.name() + " (" + auth.uuid() + ")"
@@ -523,12 +554,36 @@ public final class ShadowChatClient implements ClientModInitializer {
                 "/group join <uuid>    — join an existing group",
                 "/group leave          — leave the current group",
                 "/voice join | leave   — opt in / out of voice on this channel",
+                "/auto-open-chat on|off|status — pop the chat screen open every world join",
                 "/coords               — paste your X/Y/Z into chat",
                 "/whoami               — show your UUID and display name",
                 "/help                 — show this list",
         };
         for (String l : lines) {
             uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(l));
+        }
+    }
+
+    private void handleAutoOpenChatCommand(String[] parts) {
+        if (parts.length < 2 || "status".equalsIgnoreCase(parts[1])) {
+            uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(
+                    "Auto-open-chat-on-join is " + (modConfig.autoOpenChatOnJoin() ? "ON" : "OFF")));
+            return;
+        }
+        String sub = parts[1].toLowerCase(Locale.ROOT);
+        switch (sub) {
+            case "on", "true", "enable" -> {
+                modConfig.setAutoOpenChatOnJoin(true);
+                uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(
+                        "Chat will now open automatically when you join a multiplayer world."));
+            }
+            case "off", "false", "disable" -> {
+                modConfig.setAutoOpenChatOnJoin(false);
+                uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(
+                        "Auto-open disabled. Press ; to open chat manually."));
+            }
+            default -> uiState.append(uiState.activeChannel(), InputState.DisplayLine.error(
+                    "Unknown /auto-open-chat subcommand: " + parts[1]));
         }
     }
 

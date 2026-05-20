@@ -12,12 +12,14 @@
 
 import { verifyToken } from './auth';
 
-// Re-export the DO so Workers' runtime can find the class binding
+// Re-export the DOs so Workers' runtime can find the class bindings
 // declared in wrangler.toml.
 export { ChatRoom } from './chat-room';
+export { PresenceHub } from './presence';
 
 interface Env {
   CHAT_ROOM: DurableObjectNamespace;
+  PRESENCE: DurableObjectNamespace;
 }
 
 export default {
@@ -33,6 +35,13 @@ export default {
       return handleWsUpgrade(req, env, url);
     }
 
+    if (url.pathname === '/presence/heartbeat' && req.method === 'POST') {
+      return handlePresenceHeartbeat(req, env);
+    }
+    if (url.pathname === '/presence/query' && req.method === 'POST') {
+      return handlePresenceQuery(req, env);
+    }
+
     if (url.pathname === '/') {
       return new Response(
         'Shadow Chat relay. Connect via WebSocket to /ws?token=...&channel=...\n',
@@ -43,6 +52,64 @@ export default {
     return new Response('not found', { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * POST /presence/heartbeat
+ * Headers: Authorization: Bearer <msa token>
+ * Body:    { launcher, version?, server?, status }
+ *
+ * The relay verifies the token to learn the caller's verified UUID +
+ * name (we don't trust the client to claim its own identity), then
+ * forwards to the singleton PresenceHub DO.
+ */
+async function handlePresenceHeartbeat(req: Request, env: Env): Promise<Response> {
+  const auth = req.headers.get('authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'missing bearer token' }), {
+      status: 401, headers: { 'content-type': 'application/json' },
+    });
+  }
+  const profile = await verifyToken(token);
+  if (!profile) {
+    return new Response(JSON.stringify({ error: 'invalid token' }), {
+      status: 401, headers: { 'content-type': 'application/json' },
+    });
+  }
+  let body: unknown = {};
+  try { body = await req.json(); } catch {}
+  if (!body || typeof body !== 'object') body = {};
+  const merged = {
+    ...(body as Record<string, unknown>),
+    uuid: profile.uuid,
+    name: profile.name,
+  };
+  const stub = env.PRESENCE.get(env.PRESENCE.idFromName('presence-hub'));
+  return stub.fetch('https://do/heartbeat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(merged),
+  });
+}
+
+/**
+ * POST /presence/query
+ * Body:    { uuids: ["..."] }
+ *
+ * Returns presence entries for any of the queried UUIDs that have
+ * heartbeat'd in the last 5 minutes. Unauthenticated — the result is
+ * just "is this player playing MC right now" which the player can
+ * already discover by joining their server, so leaking it doesn't
+ * matter. Cuts a round-trip per friends-panel refresh.
+ */
+async function handlePresenceQuery(req: Request, env: Env): Promise<Response> {
+  const stub = env.PRESENCE.get(env.PRESENCE.idFromName('presence-hub'));
+  return stub.fetch('https://do/query', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: await req.text(),
+  });
+}
 
 async function handleWsUpgrade(req: Request, env: Env, url: URL): Promise<Response> {
   // Reject anything that isn't an actual WebSocket upgrade — catches

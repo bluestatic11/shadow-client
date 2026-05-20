@@ -978,23 +978,57 @@ function makeAvatar(username) {
   const a = document.createElement('div');
   a.className = 'friend-avatar';
   a.setAttribute('aria-hidden', 'true');
-  a.textContent = username.charAt(0).toUpperCase();
+  // mc-heads.net returns a 24x24 PNG of the face + hat layer. Errors
+  // (network down, username not registered) fall back to the letter
+  // placeholder via the <img>'s onerror handler.
+  const img = document.createElement('img');
+  img.src = `https://mc-heads.net/avatar/${encodeURIComponent(username)}/24`;
+  img.alt = '';
+  img.loading = 'lazy';
+  img.addEventListener('error', () => {
+    a.textContent = username.charAt(0).toUpperCase();
+    img.remove();
+  });
+  a.appendChild(img);
   return a;
+}
+
+/**
+ * Format a launcher identifier from the relay's presence response
+ * into a user-facing label. We currently only know about Shadow
+ * Client; other launchers might show up if/when they start
+ * publishing to the same endpoint.
+ */
+function formatLauncher(id) {
+  if (!id) return '';
+  switch (id.toLowerCase()) {
+    case 'shadow-client': return 'Shadow Client';
+    case 'vanilla':       return 'Vanilla launcher';
+    case 'lunar':         return 'Lunar';
+    case 'feather':       return 'Feather';
+    case 'prism':         return 'Prism';
+    case 'modrinth':      return 'Modrinth app';
+    case 'atlauncher':    return 'ATLauncher';
+    case 'curseforge':    return 'CurseForge';
+    case 'multimc':       return 'MultiMC';
+    default:              return id;
+  }
 }
 
 function makeStatusLine(f) {
   if (f.status === 'playing') {
-    const text = `Playing ${f.version || 'Minecraft'}`
-      + (f.server ? ` · ${f.server}` : '');
-    return makeStatusLineRaw('playing', text);
+    const where = f.server ? ` · ${f.server}` : '';
+    const via = f.launcher ? ` · via ${formatLauncher(f.launcher)}` : '';
+    return makeStatusLineRaw('playing', `Playing Minecraft${where}${via}`);
   }
-  if (f.status === 'online' || f.status === 'in_menu') {
-    return makeStatusLineRaw('online', 'Online');
+  if (f.status === 'idle' || f.status === 'online' || f.status === 'in_menu') {
+    const via = f.launcher ? ` · ${formatLauncher(f.launcher)} open` : 'Online';
+    return makeStatusLineRaw('online', via.trimStart().replace(/^· /, ''));
   }
   // Offline / unknown.
   const text = f.last_seen
     ? `Offline · ${formatRelativeTime(f.last_seen)}`
-    : 'Offline · needs Shadow Client';
+    : 'Offline · needs Shadow Client to show as playing';
   return makeStatusLineRaw('offline', text);
 }
 
@@ -1021,12 +1055,97 @@ function formatRelativeTime(epochSecs) {
   return new Date(epochSecs * 1000).toLocaleDateString();
 }
 
+// ───── Friend presence sync ────────────────────────────────────
+// Two loops:
+//   - publishPresence(): tells the relay we're here. Runs every 60 s
+//     while either MC is open OR the launcher window is focused. The
+//     5-min relay TTL means we can skip ticks during long idle and
+//     still re-establish quickly.
+//   - pollFriendPresence(): asks the relay which of our friends'
+//     UUIDs are currently online. Runs every 30 s; merges results
+//     into cachedFriends and re-renders.
+//
+// Heartbeat needs a Microsoft token so it's a no-op for users in
+// offline mode — the Rust side bails silently in that case.
+
+async function publishPresence(playing) {
+  try {
+    // Server detection — best-effort. We don't know which MC server
+    // the user joined inside the game (the launcher only knows what
+    // version was launched). Future: have the chat-mod write a
+    // current-server.txt next to shadow-chat-auth.json on every join.
+    await invoke('presence_heartbeat', {
+      playing: !!playing,
+      server: null,
+    });
+  } catch (e) {
+    // Don't spam the console on every tick — relay down, offline
+    // mode, etc. are all expected states.
+    if (window.__presenceLastError !== String(e)) {
+      console.warn('[shadow] presence heartbeat failed:', e);
+      window.__presenceLastError = String(e);
+    }
+  }
+}
+
+async function pollFriendPresence() {
+  if (!cachedFriends.length) return;
+  const uuids = cachedFriends.map(f => f.uuid).filter(Boolean);
+  if (!uuids.length) return;
+  let entries = [];
+  try {
+    entries = await invoke('presence_query', { uuids });
+  } catch (e) {
+    console.warn('[shadow] presence_query failed:', e);
+    return;
+  }
+  const byUuid = new Map(entries.map(e => [e.uuid.toLowerCase(), e]));
+  let changed = false;
+  for (const f of cachedFriends) {
+    const e = f.uuid ? byUuid.get(f.uuid.toLowerCase()) : null;
+    if (e) {
+      const beforeKey = `${f.status}|${f.server}|${f.launcher}|${f.version}`;
+      f.status   = e.status;
+      f.server   = e.server || null;
+      f.version  = e.version || null;
+      f.launcher = e.launcher || null;
+      f.last_seen = Math.floor((e.lastSeenAt || Date.now()) / 1000);
+      const afterKey = `${f.status}|${f.server}|${f.launcher}|${f.version}`;
+      if (beforeKey !== afterKey) changed = true;
+    } else if (f.status && f.status !== 'offline') {
+      // Friend dropped out of the TTL window — flip to offline.
+      f.status = null;
+      f.server = null;
+      f.version = null;
+      f.launcher = null;
+      changed = true;
+    }
+  }
+  if (changed) renderFriends(cachedFriends);
+}
+
+setInterval(() => { publishPresence(mcRunning); }, 60_000);
+setInterval(pollFriendPresence, 30_000);
+// Kick once on startup so the user doesn't wait 30 s for friends to
+// fill in.
+setTimeout(() => {
+  publishPresence(mcRunning);
+  pollFriendPresence();
+}, 2_000);
+
 // Listen for MC start/exit events so the "You" row re-renders to reflect
-// the actual running state without polling.
-listen('mc-started', () => { mcRunning = true;  renderFriends(cachedFriends); });
+// the actual running state without polling. Also kicks the presence
+// publisher so friends see us as "Playing" within seconds, not on the
+// next 60s tick.
+listen('mc-started', () => {
+  mcRunning = true;
+  renderFriends(cachedFriends);
+  publishPresence(true);
+});
 listen('mc-exited',  (event) => {
   mcRunning = false;
   renderFriends(cachedFriends);
+  publishPresence(false);
   // v0.3.39: on non-zero exit, surface the most-recent crash report so
   // the user doesn't have to dig into game_dir/profiles/X/crash-reports/
   // to figure out what blew up. Mod-loader crashes write nicely

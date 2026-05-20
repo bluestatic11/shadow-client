@@ -21,12 +21,25 @@ compatibility_flags = ["nodejs_compat"]
 name = "CHAT_ROOM"
 class_name = "ChatRoom"
 
+# Global presence DO — one instance keyed by name "presence-hub" stores
+# every Shadow Client launcher's recent heartbeat. Friends panel polls
+# /presence/query to learn which UUIDs are currently playing.
+[[durable_objects.bindings]]
+name = "PRESENCE"
+class_name = "PresenceHub"
+
 # Use SQLite-backed Durable Objects — cheaper and faster than the legacy
 # KV-backed flavour, and gives us per-room SQL storage if we want to add
 # message history later without a separate D1 binding.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ChatRoom"]
+
+# PresenceHub is in-memory only (no SQLite needed) — entries expire after
+# 5 min of no heartbeat, so persistence across DO restarts isn't valuable.
+[[migrations]]
+tag = "v2"
+new_classes = ["PresenceHub"]
 
 # Observability: route logs to Cloudflare's dashboard at full sample rate.
 # Keep at 1.0 until we hit volume that costs money to log; then drop.

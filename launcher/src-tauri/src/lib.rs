@@ -12,6 +12,7 @@ mod jdk;
 mod jvm;
 mod mods;
 mod mojang;
+mod presence;
 mod setup;
 mod shadow_chat;
 
@@ -551,6 +552,38 @@ fn chat_test_token() -> Result<String, String> {
     Ok(acct.access_token)
 }
 
+/// Publish a presence heartbeat for the signed-in user. Front-end calls
+/// this on a timer while MC is running (status=true) and once on launch
+/// completion when MC exits (status=false).
+#[tauri::command]
+async fn presence_heartbeat(playing: bool, server: Option<String>) -> Result<(), String> {
+    let here = project_root();
+    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let acct = auth::Account::load(&account_file)
+        .ok_or_else(|| "no account file".to_string())?;
+    if acct.user_type != "msa" || acct.access_token.len() < 10 {
+        // Offline-mode users can't publish — relay verifies the token.
+        // Bail without surfacing an error so the front-end can call this
+        // unconditionally on its timer.
+        return Ok(());
+    }
+    let version = env!("CARGO_PKG_VERSION").to_string();
+    presence::heartbeat(&acct.access_token, version, server, playing)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Fetch presence entries for the given UUIDs. Unauthenticated — the
+/// relay's query endpoint just returns "playing yes/no" for each UUID
+/// the caller already knows about, which the caller could discover by
+/// other means (joining the server, asking around). Saves an extra
+/// round-trip per friends-panel refresh.
+#[tauri::command]
+async fn presence_query(uuids: Vec<String>) -> Result<Vec<presence::PresenceEntry>, String> {
+    presence::query(uuids).await.map_err(|e| e.to_string())
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct InstalledState {
     pub mc_version: Option<String>,
@@ -713,6 +746,18 @@ pub struct Friend {
     /// Epoch seconds when added. Used to sort the list with newest first.
     #[serde(default)]
     pub added_at: u64,
+    /// Dashed Minecraft UUID. Resolved from Mojang on add and used as
+    /// the stable identifier for presence queries (so a name change
+    /// doesn't drop the friend's status). Optional because older
+    /// friends.json files predate the lookup.
+    #[serde(default)]
+    pub uuid: Option<String>,
+    /// Launcher the friend is currently running, e.g. "shadow-client".
+    /// Populated by presence_query; None means "we haven't seen them
+    /// online recently" or "they're using a launcher that doesn't
+    /// publish presence".
+    #[serde(default)]
+    pub launcher: Option<String>,
     /// Presence-status fields. All optional and only populated when a
     /// real presence service is wired up in a future release. The shape
     /// is locked in now so older friends.json files migrate forward
@@ -754,7 +799,7 @@ fn friends_list() -> Vec<Friend> {
 }
 
 #[tauri::command]
-fn friends_add(username: String) -> Result<Vec<Friend>, String> {
+async fn friends_add(username: String) -> Result<Vec<Friend>, String> {
     let username = username.trim().to_string();
     if username.is_empty() {
         return Err("Username can't be empty".into());
@@ -762,8 +807,6 @@ fn friends_add(username: String) -> Result<Vec<Friend>, String> {
     if username.len() > 16 {
         return Err("Minecraft usernames are 16 chars max".into());
     }
-    // Mojang allows letters, digits, underscore in usernames. We accept the
-    // same set so people don't get rejected for a valid name.
     if !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err("Usernames may only contain letters, digits, and underscores".into());
     }
@@ -771,15 +814,23 @@ fn friends_add(username: String) -> Result<Vec<Friend>, String> {
     if friends.iter().any(|f| f.username.eq_ignore_ascii_case(&username)) {
         return Err(format!("'{}' is already on your friends list", username));
     }
+    // Resolve UUID via Mojang so we have a stable identifier for
+    // presence queries (a name change wouldn't drop the friend's
+    // status). If Mojang is down or the username is unregistered we
+    // surface the error rather than silently storing a UUID-less entry
+    // — presence queries against a UUID-less friend can never match
+    // anyway, so making the failure visible saves a confusing
+    // "friend permanently offline" later.
+    let (uuid, canonical_name) = presence::resolve_username_to_uuid(&username)
+        .await
+        .map_err(|e| e.to_string())?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    // The Friend struct gained optional status/server/version/last_seen
-    // fields in v0.3.11 — use Default::default() to fill them in rather
-    // than spelling each None out at every construction site.
     friends.insert(0, Friend {
-        username,
+        username: canonical_name,
+        uuid: Some(uuid),
         added_at: now,
         ..Default::default()
     });
@@ -1286,6 +1337,8 @@ pub fn run() {
             friends_list,
             friends_add,
             friends_remove,
+            presence_heartbeat,
+            presence_query,
             read_cosmetics,
             save_cosmetics,
         ])

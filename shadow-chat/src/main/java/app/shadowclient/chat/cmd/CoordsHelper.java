@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
 
 import java.util.Optional;
 
@@ -15,11 +16,12 @@ import java.util.Optional;
  * world loading, etc.) — the caller should disable the button in that
  * case rather than panic.
  *
- * <p>Default format mirrors what Lunar / Feather use:
- * {@code "X: 123 Y: 64 Z: -456"} — block coordinates (integer floor of
- * the entity's float pos), space-separated, capital axis letters.
- * Easy to scan in chat and parses cleanly into any client-side
- * "go to coords" feature.
+ * <p>Default format mirrors what Lunar / Feather use, with the
+ * dimension tagged on so friends know which world the coords are in:
+ * {@code "X: 123 Y: 64 Z: -456 (overworld)"}. Block coordinates (integer
+ * floor of the entity's float pos), space-separated, capital axis
+ * letters. Easy to scan in chat and parses cleanly into any
+ * client-side "go to coords" feature.
  */
 public final class CoordsHelper {
 
@@ -47,6 +49,38 @@ public final class CoordsHelper {
 
     private static String format(Entity entity) {
         BlockPos pos = entity.blockPosition();
-        return "X: " + pos.getX() + " Y: " + pos.getY() + " Z: " + pos.getZ();
+        String base = "X: " + pos.getX() + " Y: " + pos.getY() + " Z: " + pos.getZ();
+        String dim = dimensionLabel(entity.level());
+        return dim == null ? base : base + " (" + dim + ")";
+    }
+
+    /**
+     * Friendly dimension label — turns the vanilla namespaced ID
+     * ({@code minecraft:overworld}, {@code minecraft:the_nether},
+     * {@code minecraft:the_end}) into a short readable name. Returns
+     * the raw path for custom / modded dimensions; null only when we
+     * truly can't tell.
+     */
+    private static String dimensionLabel(Level level) {
+        if (level == null) return null;
+        var key = level.dimension();
+        if (key == null) return null;
+        // ResourceKey.identifier() returns the underlying Identifier
+        // (vanilla 1.21.11 uses Yarn naming "identifier" rather than
+        // Mojang mappings' "location"). Identifier exposes getPath() +
+        // getNamespace().
+        var id = key.identifier();
+        if (id == null) return null;
+        String ns = id.getNamespace();
+        String path = id.getPath();
+        if ("minecraft".equals(ns)) {
+            return switch (path) {
+                case "overworld" -> "overworld";
+                case "the_nether" -> "nether";
+                case "the_end" -> "end";
+                default -> path;
+            };
+        }
+        return ns + ":" + path;
     }
 }

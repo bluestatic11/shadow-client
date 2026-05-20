@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.64</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.65</span>
     </h1>
 
     <div class="topbar-actions">
@@ -229,6 +229,10 @@
           <span class="action-icon" aria-hidden="true">★</span>
           <span class="action-label">Cosmetics</span>
         </button>
+        <button class="action-tile" id="action-resource-packs" type="button">
+          <span class="action-icon" aria-hidden="true">▤</span>
+          <span class="action-label">Resource packs</span>
+        </button>
         <button class="action-tile" id="action-hud-editor" type="button">
           <span class="action-icon" aria-hidden="true">⚡</span>
           <span class="action-label">HUD editor</span>
@@ -238,6 +242,33 @@
           <span class="action-label">Open folder</span>
         </button>
       </div>
+
+      <!-- Resource-packs management dialog — opened from the
+           "Resource packs" quick-action tile. List comes from
+           Rust list_resource_packs; remove buttons call
+           remove_resource_pack. Drag-drop continues to install
+           into the same active profile while this is open. -->
+      <dialog id="packs-dialog" class="settings-dialog" aria-labelledby="packs-title">
+        <div class="dialog-head">
+          <h2 id="packs-title" class="dialog-title">Resource packs</h2>
+          <button class="dialog-close" id="packs-dialog-close" type="button"
+                  aria-label="Close">×</button>
+        </div>
+        <div class="dialog-body">
+          <p class="dialog-blurb">
+            Files in this profile's <code>resourcepacks/</code> folder.
+            Drag a <code>.zip</code> onto the launcher window to install
+            another. Enable them inside Minecraft's
+            <em>Options → Resource Packs</em>.
+          </p>
+          <ul class="packs-list" id="packs-list" aria-live="polite">
+            <li class="packs-empty">Loading…</li>
+          </ul>
+        </div>
+        <div class="dialog-footer">
+          <button id="packs-dialog-done" class="primary-btn" type="button">Done</button>
+        </div>
+      </dialog>
 
       <!-- Latest updates — pulled from GitHub Releases on boot. Each card
            shows version + relative date + first line of release notes.

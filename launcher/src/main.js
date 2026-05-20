@@ -1407,6 +1407,108 @@ function formatBytes(n) {
 registerDragDropHandler().catch(e =>
   console.warn('[shadow] registerDragDropHandler:', e));
 
+// ───── Resource-pack list dialog ────────────────────────────────
+// Opened from the "Resource packs" tile. Drag-drop continues to
+// install while the dialog is open; we re-fetch the list on every
+// open so newly-installed packs show up immediately.
+const packsDialog       = $('packs-dialog');
+const packsDialogClose  = $('packs-dialog-close');
+const packsDialogDone   = $('packs-dialog-done');
+const packsListEl       = $('packs-list');
+const actionResourcePacks = $('action-resource-packs');
+
+async function refreshPacksList() {
+  if (!packsListEl) return;
+  packsListEl.innerHTML = '';
+  let packs = [];
+  try {
+    packs = await invoke('list_resource_packs', { version: getPickedVersion() });
+  } catch (e) {
+    const err = document.createElement('li');
+    err.className = 'packs-empty';
+    err.textContent = `Couldn't read resourcepacks folder: ${e}`;
+    packsListEl.appendChild(err);
+    return;
+  }
+  if (!packs.length) {
+    const empty = document.createElement('li');
+    empty.className = 'packs-empty';
+    empty.textContent = 'No packs installed for this profile. Drag a .zip onto the launcher window to install one.';
+    packsListEl.appendChild(empty);
+    return;
+  }
+  for (const p of packs) {
+    const row = document.createElement('li');
+    row.className = 'pack-row';
+
+    const info = document.createElement('div');
+    info.className = 'pack-info';
+    const name = document.createElement('div');
+    name.className = 'pack-name';
+    name.textContent = p.filename;
+    name.title = p.dest_path;
+    info.appendChild(name);
+    const meta = document.createElement('div');
+    meta.className = 'pack-meta';
+    meta.textContent = formatBytes(p.bytes);
+    info.appendChild(meta);
+    row.appendChild(info);
+
+    const remove = document.createElement('button');
+    remove.className = 'pack-remove';
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `Delete ${p.filename}`);
+    remove.textContent = '× Delete';
+    remove.addEventListener('click', async () => {
+      // Cheap inline confirm — packs are large and accidentally
+      // deleted ones are 100 MB the user has to re-download.
+      remove.disabled = true;
+      remove.textContent = 'Sure?';
+      remove.classList.add('danger');
+      let confirmed = false;
+      const onConfirm = async () => {
+        confirmed = true;
+        try {
+          await invoke('remove_resource_pack', {
+            filename: p.filename,
+            version: getPickedVersion(),
+          });
+          await refreshPacksList();
+        } catch (err) {
+          remove.disabled = false;
+          remove.textContent = '× Delete';
+          remove.classList.remove('danger');
+          setStatus(`Couldn't delete ${p.filename}: ${err}`, 'error');
+        }
+      };
+      remove.addEventListener('click', onConfirm, { once: true });
+      // Auto-revert after 2.5s if they don't click again.
+      setTimeout(() => {
+        if (confirmed) return;
+        remove.disabled = false;
+        remove.textContent = '× Delete';
+        remove.classList.remove('danger');
+        remove.removeEventListener('click', onConfirm);
+      }, 2500);
+    });
+    row.appendChild(remove);
+
+    packsListEl.appendChild(row);
+  }
+}
+
+actionResourcePacks?.addEventListener('click', () => {
+  if (!packsDialog) return;
+  packsDialog.showModal();
+  refreshPacksList();
+});
+packsDialogClose?.addEventListener('click', () => packsDialog?.close());
+packsDialogDone?.addEventListener('click', () => packsDialog?.close());
+// Click backdrop to dismiss — matches the existing settings dialog UX.
+packsDialog?.addEventListener('click', (e) => {
+  if (e.target === packsDialog) packsDialog.close();
+});
+
 // Also clear the drag-active class on leave events the webview routes
 // through the same channel — covers the user dragging back out.
 (async () => {

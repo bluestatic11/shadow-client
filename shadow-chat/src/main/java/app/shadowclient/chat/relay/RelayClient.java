@@ -128,12 +128,20 @@ public final class RelayClient {
                 .buildAsync(uri, session.listener)
                 .thenAccept(ws -> {
                     session.socket = ws;
+                    // Successful connect — clear the backoff counter so
+                    // a future drop starts at 1s again, not at whatever
+                    // delay we reached last time.
+                    noteConnectedForBackoff();
                     sink.onConnected(channel);
                 })
                 .exceptionally(err -> {
-                    // Connection failed — clear if we're still current.
+                    // Connection failed — clear if we're still current
+                    // and schedule a retry. Without this, only mid-session
+                    // drops auto-retry; first-connect failures (DNS,
+                    // 503, etc) would just stall forever.
                     current.compareAndSet(session, null);
                     sink.onDisconnected(channel, rootCause(err));
+                    scheduleReconnect(channel, sink);
                     return null;
                 });
     }
@@ -207,25 +215,41 @@ public final class RelayClient {
         closeCurrent("client closed");
     }
 
+    /** Reconnect counter — drives the backoff schedule and the giveup cap. */
+    private final java.util.concurrent.atomic.AtomicInteger reconnectAttempt =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
+    /** Reset on a successful connect so the next failure starts at attempt #1. */
+    void noteConnectedForBackoff() {
+        reconnectAttempt.set(0);
+    }
+
     /**
-     * Fire-and-forget single-retry reconnect. If the relay's still down
-     * after 3 seconds we give up; the next user action (switching
-     * channel, joining a server) will retry from scratch. Covers the
-     * common case — relay restart, transient network blip — without
-     * looping indefinitely on a hard failure (banned, no internet).
+     * Schedule a reconnect with exponential backoff: 1s, 2s, 4s, 8s, …
+     * capped at 60s. Gives up after 10 attempts (~3 minutes total
+     * elapsed) on the theory that if the relay is still down after that
+     * the user has plenty of time to manually try again. Cleared by the
+     * next successful connect via {@link #noteConnectedForBackoff}.
      */
     private void scheduleReconnect(String channel, EventSink sink) {
         if (manuallyDisconnected.get()) return;
+        int attempt = reconnectAttempt.incrementAndGet();
+        if (attempt > 10) {
+            // Bail and tell the user. Next manual action resets the counter
+            // because connect() flips manuallyDisconnected back to false.
+            sink.onDisconnected(channel, "giving up after 10 reconnect attempts");
+            return;
+        }
+        long delayMs = Math.min(60_000L, 1000L * (1L << Math.min(6, attempt - 1)));
         Thread t = new Thread(() -> {
-            try { Thread.sleep(3000); }
+            try { Thread.sleep(delayMs); }
             catch (InterruptedException e) { return; }
             // Re-check intent — user may have disconnected during the
-            // 3-second wait, or another connect() may have already
-            // landed a new session.
+            // wait, or another connect() may have already landed.
             if (manuallyDisconnected.get()) return;
             if (current.get() != null) return;
             connect(channel, sink);
-        }, "shadow-chat-reconnect");
+        }, "shadow-chat-reconnect-" + attempt);
         t.setDaemon(true);
         t.start();
     }

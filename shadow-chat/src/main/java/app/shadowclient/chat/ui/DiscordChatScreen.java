@@ -107,6 +107,15 @@ public final class DiscordChatScreen extends Screen {
     private int scrollOffset = 0;
     /** Channel the scroll offset is currently anchored to — reset when it changes. */
     private String scrollAnchorChannel = null;
+    /**
+     * When true the main area renders the Voice Room grid instead of
+     * the text-channel message log. Toggled by a clickable entry under
+     * the sidebar's VOICE category; preserved across renders but reset
+     * to false on every channel switch so the user lands on text by
+     * default in the new channel.
+     */
+    private boolean viewingVoiceRoom = false;
+    private int voiceRoomBtnX1, voiceRoomBtnY1, voiceRoomBtnX2, voiceRoomBtnY2;
 
     public DiscordChatScreen(ChatOverlay legacyOverlay) {
         super(Component.literal("Shadow Chat"));
@@ -133,6 +142,7 @@ public final class DiscordChatScreen extends Screen {
         voiceToggleX2 = 0;
         copyIdBtnX2 = 0;
         micBtnX2 = 0;
+        voiceRoomBtnX2 = 0;
 
         drawServerRail(gfx, 0, 0, SERVER_RAIL_W, this.height);
         drawSidebar(gfx, SERVER_RAIL_W, 0, SIDEBAR_W, this.height, mouseX, mouseY);
@@ -208,6 +218,9 @@ public final class DiscordChatScreen extends Screen {
         int rosterSize = st.voiceRosterFor(activeChannel).size();
         rowY = drawVoiceToggleRow(gfx, x, rowY, w, sc.isInVoice(), rosterSize,
                 mouseX, mouseY);
+        // "Voice Room" tab — flips the main area to a participant
+        // grid view (faces + speaking rings) instead of the text log.
+        rowY = drawVoiceRoomRow(gfx, x, rowY, w, mouseX, mouseY, rosterSize);
         for (UUID id : speakers) {
             String name = sc.displayNameForUuid(id);
             rowY = drawSpeakerRow(gfx, x, rowY, w, id, name);
@@ -274,6 +287,31 @@ public final class DiscordChatScreen extends Screen {
                 hover ? TEXT_BRIGHT : TEXT_DIM, false);
         createGroupX1 = rowX; createGroupY1 = y;
         createGroupX2 = rowX + rowW; createGroupY2 = y + CHAN_ROW_H;
+        return y + CHAN_ROW_H;
+    }
+
+    /**
+     * Render the "Voice Room" view-toggle row in the sidebar. Clicking
+     * flips {@link #viewingVoiceRoom}; the main area then renders the
+     * participant grid instead of the text-channel log.
+     */
+    private int drawVoiceRoomRow(GuiGraphics gfx, int x, int y, int w,
+                                 int mouseX, int mouseY, int rosterSize) {
+        int rowX = x + 6;
+        int rowW = w - 12;
+        boolean active = viewingVoiceRoom;
+        boolean hover = mouseX >= rowX && mouseX <= rowX + rowW
+                && mouseY >= y && mouseY <= y + CHAN_ROW_H;
+        int bg = active ? CHIP_ACTIVE : (hover ? CHIP_HOVER : 0);
+        if (bg != 0) gfx.fill(rowX, y, rowX + rowW, y + CHAN_ROW_H, bg);
+        String label = "# Voice Room";
+        if (rosterSize > 0) label = label + "  " + rosterSize;
+        int color = active ? TEXT_BRIGHT : TEXT;
+        gfx.drawString(this.font, label,
+                rowX + 8, y + (CHAN_ROW_H - this.font.lineHeight) / 2 + 1,
+                color, false);
+        voiceRoomBtnX1 = rowX; voiceRoomBtnY1 = y;
+        voiceRoomBtnX2 = rowX + rowW; voiceRoomBtnY2 = y + CHAN_ROW_H;
         return y + CHAN_ROW_H;
     }
 
@@ -396,7 +434,9 @@ public final class DiscordChatScreen extends Screen {
 
         // ---- header ----
         gfx.fill(x, y, x + w, y + HEADER_H, HEADER_BG);
-        String headerLabel = "# " + channelDisplayName(activeChannel);
+        String headerLabel = viewingVoiceRoom
+                ? "# Voice Room — " + channelDisplayName(activeChannel)
+                : "# " + channelDisplayName(activeChannel);
         int labelY = y + (HEADER_H - this.font.lineHeight) / 2 + 1;
         gfx.drawString(this.font, headerLabel, x + 12, labelY, TEXT_BRIGHT, false);
         int cursor = x + 12 + this.font.width(headerLabel);
@@ -451,10 +491,111 @@ public final class DiscordChatScreen extends Screen {
         // ---- input row (bottom) ----
         drawInput(gfx, x, y + h - INPUT_H - 8, w, INPUT_H);
 
-        // ---- message log (fills middle) ----
-        int logTop = y + HEADER_H + 4;
-        int logBottom = y + h - INPUT_H - 12;
-        drawMessages(gfx, x, logTop, w, logBottom - logTop, st, activeChannel);
+        // ---- center panel: voice room grid or message log ----
+        int centerTop = y + HEADER_H + 4;
+        int centerBottom = y + h - INPUT_H - 12;
+        if (viewingVoiceRoom) {
+            drawVoiceRoom(gfx, x, centerTop, w, centerBottom - centerTop, st, activeChannel);
+        } else {
+            drawMessages(gfx, x, centerTop, w, centerBottom - centerTop, st, activeChannel);
+        }
+    }
+
+    /**
+     * Render a Voice Room grid of avatar tiles. Each tile shows the
+     * participant's MC head (via PlayerFaceRenderer when we have a
+     * PlayerInfo for them on the current server, fallback to a
+     * colored-letter square otherwise), their name, and a green
+     * speaking ring when they're currently transmitting.
+     *
+     * Roster comes from {@link InputState#voiceRosterFor} which is
+     * populated by the relay's voice:roster broadcast. Empty roster
+     * shows an empty-state hint instead of a blank grid.
+     */
+    private void drawVoiceRoom(GuiGraphics gfx, int x, int y, int w, int h,
+                               InputState st, String activeChannel) {
+        ShadowChatClient sc = ShadowChatClient.get();
+        List<String> rosterUuids = st.voiceRosterFor(activeChannel);
+        VoiceController vc = sc.voice();
+        java.util.Set<UUID> currentSpeakers = new java.util.HashSet<>(
+                vc != null ? vc.playback().currentSpeakers() : List.of());
+
+        if (rosterUuids.isEmpty()) {
+            // Empty-state card — push the user toward Join Voice.
+            int cardW = Math.min(420, w - 80);
+            int cardH = 96;
+            int cardX = x + (w - cardW) / 2;
+            int cardY = y + (h - cardH) / 2;
+            gfx.fill(cardX, cardY, cardX + cardW, cardY + cardH, SIDEBAR_BG);
+            gfx.fill(cardX, cardY, cardX + 4, cardY + cardH, ACCENT);
+            gfx.drawString(this.font, "No one's in voice on this channel yet.",
+                    cardX + 18, cardY + 22, TEXT_BRIGHT, false);
+            gfx.drawString(this.font, "Click Join voice in the sidebar to be first in.",
+                    cardX + 18, cardY + 22 + this.font.lineHeight + 6, TEXT_DIM, false);
+            gfx.drawString(this.font, "Then click Mic in the input row to start talking.",
+                    cardX + 18, cardY + 22 + (this.font.lineHeight + 6) * 2, TEXT_DIM, false);
+            return;
+        }
+
+        // Grid layout — square tiles ~96 px on a side, fit-to-width.
+        final int TILE_W = 96;
+        final int TILE_H = 116;
+        final int GAP = 12;
+        int innerW = w - 24;
+        int cols = Math.max(1, (innerW + GAP) / (TILE_W + GAP));
+        int gridLeft = x + 12 + Math.max(0, (innerW - (cols * TILE_W + (cols - 1) * GAP)) / 2);
+        int drawY = y + 4;
+        int drawX = gridLeft;
+        int colIdx = 0;
+        for (String uuidStr : rosterUuids) {
+            UUID uuid = parseUuid(uuidStr);
+            String name = sc.displayNameForUuid(uuid);
+            boolean speaking = uuid != null && currentSpeakers.contains(uuid);
+            drawVoiceTile(gfx, drawX, drawY, TILE_W, TILE_H, uuid, name, speaking);
+            colIdx++;
+            if (colIdx >= cols) {
+                colIdx = 0;
+                drawX = gridLeft;
+                drawY += TILE_H + GAP;
+                if (drawY + TILE_H > y + h) break; // ran out of room
+            } else {
+                drawX += TILE_W + GAP;
+            }
+        }
+    }
+
+    private void drawVoiceTile(GuiGraphics gfx, int x, int y, int w, int h,
+                               UUID uuid, String name, boolean speaking) {
+        // Tile background — slightly elevated.
+        gfx.fill(x, y, x + w, y + h, SIDEBAR_BG);
+        if (speaking) {
+            // Outer green frame when currently transmitting.
+            gfx.fill(x, y, x + w, y + 2, GREEN);
+            gfx.fill(x, y + h - 2, x + w, y + h, GREEN);
+            gfx.fill(x, y, x + 2, y + h, GREEN);
+            gfx.fill(x + w - 2, y, x + w, y + h, GREEN);
+        }
+        // Face centered horizontally in the tile.
+        int faceSize = 48;
+        int faceX = x + (w - faceSize) / 2;
+        int faceY = y + 16;
+        if (speaking) {
+            // Inner glow under the face — slightly green tint.
+            gfx.fill(faceX - 3, faceY - 3, faceX + faceSize + 3, faceY + faceSize + 3, 0x804ADE80);
+        }
+        drawPlayerFace(gfx, uuid, name, faceX, faceY, faceSize);
+        // Name underneath, truncated to tile width.
+        String shown = name;
+        if (this.font.width(shown) > w - 8) {
+            while (shown.length() > 1 && this.font.width(shown + "…") > w - 8) {
+                shown = shown.substring(0, shown.length() - 1);
+            }
+            shown = shown + "…";
+        }
+        int nameX = x + (w - this.font.width(shown)) / 2;
+        gfx.drawString(this.font, shown,
+                nameX, faceY + faceSize + 8,
+                speaking ? GREEN : TEXT_BRIGHT, false);
     }
 
     /** Centered empty-state card: "Sign in via the launcher to chat". */
@@ -743,6 +884,14 @@ public final class DiscordChatScreen extends Screen {
                 && mx >= voiceToggleX1 && mx <= voiceToggleX2
                 && my >= voiceToggleY1 && my <= voiceToggleY2) {
             ShadowChatClient.get().toggleVoiceOptIn();
+            return true;
+        }
+
+        // Voice-room view toggle — flip the main area.
+        if (voiceRoomBtnX2 > 0
+                && mx >= voiceRoomBtnX1 && mx <= voiceRoomBtnX2
+                && my >= voiceRoomBtnY1 && my <= voiceRoomBtnY2) {
+            viewingVoiceRoom = !viewingVoiceRoom;
             return true;
         }
 

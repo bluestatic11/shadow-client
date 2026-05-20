@@ -116,6 +116,14 @@ public final class DiscordChatScreen extends Screen {
      */
     private boolean viewingVoiceRoom = false;
     private int voiceRoomBtnX1, voiceRoomBtnY1, voiceRoomBtnX2, voiceRoomBtnY2;
+    /** When true the main area renders the settings panel. Mutually
+     *  exclusive with viewingVoiceRoom — opening one closes the other. */
+    private boolean viewingSettings = false;
+    private int settingsBtnX1, settingsBtnY1, settingsBtnX2, settingsBtnY2;
+    /** Per-toggle hit-rects inside the settings panel. Cleared each
+     *  render and repopulated by drawSettings. */
+    private final List<ToggleHit> settingsToggleHits = new ArrayList<>();
+    private record ToggleHit(int x1, int y1, int x2, int y2, String key) {}
 
     public DiscordChatScreen(ChatOverlay legacyOverlay) {
         super(Component.literal("Shadow Chat"));
@@ -143,6 +151,8 @@ public final class DiscordChatScreen extends Screen {
         copyIdBtnX2 = 0;
         micBtnX2 = 0;
         voiceRoomBtnX2 = 0;
+        settingsBtnX2 = 0;
+        settingsToggleHits.clear();
 
         drawServerRail(gfx, 0, 0, SERVER_RAIL_W, this.height);
         drawSidebar(gfx, SERVER_RAIL_W, 0, SIDEBAR_W, this.height, mouseX, mouseY);
@@ -365,16 +375,34 @@ public final class DiscordChatScreen extends Screen {
         int avSize = 28;
         int avX = x + 8;
         int avY = y + (h - avSize) / 2;
-        // Our own skin via mc.player when in-world; falls back to the
-        // letter avatar at the main menu / sign-out state.
         drawPlayerFace(gfx, parseUuid(auth.uuid()), displayName, avX, avY, avSize);
-        // Name + status
         gfx.drawString(this.font, displayName,
                 avX + avSize + 8, avY + 3, TEXT_BRIGHT, false);
         String status = auth.isUsable() ? "Online" : "Sign in via launcher";
         gfx.drawString(this.font, status,
                 avX + avSize + 8, avY + 3 + this.font.lineHeight + 2,
                 auth.isUsable() ? GREEN : TEXT_DIM, false);
+
+        // Settings ⚙ button — far right of the user bar. Active state
+        // (panel currently open) gets the accent fill so it's clear
+        // the user is *in* settings.
+        int btnSize = 22;
+        int btnX2 = x + w - 10;
+        int btnX1 = btnX2 - btnSize;
+        int btnY1 = y + (h - btnSize) / 2;
+        int btnY2 = btnY1 + btnSize;
+        int bg = viewingSettings ? ACCENT : CHIP_HOVER;
+        gfx.fill(btnX1, btnY1, btnX2, btnY2, bg);
+        // Draw a stylized cog: ASCII fallback for fonts that don't
+        // ship the U+2699 glyph cleanly.
+        String glyph = "*";
+        int gw = this.font.width(glyph);
+        gfx.drawString(this.font, glyph,
+                btnX1 + (btnSize - gw) / 2,
+                btnY1 + (btnSize - this.font.lineHeight) / 2 + 1,
+                TEXT_BRIGHT, false);
+        settingsBtnX1 = btnX1; settingsBtnY1 = btnY1;
+        settingsBtnX2 = btnX2; settingsBtnY2 = btnY2;
     }
 
     /**
@@ -491,14 +519,85 @@ public final class DiscordChatScreen extends Screen {
         // ---- input row (bottom) ----
         drawInput(gfx, x, y + h - INPUT_H - 8, w, INPUT_H);
 
-        // ---- center panel: voice room grid or message log ----
+        // ---- center panel: settings / voice room grid / message log ----
         int centerTop = y + HEADER_H + 4;
         int centerBottom = y + h - INPUT_H - 12;
-        if (viewingVoiceRoom) {
+        if (viewingSettings) {
+            drawSettings(gfx, x, centerTop, w, centerBottom - centerTop, mouseX, mouseY);
+        } else if (viewingVoiceRoom) {
             drawVoiceRoom(gfx, x, centerTop, w, centerBottom - centerTop, st, activeChannel);
         } else {
             drawMessages(gfx, x, centerTop, w, centerBottom - centerTop, st, activeChannel);
         }
+    }
+
+    /**
+     * Render the settings panel. Each toggle row shows the friendly
+     * label + a clickable on/off chip whose state is pulled live from
+     * ModConfig.
+     */
+    private void drawSettings(GuiGraphics gfx, int x, int y, int w, int h,
+                              int mouseX, int mouseY) {
+        ShadowChatClient sc = ShadowChatClient.get();
+        ModConfig cfg = sc.modConfig();
+
+        // Title
+        gfx.drawString(this.font, "Settings", x + 24, y + 16, TEXT_BRIGHT, false);
+        gfx.fill(x + 24, y + 32, x + w - 24, y + 33, DIVIDER);
+
+        int rowY = y + 48;
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Auto-open chat on world join",
+                "When on, the chat screen pops open ~1 s after you join any multiplayer world.",
+                "auto_open_chat", cfg.autoOpenChatOnJoin());
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Auto-rejoin voice on connect",
+                "After clicking Join voice once, you stay opted in across reconnects + channel switches.",
+                "auto_join_voice", cfg.autoJoinVoice());
+
+        // Hint at the bottom — keyboard shortcuts users might miss.
+        int hintY = y + h - 22;
+        gfx.drawString(this.font,
+                "Click the gear icon again to close. Press ; anywhere to reopen chat.",
+                x + 24, hintY, TEXT_DIM, false);
+    }
+
+    /**
+     * One label + clickable on/off chip. Returns the y after the row
+     * so callers can stack them. Adds an entry to
+     * {@link #settingsToggleHits} keyed by the toggle's name; the
+     * click handler maps that key back to the right ModConfig setter.
+     */
+    private int drawToggleRow(GuiGraphics gfx, int x, int y, int w,
+                              int mouseX, int mouseY,
+                              String label, String subLabel, String key, boolean on) {
+        int rowH = 38;
+        // Toggle chip on the right.
+        int chipW = 56;
+        int chipH = 22;
+        int chipX2 = x + w - 4;
+        int chipX1 = chipX2 - chipW;
+        int chipY1 = y + (rowH - chipH) / 2;
+        int chipY2 = chipY1 + chipH;
+        boolean hover = mouseX >= chipX1 && mouseX <= chipX2
+                && mouseY >= chipY1 && mouseY <= chipY2;
+        int bg = on ? (hover ? 0xFF3C8C46 : 0xFF2A6638)
+                    : (hover ? CHIP_HOVER : CHIP_ACTIVE);
+        gfx.fill(chipX1, chipY1, chipX2, chipY2, bg);
+        String chipLabel = on ? "ON" : "OFF";
+        int tw = this.font.width(chipLabel);
+        gfx.drawString(this.font, chipLabel,
+                chipX1 + (chipW - tw) / 2,
+                chipY1 + (chipH - this.font.lineHeight) / 2 + 1,
+                on ? TEXT_BRIGHT : TEXT_DIM, false);
+
+        // Label + sub-label on the left.
+        gfx.drawString(this.font, label, x, y + 6, TEXT_BRIGHT, false);
+        gfx.drawString(this.font, subLabel, x, y + 6 + this.font.lineHeight + 4,
+                TEXT_DIM, false);
+
+        settingsToggleHits.add(new ToggleHit(chipX1, chipY1, chipX2, chipY2, key));
+        return y + rowH + 8;
     }
 
     /**
@@ -922,7 +1021,33 @@ public final class DiscordChatScreen extends Screen {
                 && mx >= voiceRoomBtnX1 && mx <= voiceRoomBtnX2
                 && my >= voiceRoomBtnY1 && my <= voiceRoomBtnY2) {
             viewingVoiceRoom = !viewingVoiceRoom;
+            viewingSettings = false;
             return true;
+        }
+
+        // Settings ⚙ button in the user bar — flip into / out of
+        // settings view; close the voice-room view if it was open.
+        if (settingsBtnX2 > 0
+                && mx >= settingsBtnX1 && mx <= settingsBtnX2
+                && my >= settingsBtnY1 && my <= settingsBtnY2) {
+            viewingSettings = !viewingSettings;
+            if (viewingSettings) viewingVoiceRoom = false;
+            return true;
+        }
+
+        // Settings toggle chips — map the chip key to the right
+        // ModConfig setter. Adding a toggle? Add a branch here.
+        for (ToggleHit hit : settingsToggleHits) {
+            if (mx >= hit.x1 && mx <= hit.x2 && my >= hit.y1 && my <= hit.y2) {
+                ShadowChatClient sc = ShadowChatClient.get();
+                ModConfig cfg = sc.modConfig();
+                switch (hit.key) {
+                    case "auto_open_chat" -> cfg.setAutoOpenChatOnJoin(!cfg.autoOpenChatOnJoin());
+                    case "auto_join_voice" -> cfg.setAutoJoinVoice(!cfg.autoJoinVoice());
+                    default -> {}
+                }
+                return true;
+            }
         }
 
         // Copy group ID button — pulls the active channel's group UUID

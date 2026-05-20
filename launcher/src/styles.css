@@ -2641,3 +2641,20 @@ kbd {
   image-rendering: pixelated;
   border-radius: inherit;
 }
+
+/* Friend rows became clickable in v0.3.56 — clicking anywhere except
+   the × remove button launches MC so the user can chat with that friend
+   in-game. */
+.friend-row-clickable {
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.friend-row-clickable:hover {
+  background-color: var(--bg-3);
+}
+.friend-row-clickable:active {
+  background-color: var(--bg-2);
+}
+.friend-row-clickable .friend-remove {
+  cursor: pointer;  /* keep its own cursor distinct from the row's */
+}

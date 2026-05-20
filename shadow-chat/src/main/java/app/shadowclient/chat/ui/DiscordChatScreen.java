@@ -96,6 +96,7 @@ public final class DiscordChatScreen extends Screen {
     private int createGroupX1, createGroupY1, createGroupX2, createGroupY2;
     private int voiceToggleX1, voiceToggleY1, voiceToggleX2, voiceToggleY2;
     private int copyIdBtnX1, copyIdBtnY1, copyIdBtnX2, copyIdBtnY2;
+    private int micBtnX1, micBtnY1, micBtnX2, micBtnY2;
     /** Set when the Copy ID button was clicked — paints "Copied!" for ~1s. */
     private long copiedFlashUntil = 0;
     /**
@@ -131,6 +132,7 @@ public final class DiscordChatScreen extends Screen {
         createGroupX2 = 0;
         voiceToggleX2 = 0;
         copyIdBtnX2 = 0;
+        micBtnX2 = 0;
 
         drawServerRail(gfx, 0, 0, SERVER_RAIL_W, this.height);
         drawSidebar(gfx, SERVER_RAIL_W, 0, SIDEBAR_W, this.height, mouseX, mouseY);
@@ -583,10 +585,29 @@ public final class DiscordChatScreen extends Screen {
                 plusY1 + ((plusY2 - plusY1) - this.font.lineHeight) / 2 + 1,
                 TEXT, false);
 
-        // Coords button — right side
+        // Mic toggle button — rightmost. Click flips hot-mic; red while on.
+        ShadowChatClient scForMic = ShadowChatClient.get();
+        boolean micOn = scForMic.isHotMicOn();
+        String micLabel = micOn ? "● Mic" : "Mic";
+        int micW = this.font.width(micLabel) + 14;
+        int micBX2 = boxX2 - 6;
+        int micBX1 = micBX2 - micW;
+        int micBY1 = y + 6;
+        int micBY2 = y + h - 6;
+        int micBg = micOn ? RED_PILL : CHIP_HOVER;
+        int micFg = micOn ? TEXT_BRIGHT : TEXT;
+        gfx.fill(micBX1, micBY1, micBX2, micBY2, micBg);
+        gfx.drawString(this.font, micLabel,
+                micBX1 + 7,
+                micBY1 + ((micBY2 - micBY1) - this.font.lineHeight) / 2 + 1,
+                micFg, false);
+        micBtnX1 = micBX1; micBtnY1 = micBY1;
+        micBtnX2 = micBX2; micBtnY2 = micBY2;
+
+        // Coords button — just left of the Mic button.
         String btnLabel = "Coords";
         int btnW = this.font.width(btnLabel) + 14;
-        int btnX2 = boxX2 - 6;
+        int btnX2 = micBX1 - 6;
         int btnX1 = btnX2 - btnW;
         int btnY1 = y + 6;
         int btnY2 = y + h - 6;
@@ -697,6 +718,15 @@ public final class DiscordChatScreen extends Screen {
                 if (buffer.length() > 0 && buffer.charAt(buffer.length() - 1) != ' ') appendSafe(" ");
                 appendSafe(coords);
             });
+            return true;
+        }
+
+        // Mic toggle — flips hot-mic transmission. ShadowChatClient
+        // takes care of opting in to voice if we hadn't already.
+        if (micBtnX2 > 0
+                && mx >= micBtnX1 && mx <= micBtnX2
+                && my >= micBtnY1 && my <= micBtnY2) {
+            ShadowChatClient.get().toggleHotMic();
             return true;
         }
 

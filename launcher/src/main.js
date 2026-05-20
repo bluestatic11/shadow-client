@@ -585,8 +585,16 @@ const chatHintPill = document.getElementById('chat-hint');
 if (chatHintPill) {
   const trigger = async () => {
     if (busy) return;
-    if (signedIn) return;
-    await doSignIn();
+    if (!signedIn) {
+      await doSignIn();
+      return;
+    }
+    // Signed-in path: pill is now a one-click launcher for MC. The
+    // user can then press `;` once in-world to open the Discord-style
+    // chat screen. (We don't currently signal the mod to auto-open it
+    // from the launcher — different process, no IPC.)
+    setStatus('Launching Minecraft — open chat in-game with ;', 'working');
+    await playFlow();
   };
   chatHintPill.addEventListener('click', trigger);
   chatHintPill.addEventListener('keydown', (e) => {
@@ -595,6 +603,11 @@ if (chatHintPill) {
       trigger();
     }
   });
+  // Make it clickable-feeling even when signed in (the prior
+  // implementation only added the .actionable class in the offline
+  // path). Cursor + role are set per-state in renderAccount(), but
+  // we re-mark the signed-in path here so the hover state lands.
+  chatHintPill.style.cursor = 'pointer';
 }
 
 async function doSignIn() {
@@ -912,7 +925,8 @@ function renderFriends(friends) {
 
 function buildFriendRow(f) {
   const row = document.createElement('li');
-  row.className = 'friend-row';
+  row.className = 'friend-row friend-row-clickable';
+  row.title = `Open chat with ${f.username} (launches Minecraft)`;
   row.appendChild(makeAvatar(f.username));
 
   const info = document.createElement('div');
@@ -930,15 +944,28 @@ function buildFriendRow(f) {
   remove.type = 'button';
   remove.setAttribute('aria-label', `Remove ${f.username}`);
   remove.textContent = '×';
-  remove.addEventListener('click', async () => {
+  remove.addEventListener('click', async (e) => {
+    // Don't bubble up to the row's launch-on-click handler.
+    e.stopPropagation();
     try {
       const updated = await invoke('friends_remove', { username: f.username });
       renderFriends(updated);
-    } catch (e) {
-      console.warn('[shadow] friends_remove failed:', e);
+    } catch (err) {
+      console.warn('[shadow] friends_remove failed:', err);
     }
   });
   row.appendChild(remove);
+
+  // Click anywhere else on the row → launch MC. The user can then
+  // open the fullscreen chat in-game with `;` and either say hi in the
+  // server channel or /group invite this friend for a private room.
+  // (We don't have launcher↔mod IPC yet so we can't auto-target the
+  // friend; this just gets the user to chat as quickly as possible.)
+  row.addEventListener('click', async () => {
+    if (busy) return;
+    setStatus(`Launching Minecraft — open chat (;) and find ${f.username}`, 'working');
+    await playFlow();
+  });
   return row;
 }
 

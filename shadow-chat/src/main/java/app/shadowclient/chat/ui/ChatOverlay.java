@@ -211,12 +211,12 @@ public final class ChatOverlay {
             }
         }
 
-        // ---- ptt hint (just above the input field, or the panel floor if no input) ----
-        // Three states:
-        //   - mic unavailable → static "Voice unavailable" so the user
-        //     knows why the V key is doing nothing.
-        //   - PTT held → red "Talking…" to confirm the mic is hot.
-        //   - otherwise → grey "Hold V to talk" reminder.
+        // ---- voice hint (just above the input field, or the panel floor if no input) ----
+        //   - mic unavailable → grey "Voice unavailable" so the user
+        //     knows why pressing the button does nothing.
+        //   - currently transmitting → red "Talking…" so the user
+        //     can see they're hot before they say something private.
+        //   - otherwise → grey hint pointing at the chat-screen mic.
         int pttY = y + panelHeight - PAD - inputFieldHeight - pttHintHeight + 1;
         VoiceController vcHint = ShadowChatClient.get().voice();
         if (vcHint != null) {
@@ -229,7 +229,7 @@ public final class ChatOverlay {
                 hint = "Talking...";
                 color = PTT_HOT_COLOR;
             } else {
-                hint = "Hold V to talk";
+                hint = "Open chat (;) and click Mic to talk";
                 color = PTT_IDLE_COLOR;
             }
             gfx.drawString(font, Component.literal(hint), x + PAD, pttY, color, false);

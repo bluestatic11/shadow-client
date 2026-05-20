@@ -68,6 +68,15 @@ public final class ShadowChatClient implements ClientModInitializer {
      */
     private volatile boolean inVoice = false;
 
+    /**
+     * Click-to-talk state from the chat screen's mic button. When true
+     * we transmit continuously (hot mic) regardless of the PTT
+     * keybind. Reset by clicking the mic again or by closing the chat
+     * with no chat-screen click for safety; ORed with PTT keybind in
+     * the tick handler so both inputs work.
+     */
+    private volatile boolean hotMicOn = false;
+
     @Override
     public void onInitializeClient() {
         instance = this;
@@ -149,13 +158,14 @@ public final class ShadowChatClient implements ClientModInitializer {
             while (Keybinds.TOGGLE_CHAT.consumeClick()) {
                 handleToggleHotkey(client);
             }
-            // Push-to-talk: gate transmission on key-held state.
-            // Suppress while any Screen is open so the player can use
-            // the V key for paste in the chat input field without
-            // accidentally going hot-mic — including our own
-            // DiscordChatScreen where Ctrl+V is paste, not PTT.
-            boolean held = Keybinds.PUSH_TO_TALK.isDown() && client.screen == null;
-            voice.setTransmitting(held);
+            // Transmission is the union of two inputs:
+            //   - PTT keybind held + no Screen open (so V-as-paste in
+            //     our own chat input doesn't accidentally hot-mic);
+            //   - the chat screen's click-to-talk Mic button toggle,
+            //     which fires regardless of Screen state because the
+            //     user chose it explicitly.
+            boolean pttHeld = Keybinds.PUSH_TO_TALK.isDown() && client.screen == null;
+            voice.setTransmitting(pttHeld || hotMicOn);
         });
 
         LOG.info("Shadow Chat initialized");
@@ -196,6 +206,28 @@ public final class ShadowChatClient implements ClientModInitializer {
 
     /** True when we've opted in to voice on the current channel. */
     public boolean isInVoice() { return inVoice; }
+
+    /** True while the chat-screen Mic button is in its on (transmitting) state. */
+    public boolean isHotMicOn() { return hotMicOn; }
+
+    /**
+     * Toggle the hot-mic state from the chat screen's Mic button. If
+     * we're not already opted-in to voice, the toggle opt-ins first
+     * so the very first frame actually reaches the relay. Auto-leaves
+     * voice is NOT done on toggle-off — the user might still want
+     * incoming voice from others.
+     */
+    public void toggleHotMic() {
+        boolean turningOn = !hotMicOn;
+        if (turningOn && !inVoice && relay.currentChannel() != null) {
+            // Opt-in to voice first; otherwise our frames bounce off
+            // the relay's inVoice-receivers gate.
+            relay.joinVoice();
+            inVoice = true;
+            modConfig.setAutoJoinVoice(true);
+        }
+        hotMicOn = turningOn;
+    }
 
     /**
      * Flip the voice opt-in state for the current connection. Sends

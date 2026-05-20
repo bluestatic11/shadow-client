@@ -43,7 +43,7 @@ pub const AUTH_FILENAME: &str = "shadow-chat-auth.json";
 /// the URL will resolve and the auto-installer will pull it on the next
 /// setup pass.
 pub const MOD_JAR_URL: &str =
-    "https://github.com/bluestatic11/shadow-client/releases/download/chat-mod-v0.1.12/shadow-chat-0.1.12.jar";
+    "https://github.com/bluestatic11/shadow-client/releases/download/chat-mod-v0.1.13/shadow-chat-0.1.13.jar";
 
 /// MC versions the mod is currently built for. The auto-installer scopes
 /// the entry to these versions only — older / unsupported versions skip

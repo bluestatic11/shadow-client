@@ -1172,70 +1172,90 @@ async fn install_update(
         let _ = std::fs::set_permissions(&dest, perms);
     }
 
-    // v0.3.34: rewrote the previous batch-script approach as an inline
-    // `cmd /C` chain — same shape as v0.3.32 which compiled cleanly,
-    // just with stronger silence flags + a taskkill prelude.
+    // v0.3.64: dropped the `cmd /C` chain because Windows still
+    // occasionally flashes a console window with it even when
+    // CREATE_NO_WINDOW is set on the spawn. VBScript via wscript.exe
+    // is silent by design — no console can possibly appear because
+    // wscript is a Windows GUI subsystem host, not a console host.
     //
-    // Silence chain on Windows:
-    //   1. `taskkill /F /IM "<exe>" /T` — kill our own process group +
-    //      any WebView2 children that survive Tauri's app.exit(). This
-    //      releases the .exe lock NSIS would otherwise trip on.
-    //   2. `timeout /t 3` — give the OS time to fully release the lock.
-    //   3. `"<installer>" /S /D=<install_dir>` — NSIS silent flag PLUS
-    //      install-dir override. Both are required; /S alone leaves the
-    //      "choose install location" page that Tauri's NSIS template
-    //      renders even in silent mode.
-    //   4. `timeout /t 2` — let NSIS finish flushing files.
-    //   5. `start "" "<launcher>"` — restart the new launcher detached.
-    //
-    // No .bat file, no `?` inside a typed block — those caused the
-    // v0.3.33 Windows build to fail in CI. Errors get surfaced through
-    // `spawn_result.map_err(...)?` at the bottom of the function only.
+    // The script we write does the same five steps the old cmd chain
+    // did, just with WshShell.Run + WScript.Sleep instead of taskkill /
+    // timeout / start. Run's third arg (bWaitOnReturn=True) blocks
+    // until each step finishes so the installer doesn't race the
+    // launcher relaunch. Window-style 0 (hidden) suppresses any
+    // child consoles too.
     let current_exe = std::env::current_exe().ok();
 
     let spawn_result: std::io::Result<std::process::Child> = {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            // DETACHED_PROCESS (0x8) | CREATE_NEW_PROCESS_GROUP (0x200)
-            //                        | CREATE_NO_WINDOW (0x08000000)
+            // CREATE_NO_WINDOW belt + DETACHED_PROCESS suspenders so
+            // wscript itself can't inherit a parent console either.
             const CREATE_FLAGS: u32 = 0x00000008 | 0x00000200 | 0x08000000;
 
-            if let Some(launcher_exe) = current_exe.as_ref() {
-                let install_dir = launcher_exe
-                    .parent()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default();
-                let exe_name = launcher_exe
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "Shadow Client.exe".to_string());
-                // /D= MUST be the LAST arg to the installer (no quotes —
-                // NSIS reads everything after /D= verbatim to EOL).
-                let cmd_line = format!(
-                    r#"taskkill /F /IM "{exe}" /T >nul 2>&1 & timeout /t 3 /nobreak >nul & "{installer}" /S /D={dir} & timeout /t 2 /nobreak >nul & start "" "{launcher}""#,
-                    exe = exe_name,
-                    installer = dest.display(),
-                    dir = install_dir,
-                    launcher = launcher_exe.display(),
-                );
-                std::process::Command::new("cmd")
-                    .args(["/C", &cmd_line])
-                    .creation_flags(CREATE_FLAGS)
-                    .spawn()
-            } else {
-                // Couldn't resolve our own .exe path — best effort:
-                // install silently, skip relaunch. The user reopens
-                // the launcher manually.
-                let cmd_line = format!(
-                    r#"timeout /t 2 /nobreak >nul & "{}" /S"#,
-                    dest.display(),
-                );
-                std::process::Command::new("cmd")
-                    .args(["/C", &cmd_line])
-                    .creation_flags(CREATE_FLAGS)
-                    .spawn()
+            // Helper: wrap a raw command line in a VBScript string
+            // literal. VBScript escapes a literal `"` by doubling it
+            // (no backslash escape exists), and the whole literal is
+            // delimited by `"`. So `cmd "foo"` → `"cmd ""foo"""`.
+            fn vbs_literal(s: &str) -> String {
+                format!("\"{}\"", s.replace('"', "\"\""))
             }
+
+            let installer = dest.display().to_string();
+            let exe_basename = current_exe
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Shadow Client.exe".to_string());
+            let install_dir = current_exe
+                .as_ref()
+                .and_then(|p| p.parent())
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+
+            // 1. taskkill — release the .exe lock NSIS would trip on.
+            let kill_raw = format!("taskkill /F /IM \"{}\" /T", exe_basename);
+            // 2. installer /S /D=<dir>. NSIS reads everything after
+            //    /D= verbatim to EOL, so it must be the LAST token and
+            //    cannot be quoted even if the path has spaces.
+            let install_raw = if !install_dir.is_empty() {
+                format!("\"{}\" /S /D={}", installer, install_dir)
+            } else {
+                format!("\"{}\" /S", installer)
+            };
+            // 3. Relaunch the new launcher detached (window-style 1 =
+            //    normal, wait=False so the VBS exits immediately).
+            let relaunch_line = match current_exe.as_ref() {
+                Some(exe) => format!(
+                    "sh.Run {}, 1, False\n",
+                    vbs_literal(&format!("\"{}\"", exe.display())),
+                ),
+                None => String::new(),
+            };
+
+            let vbs = format!(
+                "Set sh = CreateObject(\"WScript.Shell\")\n\
+                 On Error Resume Next\n\
+                 sh.Run {kill}, 0, True\n\
+                 WScript.Sleep 3000\n\
+                 sh.Run {install}, 0, True\n\
+                 WScript.Sleep 2000\n\
+                 {relaunch}",
+                kill = vbs_literal(&kill_raw),
+                install = vbs_literal(&install_raw),
+                relaunch = relaunch_line,
+            );
+
+            let vbs_path = temp_dir.join("shadow-update.vbs");
+            if let Err(e) = std::fs::write(&vbs_path, vbs) {
+                return Err(format!("writing {}: {e}", vbs_path.display()));
+            }
+
+            std::process::Command::new("wscript.exe")
+                .arg(&vbs_path)
+                .creation_flags(CREATE_FLAGS)
+                .spawn()
         }
         #[cfg(target_os = "macos")]
         {
@@ -1252,7 +1272,7 @@ async fn install_update(
     };
     spawn_result.map_err(|e| format!("running installer {}: {e}", dest.display()))?;
 
-    // Give the batch script a beat to start its initial taskkill before
+    // Give the VBScript a beat to start its initial taskkill before
     // we exit — taskkill is gentler if we cooperate by exiting first,
     // and the script's own 3 s wait handles the file-lock release.
     tokio::time::sleep(Duration::from_millis(800)).await;

@@ -614,6 +614,26 @@ fn list_local_mc_servers() -> Vec<mc_servers::McServerEntry> {
     mc_servers::collect_all(&game_dir).unwrap_or_default()
 }
 
+/// Write a one-shot IPC command file the running mod will pick up on
+/// its next tick. Used by the chat-hint pill and friend rows so a
+/// click can ask the mod to (e.g.) open chat as soon as the world
+/// finishes loading. The file is written into the profile's working
+/// dir (== mod's Fabric game dir).
+///
+/// `version` is the version-id whose profile dir we write into; we
+/// fall back to the launcher's last-used profile if omitted, and to
+/// the legacy global game_dir if neither resolves.
+#[tauri::command]
+fn signal_mod(action: String, target: Option<String>, version: Option<String>) -> Result<(), String> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let profile = version.or(state.last_used);
+    let (profile_dir, _) = setup::resolve_dirs(&here, profile.as_deref());
+    shadow_chat::write_command_file(&profile_dir, &action, target.as_deref())
+        .map_err(|e| format!("couldn't write command file: {e:#}"))
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct InstalledState {
     pub mc_version: Option<String>,
@@ -1371,6 +1391,7 @@ pub fn run() {
             presence_query,
             ping_minecraft_server,
             list_local_mc_servers,
+            signal_mod,
             read_cosmetics,
             save_cosmetics,
         ])

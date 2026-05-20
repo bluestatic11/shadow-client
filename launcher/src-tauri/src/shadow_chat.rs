@@ -38,12 +38,17 @@ pub const DEFAULT_RELAY_URL: &str = "wss://shadow-chat-relay.edisongushf.workers
 /// The mod looks for this exact name relative to its run dir.
 pub const AUTH_FILENAME: &str = "shadow-chat-auth.json";
 
+/// IPC drop-file the launcher writes to signal the mod to do something
+/// on its next tick. Mod polls for it, executes, deletes. JSON shape:
+/// `{ "action": "open-chat" | "open-chat-with", "target": "<username>?" }`.
+pub const COMMAND_FILENAME: &str = "shadow-chat-command.json";
+
 /// Placeholder GitHub Release URL for the mod jar. The mod is being built
 /// in a sibling task and this release does not exist yet — once it ships
 /// the URL will resolve and the auto-installer will pull it on the next
 /// setup pass.
 pub const MOD_JAR_URL: &str =
-    "https://github.com/bluestatic11/shadow-client/releases/download/chat-mod-v0.1.13/shadow-chat-0.1.13.jar";
+    "https://github.com/bluestatic11/shadow-client/releases/download/chat-mod-v0.1.14/shadow-chat-0.1.14.jar";
 
 /// MC versions the mod is currently built for. The auto-installer scopes
 /// the entry to these versions only — older / unsupported versions skip
@@ -67,6 +72,37 @@ pub fn relay_url() -> String {
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_RELAY_URL.to_string())
+}
+
+/// Write an IPC command file the mod will pick up on its next poll.
+/// Action is one of "open-chat" or "open-chat-with"; target is the
+/// friend username when relevant (None otherwise). Writes are best
+/// effort — the caller should treat a None result as "mod might not
+/// see the signal" and gracefully degrade.
+pub fn write_command_file(profile_dir: &Path, action: &str, target: Option<&str>) -> Result<()> {
+    std::fs::create_dir_all(profile_dir)
+        .with_context(|| format!("creating {}", profile_dir.display()))?;
+    let mut obj = serde_json::Map::new();
+    obj.insert("action".into(), serde_json::Value::String(action.to_string()));
+    if let Some(t) = target {
+        obj.insert("target".into(), serde_json::Value::String(t.to_string()));
+    }
+    // Include a timestamp so a stale file from a crashed prior session
+    // can be detected by the mod and dropped instead of acted on.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    obj.insert("created_at_ms".into(), serde_json::Value::Number(now_ms.into()));
+    let body = serde_json::to_string_pretty(&serde_json::Value::Object(obj))
+        .context("serializing shadow-chat-command.json")?;
+    let dest = profile_dir.join(COMMAND_FILENAME);
+    let tmp = dest.with_extension("json.tmp");
+    std::fs::write(&tmp, body)
+        .with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, &dest)
+        .with_context(|| format!("renaming {} into place", dest.display()))?;
+    Ok(())
 }
 
 /// Write `shadow-chat-auth.json` into `profile_dir`. Errors are returned

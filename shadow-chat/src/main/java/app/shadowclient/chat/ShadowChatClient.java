@@ -2,6 +2,7 @@ package app.shadowclient.chat;
 
 import app.shadowclient.chat.config.AuthConfig;
 import app.shadowclient.chat.config.ModConfig;
+import app.shadowclient.chat.ipc.CommandFile;
 import app.shadowclient.chat.relay.Messages;
 import app.shadowclient.chat.relay.RelayClient;
 import app.shadowclient.chat.ui.ChatOverlay;
@@ -93,6 +94,11 @@ public final class ShadowChatClient implements ClientModInitializer {
         this.overlay.register();
 
         Keybinds.register();
+
+        // IPC drop-file watcher — lets the launcher signal us to (e.g.)
+        // open the chat screen automatically on world load. See
+        // CommandFile for the JSON schema.
+        new CommandFile().register();
 
         this.relay = new RelayClient(auth);
         // Voice runs alongside text on the same WebSocket. Initialized

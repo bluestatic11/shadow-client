@@ -589,11 +589,13 @@ if (chatHintPill) {
       await doSignIn();
       return;
     }
-    // Signed-in path: pill is now a one-click launcher for MC. The
-    // user can then press `;` once in-world to open the Discord-style
-    // chat screen. (We don't currently signal the mod to auto-open it
-    // from the launcher — different process, no IPC.)
-    setStatus('Launching Minecraft — open chat in-game with ;', 'working');
+    // Signed-in path: pill launches MC and signals the mod to pop
+    // the chat screen open as soon as the world loads — the
+    // shadow-chat-command.json IPC file gets written into the
+    // profile dir before launch, the mod polls + executes + deletes.
+    setStatus('Launching Minecraft — chat opens automatically', 'working');
+    try { await invoke('signal_mod', { action: 'open-chat', target: null, version: getPickedVersion() }); }
+    catch (e) { console.warn('[shadow] signal_mod open-chat failed:', e); }
     await playFlow();
   };
   chatHintPill.addEventListener('click', trigger);
@@ -956,14 +958,20 @@ function buildFriendRow(f) {
   });
   row.appendChild(remove);
 
-  // Click anywhere else on the row → launch MC. The user can then
-  // open the fullscreen chat in-game with `;` and either say hi in the
-  // server channel or /group invite this friend for a private room.
-  // (We don't have launcher↔mod IPC yet so we can't auto-target the
-  // friend; this just gets the user to chat as quickly as possible.)
+  // Click anywhere else on the row → write an IPC signal naming
+  // this friend, then launch MC. The mod opens the chat screen on
+  // world load and shows a system line pointing at the target so
+  // the user knows who they came in to chat with.
   row.addEventListener('click', async () => {
     if (busy) return;
-    setStatus(`Launching Minecraft — open chat (;) and find ${f.username}`, 'working');
+    setStatus(`Launching Minecraft — chat will open targeting ${f.username}`, 'working');
+    try {
+      await invoke('signal_mod', {
+        action: 'open-chat-with',
+        target: f.username,
+        version: getPickedVersion(),
+      });
+    } catch (e) { console.warn('[shadow] signal_mod open-chat-with failed:', e); }
     await playFlow();
   });
   return row;

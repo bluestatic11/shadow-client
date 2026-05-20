@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720"
+     font-family="'Segoe UI', system-ui, sans-serif" font-size="13">
+  <!-- Shadow Chat fullscreen overlay mockup, Discord-style layout.
+       Replaces the bottom-left corner panel with a full-screen take-
+       over when the user presses the chat hotkey. Mirrors the layout
+       of a Discord text channel:
+         - left rail: server icons (servers the user is on)
+         - channel sidebar: channel list grouped by category
+         - top header: channel name + description + search + utils
+         - main area: messages flow vertically, full width
+         - voice-strip dock at bottom-left
+         - input field across the bottom with Coords + emoji buttons -->
+
+  <defs>
+    <!-- Steve-ish face for voice / user avatars -->
+    <symbol id="face" viewBox="0 0 24 24">
+      <rect width="24" height="24" fill="#c97e58"/>
+      <rect width="24" height="6" fill="#2c1a0e"/>
+      <rect x="6" y="10" width="4" height="4" fill="#fff"/>
+      <rect x="14" y="10" width="4" height="4" fill="#fff"/>
+      <rect x="7" y="11" width="2" height="2" fill="#3a5a9e"/>
+      <rect x="15" y="11" width="2" height="2" fill="#3a5a9e"/>
+      <rect x="8" y="17" width="8" height="2" fill="#7a4a30"/>
+    </symbol>
+    <radialGradient id="talkingGlow" cx="50%" cy="50%" r="60%">
+      <stop offset="50%" stop-color="#ff4040" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#ff4040" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ════════════ Discord-style fullscreen overlay ════════════ -->
+
+  <!-- Full-canvas background — matches the launcher's darkest tone so
+       the empty SVG canvas can't bleed white through any gap. -->
+  <rect x="0" y="0" width="1280" height="720" fill="#0a0c12"/>
+
+  <!-- ────── Server rail (leftmost vertical column, 64px) ────── -->
+  <rect x="0" y="0" width="64" height="720" fill="#0a0c12"/>
+  <!-- Active server pill (Shadow Chat) -->
+  <g transform="translate(0,12)">
+    <rect x="0" y="0" width="4" height="42" rx="2" fill="#fff"/>
+    <rect x="14" y="3" width="42" height="42" rx="14" fill="#dc2030"/>
+    <text x="35" y="30" fill="#fff" font-size="20" font-weight="800" text-anchor="middle">S</text>
+  </g>
+  <!-- Other server icons -->
+  <g transform="translate(14,66)">
+    <rect width="42" height="42" rx="21" fill="#5865f2"/>
+    <text x="21" y="28" fill="#fff" font-size="16" text-anchor="middle">H</text>
+  </g>
+  <g transform="translate(14,118)">
+    <rect width="42" height="42" rx="21" fill="#2b2d31"/>
+    <text x="21" y="28" fill="#b5bac1" font-size="16" text-anchor="middle">M</text>
+  </g>
+  <g transform="translate(14,170)">
+    <rect width="42" height="42" rx="21" fill="#2b2d31"/>
+    <text x="21" y="28" fill="#b5bac1" font-size="16" text-anchor="middle">2b</text>
+  </g>
+  <!-- Add-server button -->
+  <g transform="translate(14,228)">
+    <rect width="42" height="42" rx="21" fill="#2b2d31"/>
+    <text x="21" y="30" fill="#23a559" font-size="22" text-anchor="middle">+</text>
+  </g>
+
+  <!-- ────── Channel sidebar (240px wide, x=64) ────── -->
+  <rect x="64" y="0" width="240" height="720" fill="#141821"/>
+  <!-- Server header -->
+  <g>
+    <rect x="64" y="0" width="240" height="48" fill="#141821"/>
+    <text x="78" y="30" fill="#fff" font-weight="700" font-size="14">SHADOW CHAT</text>
+    <text x="282" y="28" fill="#b5bac1" font-size="16">▾</text>
+  </g>
+  <line x1="64" y1="48" x2="304" y2="48" stroke="#0a0c12" stroke-width="1"/>
+
+  <!-- Category 1: SERVER (auto-channel) -->
+  <text x="80" y="74" fill="#949ba4" font-size="11" font-weight="700" letter-spacing="0.5">▾ SERVER</text>
+  <!-- Active channel: server:hypixel.net (renders highlighted) -->
+  <rect x="74" y="84" width="220" height="28" rx="4" fill="#1c2230"/>
+  <text x="92" y="103" fill="#ecedf2" font-size="14"># hypixel.net</text>
+  <text x="270" y="100" fill="#fff" font-size="10" font-weight="800">●</text>
+
+  <!-- Category 2: GROUPS -->
+  <text x="80" y="138" fill="#949ba4" font-size="11" font-weight="700" letter-spacing="0.5">▾ GROUPS</text>
+  <g transform="translate(74,148)">
+    <rect width="220" height="26" rx="4" fill="transparent"/>
+    <text x="18" y="18" fill="#949ba4" font-size="13"># my-squad</text>
+    <!-- unread badge -->
+    <rect x="186" y="6" width="28" height="14" rx="7" fill="#f23f42"/>
+    <text x="200" y="16" fill="#fff" font-size="10" font-weight="700" text-anchor="middle">3</text>
+  </g>
+  <g transform="translate(74,178)">
+    <rect width="220" height="26" rx="4" fill="transparent"/>
+    <text x="18" y="18" fill="#949ba4" font-size="13"># 2pm-raid</text>
+  </g>
+  <g transform="translate(74,208)">
+    <rect width="220" height="26" rx="4" fill="transparent"/>
+    <text x="18" y="18" fill="#949ba4" font-size="13"># building-team</text>
+  </g>
+  <!-- Create group -->
+  <g transform="translate(74,238)">
+    <text x="18" y="18" fill="#23a559" font-size="13">+ create group</text>
+  </g>
+
+  <!-- Category 3: VOICE -->
+  <text x="80" y="290" fill="#949ba4" font-size="11" font-weight="700" letter-spacing="0.5">▾ VOICE</text>
+  <g transform="translate(74,300)">
+    <rect width="220" height="26" rx="4" fill="transparent"/>
+    <text x="18" y="18" fill="#23a559" font-size="13">🔊 hypixel.net  4</text>
+  </g>
+  <!-- People in voice (indented under voice channel) -->
+  <g transform="translate(92,328)">
+    <g>
+      <circle cx="10" cy="10" r="10" fill="#3aff60" opacity="0.2"/>
+      <clipPath id="vfa1"><circle cx="10" cy="10" r="8"/></clipPath>
+      <g clip-path="url(#vfa1)"><use href="#face" x="-2" y="-2" width="24" height="24"/></g>
+      <text x="28" y="14" fill="#dbdee1" font-size="12">Notch</text>
+      <text x="190" y="14" fill="#f23f42" font-size="10">🎤</text>
+    </g>
+    <g transform="translate(0,22)">
+      <clipPath id="vfa2"><circle cx="10" cy="10" r="8"/></clipPath>
+      <g clip-path="url(#vfa2)"><use href="#face" x="-2" y="-2" width="24" height="24"/></g>
+      <text x="28" y="14" fill="#dbdee1" font-size="12">jeb_</text>
+    </g>
+    <g transform="translate(0,44)">
+      <clipPath id="vfa3"><circle cx="10" cy="10" r="8"/></clipPath>
+      <g clip-path="url(#vfa3)"><use href="#face" x="-2" y="-2" width="24" height="24"/></g>
+      <text x="28" y="14" fill="#dbdee1" font-size="12">dinnerbone</text>
+    </g>
+    <g transform="translate(0,66)">
+      <circle cx="10" cy="10" r="10" fill="#3aff60" opacity="0.2"/>
+      <clipPath id="vfa4"><circle cx="10" cy="10" r="8"/></clipPath>
+      <g clip-path="url(#vfa4)"><use href="#face" x="-2" y="-2" width="24" height="24"/></g>
+      <text x="28" y="14" fill="#fff" font-size="12" font-weight="600">Edisongu (you)</text>
+      <text x="190" y="14" fill="#f23f42" font-size="10">🎤</text>
+    </g>
+  </g>
+
+  <!-- ────── User-info bar (bottom of channel sidebar) ────── -->
+  <rect x="64" y="668" width="240" height="52" fill="#0a0c12"/>
+  <g transform="translate(72,676)">
+    <clipPath id="meav"><circle cx="18" cy="18" r="18"/></clipPath>
+    <g clip-path="url(#meav)"><use href="#face" x="0" y="0" width="36" height="36"/></g>
+    <circle cx="34" cy="32" r="6" fill="#23a559" stroke="#232428" stroke-width="3"/>
+  </g>
+  <g transform="translate(118,684)">
+    <text x="0" y="14" fill="#fff" font-size="13" font-weight="600">Edisongu</text>
+    <text x="0" y="29" fill="#b5bac1" font-size="11">on hypixel.net</text>
+  </g>
+  <!-- Mute / Deafen / Settings buttons -->
+  <g transform="translate(228,690)" fill="#b5bac1" font-size="14">
+    <text x="0" y="14">🎤</text>
+    <text x="22" y="14">🎧</text>
+    <text x="44" y="14">⚙</text>
+  </g>
+
+  <!-- ────── Main area background — explicit dark fill so the empty
+       SVG canvas behind the message list isn't a blinding white. -->
+  <rect x="304" y="0" width="976" height="720" fill="#0e1119"/>
+
+  <!-- ────── Channel header (top bar) ────── -->
+  <rect x="304" y="0" width="976" height="48" fill="#141821"/>
+  <line x1="304" y1="48" x2="1280" y2="48" stroke="#0a0c12" stroke-width="1"/>
+  <text x="316" y="30" fill="#949ba4" font-size="20">#</text>
+  <text x="334" y="30" fill="#fff" font-size="16" font-weight="700">hypixel.net</text>
+  <line x1="416" y1="14" x2="416" y2="34" stroke="#3f4147" stroke-width="1"/>
+  <text x="426" y="30" fill="#8a8c98" font-size="13">5 online</text>
+
+  <!-- Top-right utility icons -->
+  <g transform="translate(1010,16)" fill="#b5bac1" font-size="16">
+    <text x="0" y="16">🧵</text>
+    <text x="28" y="16">🔔</text>
+    <text x="56" y="16">📌</text>
+    <text x="84" y="16">👥</text>
+  </g>
+  <!-- Search bar -->
+  <rect x="1116" y="12" width="150" height="24" rx="4" fill="#0a0c12"/>
+  <text x="1124" y="29" fill="#5c5e66" font-size="12">Search</text>
+
+  <!-- ────── Message list ────── -->
+  <g transform="translate(304,60)" font-size="13">
+    <!-- Each row: timestamp · colored name · » · text. No rank prefixes;
+         the relay just gives us the player's display name. Name color
+         is hash-derived per speaker so different people stand out. -->
+    <text x="16" y="22" fill="#fff"><tspan fill="#5c5e66">14:32:10</tspan>  <tspan fill="#7ab9f7" font-weight="600">Notch</tspan>  <tspan fill="#ecedf2">» anyone want to head to the stronghold</tspan></text>
+    <text x="16" y="44" fill="#fff"><tspan fill="#5c5e66">14:32:14</tspan>  <tspan fill="#f9b86b" font-weight="600">jeb_</tspan>  <tspan fill="#ecedf2">» yeah just grabbing pearls</tspan></text>
+    <text x="16" y="66" fill="#fff"><tspan fill="#5c5e66">14:32:20</tspan>  <tspan fill="#a7e572" font-weight="600">dinnerbone</tspan>  <tspan fill="#ecedf2">» found one already, sending coords</tspan></text>
+
+    <!-- Coords share message — highlighted in brand blue. The mod
+         draws the same blue tint when a message looks like coords. -->
+    <g transform="translate(16,80)">
+      <rect width="500" height="22" rx="3" fill="rgba(45,90,140,0.30)"/>
+      <text x="10" y="16" font-size="13"><tspan fill="#5c5e66">14:32:24</tspan>  <tspan fill="#a7e572" font-weight="600">dinnerbone</tspan>  <tspan fill="#7AB9F7">» X: -184  Y: 64  Z: 2310</tspan></text>
+    </g>
+
+    <text x="16" y="124" fill="#fff"><tspan fill="#5c5e66">14:32:30</tspan>  <tspan fill="#7ab9f7" font-weight="600">Notch</tspan>  <tspan fill="#ecedf2">» on my way</tspan></text>
+    <text x="16" y="146" fill="#fff"><tspan fill="#5c5e66">14:32:38</tspan>  <tspan fill="#f9b86b" font-weight="600">jeb_</tspan>  <tspan fill="#ecedf2">» same, give me 2</tspan></text>
+
+    <!-- Embedded "user joined VC" system card -->
+    <g transform="translate(16,160)">
+      <rect width="280" height="24" rx="4" fill="#141821"/>
+      <text x="14" y="16" fill="#8a8c98" font-size="12" font-style="italic">jeb_ joined voice</text>
+    </g>
+
+    <text x="16" y="204" fill="#fff"><tspan fill="#5c5e66">14:33:02</tspan>  <tspan fill="#a7e572" font-weight="600">dinnerbone</tspan>  <tspan fill="#ecedf2">» got it, head down the second corridor</tspan></text>
+    <text x="16" y="226" fill="#fff"><tspan fill="#5c5e66">14:33:11</tspan>  <tspan fill="#7ab9f7" font-weight="600">Notch</tspan>  <tspan fill="#ecedf2">» portal is lit, jumping in</tspan></text>
+
+    <!-- Day separator with "TODAY" label sitting on the rule -->
+    <line x1="0" y1="258" x2="976" y2="258" stroke="#2a2f3d" stroke-width="1"/>
+    <rect x="448" y="250" width="76" height="14" fill="#0e1119"/>
+    <text x="486" y="261" fill="#8a8c98" font-size="10" text-anchor="middle" font-weight="700">TODAY</text>
+
+    <text x="16" y="288" fill="#fff"><tspan fill="#5c5e66">14:34:02</tspan>  <tspan fill="#ff6b9d" font-weight="600">Edisongu</tspan>  <tspan fill="#ecedf2">» coming with diamonds &amp; arrows</tspan></text>
+    <text x="16" y="310" fill="#8a8c98" font-style="italic" font-size="11">Edisongu is typing…</text>
+  </g>
+
+  <!-- ────── Message input row ────── -->
+  <g transform="translate(304,640)">
+    <!-- Input pill background — sunken below the main area. -->
+    <rect x="16" y="0" width="944" height="44" rx="8" fill="#141821"/>
+    <!-- "+" attachment button -->
+    <circle cx="36" cy="22" r="11" fill="#1c2230"/>
+    <text x="36" y="26" fill="#b5bac1" font-size="14" text-anchor="middle" font-weight="700">+</text>
+    <!-- input placeholder text -->
+    <text x="56" y="28" fill="#8a8c98" font-size="13">Message #hypixel.net …</text>
+    <!-- right-side action buttons inside the pill -->
+    <g transform="translate(800,8)" fill="#b5bac1" font-size="13">
+      <rect x="0" y="0" width="60" height="28" rx="4" fill="#2D5A8C"/>
+      <text x="30" y="18" fill="#fff" text-anchor="middle" font-weight="700">Coords</text>
+    </g>
+  </g>
+
+  <!-- ────── caption ────── -->
+  <g>
+    <rect x="304" y="56" width="976" height="0" fill="#000" opacity="0"/>
+  </g>
+</svg>

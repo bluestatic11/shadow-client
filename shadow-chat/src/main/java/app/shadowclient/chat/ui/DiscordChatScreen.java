@@ -50,21 +50,24 @@ public final class DiscordChatScreen extends Screen {
     private static final int PILL_SIZE = 44;
 
     // ---- Colors (ARGB) ----
+    // Sourced from the launcher's CSS palette so the in-game chat
+    // matches the launcher's dark theme. --bg = 0x0a0c12, --bg-2 = 0x141821,
+    // --bg-3 = 0x1c2230, --line = 0x2a2f3d, --text = 0xecedf2.
     private static final int FILM = 0xE0000000;
-    private static final int SERVER_RAIL_BG = 0xFF15171A;
-    private static final int SIDEBAR_BG = 0xFF1F2125;
-    private static final int MAIN_BG = 0xFF2A2C32;
-    private static final int HEADER_BG = 0xFF34373F;
-    private static final int INPUT_BG = 0xFF1F2125;
-    private static final int CHIP_ACTIVE = 0xFF404249;
-    private static final int CHIP_HOVER = 0xFF323439;
-    private static final int TEXT_DIM = 0xFF8E9197;
-    private static final int TEXT = 0xFFDADBDE;
-    private static final int TEXT_BRIGHT = 0xFFFFFFFF;
+    private static final int SERVER_RAIL_BG = 0xFF0A0C12;
+    private static final int SIDEBAR_BG = 0xFF141821;
+    private static final int MAIN_BG = 0xFF0E1119;
+    private static final int HEADER_BG = 0xFF141821;
+    private static final int INPUT_BG = 0xFF141821;
+    private static final int CHIP_ACTIVE = 0xFF1C2230;
+    private static final int CHIP_HOVER = 0xFF181C25;
+    private static final int TEXT_DIM = 0xFF8A8C98;
+    private static final int TEXT = 0xFFB4B6BF;
+    private static final int TEXT_BRIGHT = 0xFFECEDF2;
     private static final int ACCENT = 0xFF7AA8E0;
     private static final int RED_PILL = 0xFFEC4747;
-    private static final int GREEN = 0xFF4ADE80;
-    private static final int DIVIDER = 0xFF34373F;
+    private static final int GREEN = 0xFF22DD55;
+    private static final int DIVIDER = 0xFF2A2F3D;
     private static final int COORDS_HIGHLIGHT = 0x402D5A8C;
 
     // Stable colors keyed off speaker-name hash so different people stand out.

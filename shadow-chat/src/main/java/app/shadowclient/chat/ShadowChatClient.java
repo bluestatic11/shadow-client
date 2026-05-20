@@ -427,11 +427,14 @@ public final class ShadowChatClient implements ClientModInitializer {
     // ---------------------------------------------------------------- slash commands
 
     /**
-     * Slash commands handled entirely on the client:
+     * Slash commands handled entirely on the client.
      * <ul>
+     *   <li>{@code /help} — print this list.</li>
      *   <li>{@code /group create <label>} — new group with random UUID; switches to it.</li>
-     *   <li>{@code /group join <uuid>} — save & switch to an existing group.</li>
+     *   <li>{@code /group join <uuid>} — save and switch to an existing group.</li>
      *   <li>{@code /group leave} — leave the currently-active group.</li>
+     *   <li>{@code /voice join} / {@code /voice leave} — toggle voice opt-in via keyboard.</li>
+     *   <li>{@code /coords} — send your X/Y/Z to the active channel.</li>
      *   <li>{@code /whoami} — print uuid + name (debug aid).</li>
      * </ul>
      */
@@ -440,7 +443,9 @@ public final class ShadowChatClient implements ClientModInitializer {
         if (parts.length == 0) return;
         String cmd = parts[0].toLowerCase(Locale.ROOT);
         switch (cmd) {
+            case "/help" -> printHelp();
             case "/group" -> handleGroupCommand(parts, line);
+            case "/voice" -> handleVoiceCommand(parts);
             case "/whoami" -> {
                 String msg = auth.isUsable()
                         ? auth.name() + " (" + auth.uuid() + ")"
@@ -449,16 +454,45 @@ public final class ShadowChatClient implements ClientModInitializer {
             }
             case "/coords" -> handleCoordsCommand();
             default -> uiState.append(uiState.activeChannel(),
-                    InputState.DisplayLine.error("Unknown command: " + parts[0]));
+                    InputState.DisplayLine.error("Unknown command: " + parts[0] + " — try /help"));
+        }
+    }
+
+    private void printHelp() {
+        String[] lines = {
+                "Shadow Chat commands:",
+                "/group create <label> — make a private group; share the ID it prints",
+                "/group join <uuid>    — join an existing group",
+                "/group leave          — leave the current group",
+                "/voice join | leave   — opt in / out of voice on this channel",
+                "/coords               — paste your X/Y/Z into chat",
+                "/whoami               — show your UUID and display name",
+                "/help                 — show this list",
+        };
+        for (String l : lines) {
+            uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(l));
+        }
+    }
+
+    private void handleVoiceCommand(String[] parts) {
+        if (parts.length < 2) {
+            uiState.append(uiState.activeChannel(), InputState.DisplayLine.error(
+                    "Usage: /voice join | /voice leave"));
+            return;
+        }
+        String sub = parts[1].toLowerCase(Locale.ROOT);
+        switch (sub) {
+            case "join" -> { if (!inVoice) toggleVoiceOptIn(); }
+            case "leave" -> { if (inVoice) toggleVoiceOptIn(); }
+            default -> uiState.append(uiState.activeChannel(), InputState.DisplayLine.error(
+                    "Unknown /voice subcommand: " + parts[1]));
         }
     }
 
     /**
      * Send the player's current X/Y/Z to the active channel as a chat
-     * message. Triggered by typing {@code /coords} in the chat input.
-     * Picked a slash command over a click-target for v0.1.2 because the
-     * overlay doesn't yet have button hit-test infrastructure; the UI
-     * button comes in a follow-up release.
+     * message. Triggered by typing {@code /coords} (keyboard) or by
+     * clicking the Coords chip in the input row (mouse, since v0.1.3).
      */
     private void handleCoordsCommand() {
         var coords = app.shadowclient.chat.cmd.CoordsHelper.currentCoords();

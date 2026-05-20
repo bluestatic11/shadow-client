@@ -53,6 +53,8 @@ public final class InputState {
     /** Backing buffer keyed by channel string. LinkedHashMap so iteration order is stable. */
     private final Map<String, Deque<DisplayLine>> linesByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
     private final Map<String, List<ServerEvent.User>> presenceByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
+    /** UUIDs of users opted-in to voice, keyed by channel. Populated by voice:roster pushes. */
+    private final Map<String, List<String>> voiceRosterByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
 
     private volatile boolean overlayVisible = false;
     private volatile String activeChannel = "server";
@@ -90,10 +92,21 @@ public final class InputState {
         presenceByChannel.put(channel, users);
     }
 
+    /** Snapshot of who's opted in to voice on the given channel. */
+    public List<String> voiceRosterFor(String channel) {
+        List<String> r = voiceRosterByChannel.get(channel);
+        return r == null ? List.of() : new ArrayList<>(r);
+    }
+
+    public void setVoiceRoster(String channel, List<String> uuids) {
+        voiceRosterByChannel.put(channel, uuids);
+    }
+
     /** Clear all history for a channel — used when leaving a group. */
     public void clear(String channel) {
         linesByChannel.remove(channel);
         presenceByChannel.remove(channel);
+        voiceRosterByChannel.remove(channel);
     }
 
     public static String formatTimestamp(long ts) {

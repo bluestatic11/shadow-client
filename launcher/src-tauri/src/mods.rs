@@ -22,7 +22,7 @@ pub const MODRINTH: &str = "https://api.modrinth.com/v2";
 pub const DIRECT_URL_MODS: &[DirectMod] = &[
     DirectMod {
         slug: "shadow-chat",
-        filename: "shadow-chat-0.1.4.jar",
+        filename: "shadow-chat-0.1.5.jar",
         url: shadow_chat::MOD_JAR_URL,
         mc_versions: shadow_chat::SUPPORTED_MC_VERSIONS,
         critical: false,

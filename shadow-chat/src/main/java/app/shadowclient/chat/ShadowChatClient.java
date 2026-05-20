@@ -61,6 +61,13 @@ public final class ShadowChatClient implements ClientModInitializer {
     /** Last status line to show in the overlay banner (auth state, connection state, …). */
     private volatile String statusLine = "";
 
+    /**
+     * Whether we've sent {@code voice:join} on the current connection.
+     * Reset on every channel switch / disconnect — the relay forgets
+     * opt-in state when the socket closes.
+     */
+    private volatile boolean inVoice = false;
+
     @Override
     public void onInitializeClient() {
         instance = this;
@@ -130,6 +137,7 @@ public final class ShadowChatClient implements ClientModInitializer {
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             statusLine = "Disconnected from server";
+            inVoice = false;
             try { relay.disconnect(); } catch (Exception ignored) {}
         });
 
@@ -184,6 +192,34 @@ public final class ShadowChatClient implements ClientModInitializer {
         String c = deriveServerChannel(mc);
         if (c == null) return "";
         return c.startsWith("server:") ? c.substring("server:".length()) : c;
+    }
+
+    /** True when we've opted in to voice on the current channel. */
+    public boolean isInVoice() { return inVoice; }
+
+    /**
+     * Flip the voice opt-in state for the current connection. Sends
+     * {@code voice:join} or {@code voice:leave} depending on direction.
+     * No-op if not connected — the user gets a system-line nudge so
+     * they're not confused by silent failure.
+     */
+    public void toggleVoiceOptIn() {
+        if (relay.currentChannel() == null) {
+            uiState.append(uiState.activeChannel(),
+                    InputState.DisplayLine.system("Not connected — can't join voice yet"));
+            return;
+        }
+        if (inVoice) {
+            relay.leaveVoice();
+            inVoice = false;
+            uiState.append(uiState.activeChannel(),
+                    InputState.DisplayLine.system("Left voice"));
+        } else {
+            relay.joinVoice();
+            inVoice = true;
+            uiState.append(uiState.activeChannel(),
+                    InputState.DisplayLine.system("Joined voice — hold V to talk"));
+        }
     }
 
     /**
@@ -321,6 +357,8 @@ public final class ShadowChatClient implements ClientModInitializer {
 
         statusLine = "Connecting to " + wireChannel + "…";
         final String activeChannelKey = channelKey;
+        // The relay forgets voice opt-in on socket close — mirror that.
+        inVoice = false;
         // Channel changed → drop any decoder state for speakers from
         // the old channel so their voice doesn't bleed in.
         if (voice != null) voice.onChannelChange();
@@ -355,6 +393,8 @@ public final class ShadowChatClient implements ClientModInitializer {
                     } else if (event instanceof Messages.ServerEvent.ErrorMsg em) {
                         uiState.append(activeChannelKey,
                                 InputState.DisplayLine.error(em.message()));
+                    } else if (event instanceof Messages.ServerEvent.VoiceRoster vr) {
+                        uiState.setVoiceRoster(activeChannelKey, vr.uuids());
                     }
                     // Unknown events: silently dropped (forward-compat).
                 });

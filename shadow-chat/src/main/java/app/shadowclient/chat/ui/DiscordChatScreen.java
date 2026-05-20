@@ -87,6 +87,7 @@ public final class DiscordChatScreen extends Screen {
     private final List<ChannelHit> channelHits = new ArrayList<>();
     private int coordsBtnX1, coordsBtnY1, coordsBtnX2, coordsBtnY2;
     private int createGroupX1, createGroupY1, createGroupX2, createGroupY2;
+    private int voiceToggleX1, voiceToggleY1, voiceToggleX2, voiceToggleY2;
 
     public DiscordChatScreen(ChatOverlay legacyOverlay) {
         super(Component.literal("Shadow Chat"));
@@ -110,6 +111,7 @@ public final class DiscordChatScreen extends Screen {
         channelHits.clear();
         coordsBtnX2 = 0;
         createGroupX2 = 0;
+        voiceToggleX2 = 0;
 
         drawServerRail(gfx, 0, 0, SERVER_RAIL_W, this.height);
         drawSidebar(gfx, SERVER_RAIL_W, 0, SIDEBAR_W, this.height, mouseX, mouseY);
@@ -182,7 +184,9 @@ public final class DiscordChatScreen extends Screen {
         rowY = drawCategoryLabel(gfx, x, rowY, "VOICE");
         VoiceController vc = sc.voice();
         List<UUID> speakers = (vc != null) ? vc.playback().currentSpeakers() : List.of();
-        rowY = drawVoiceHeaderRow(gfx, x, rowY, w, "Voice " + speakers.size());
+        int rosterSize = st.voiceRosterFor(activeChannel).size();
+        rowY = drawVoiceToggleRow(gfx, x, rowY, w, sc.isInVoice(), rosterSize,
+                mouseX, mouseY);
         for (UUID id : speakers) {
             String name = sc.displayNameForUuid(id);
             rowY = drawSpeakerRow(gfx, x, rowY, w, name);
@@ -247,12 +251,31 @@ public final class DiscordChatScreen extends Screen {
         return y + CHAN_ROW_H;
     }
 
-    private int drawVoiceHeaderRow(GuiGraphics gfx, int x, int y, int w, String label) {
+    /**
+     * Render the Join/Leave Voice button. When opted-in we paint it
+     * green-ish; when out we paint it dim. Click hit-tested in
+     * {@link #mouseClicked}.
+     */
+    private int drawVoiceToggleRow(GuiGraphics gfx, int x, int y, int w,
+                                   boolean inVoice, int rosterSize,
+                                   int mouseX, int mouseY) {
         int rowX = x + 6;
-        gfx.drawString(this.font, "* " + label,
-                rowX + 8, y + (CHAN_ROW_H - this.font.lineHeight) / 2 + 1,
-                TEXT, false);
-        return y + CHAN_ROW_H;
+        int rowW = w - 12;
+        int btnH = CHAN_ROW_H + 4;
+        boolean hover = mouseX >= rowX && mouseX <= rowX + rowW
+                && mouseY >= y && mouseY <= y + btnH;
+        int bg = inVoice
+                ? (hover ? 0xFFC23A3A : RED_PILL)
+                : (hover ? 0xFF3C8C46 : 0xFF2A6638);
+        gfx.fill(rowX, y, rowX + rowW, y + btnH, bg);
+        String label = inVoice ? "Leave voice" : "Join voice";
+        if (rosterSize > 0) label = label + "  (" + rosterSize + " in)";
+        gfx.drawString(this.font, label,
+                rowX + 10, y + (btnH - this.font.lineHeight) / 2 + 1,
+                TEXT_BRIGHT, false);
+        voiceToggleX1 = rowX; voiceToggleY1 = y;
+        voiceToggleX2 = rowX + rowW; voiceToggleY2 = y + btnH;
+        return y + btnH;
     }
 
     private int drawSpeakerRow(GuiGraphics gfx, int x, int y, int w, String name) {
@@ -330,6 +353,13 @@ public final class DiscordChatScreen extends Screen {
         }
         gfx.fill(x, y + HEADER_H - 1, x + w, y + HEADER_H, DIVIDER);
 
+        // Empty state — replaces the input + log when the launcher hasn't
+        // written usable auth yet. Most first-time users will see this.
+        if (!sc.authConfig().isUsable()) {
+            drawSignInCard(gfx, x, y + HEADER_H, w, h - HEADER_H);
+            return;
+        }
+
         // ---- input row (bottom) ----
         drawInput(gfx, x, y + h - INPUT_H - 8, w, INPUT_H);
 
@@ -337,6 +367,36 @@ public final class DiscordChatScreen extends Screen {
         int logTop = y + HEADER_H + 4;
         int logBottom = y + h - INPUT_H - 12;
         drawMessages(gfx, x, logTop, w, logBottom - logTop, st, activeChannel);
+    }
+
+    /** Centered empty-state card: "Sign in via the launcher to chat". */
+    private void drawSignInCard(GuiGraphics gfx, int x, int y, int w, int h) {
+        int cardW = Math.min(420, w - 80);
+        int cardH = 150;
+        int cardX = x + (w - cardW) / 2;
+        int cardY = y + (h - cardH) / 2;
+        gfx.fill(cardX, cardY, cardX + cardW, cardY + cardH, SIDEBAR_BG);
+        // Brand-blue accent strip on the left edge.
+        gfx.fill(cardX, cardY, cardX + 4, cardY + cardH, ACCENT);
+
+        int textX = cardX + 24;
+        int lineY = cardY + 22;
+        gfx.drawString(this.font, "Sign in to chat", textX, lineY, TEXT_BRIGHT, false);
+        lineY += this.font.lineHeight + 10;
+        gfx.drawString(this.font, "Shadow Chat needs your Microsoft account",
+                textX, lineY, TEXT, false);
+        lineY += this.font.lineHeight + 4;
+        gfx.drawString(this.font, "to verify who you are when sending messages.",
+                textX, lineY, TEXT, false);
+        lineY += this.font.lineHeight + 12;
+        gfx.drawString(this.font, "1. Open the Shadow Client launcher",
+                textX, lineY, TEXT_DIM, false);
+        lineY += this.font.lineHeight + 2;
+        gfx.drawString(this.font, "2. Click Sign in with Microsoft",
+                textX, lineY, TEXT_DIM, false);
+        lineY += this.font.lineHeight + 2;
+        gfx.drawString(this.font, "3. Launch this profile again",
+                textX, lineY, TEXT_DIM, false);
     }
 
     private void drawMessages(GuiGraphics gfx, int x, int y, int w, int h,
@@ -524,6 +584,14 @@ public final class DiscordChatScreen extends Screen {
                 && mx >= createGroupX1 && mx <= createGroupX2
                 && my >= createGroupY1 && my <= createGroupY2) {
             ShadowChatClient.get().createGroupFromUi();
+            return true;
+        }
+
+        // Voice toggle button.
+        if (voiceToggleX2 > 0
+                && mx >= voiceToggleX1 && mx <= voiceToggleX2
+                && my >= voiceToggleY1 && my <= voiceToggleY2) {
+            ShadowChatClient.get().toggleVoiceOptIn();
             return true;
         }
 

@@ -34,6 +34,20 @@ public final class Messages {
         return o.toString();
     }
 
+    /** Announce "I'm in voice and want to hear other people in voice". */
+    public static String encodeVoiceJoin() {
+        JsonObject o = new JsonObject();
+        o.addProperty("op", "voice:join");
+        return o.toString();
+    }
+
+    /** Announce "I'm leaving voice — stop sending me other people's audio". */
+    public static String encodeVoiceLeave() {
+        JsonObject o = new JsonObject();
+        o.addProperty("op", "voice:leave");
+        return o.toString();
+    }
+
     // ---------- inbound (relay → client) ----------
 
     /** Sentinel for a parse failure or unknown op. */
@@ -44,6 +58,8 @@ public final class Messages {
         record ChatMessage(String fromUuid, String name, String text, long ts) implements ServerEvent {}
         record Presence(List<User> users) implements ServerEvent {}
         record ErrorMsg(String message) implements ServerEvent {}
+        /** List of UUIDs currently opted-in to voice on this channel. */
+        record VoiceRoster(List<String> uuids) implements ServerEvent {}
         final class Unknown implements ServerEvent { Unknown() {} }
 
         record User(String uuid, String name) {}
@@ -62,10 +78,11 @@ public final class Messages {
             if (!obj.has("op") || obj.get("op").isJsonNull()) return UNKNOWN;
             String op = obj.get("op").getAsString();
             return switch (op) {
-                case "msg"      -> decodeChatMessage(obj);
-                case "presence" -> decodePresence(obj);
-                case "error"    -> decodeError(obj);
-                default         -> UNKNOWN;
+                case "msg"          -> decodeChatMessage(obj);
+                case "presence"     -> decodePresence(obj);
+                case "error"        -> decodeError(obj);
+                case "voice:roster" -> decodeVoiceRoster(obj);
+                default             -> UNKNOWN;
             };
         } catch (Exception e) {
             return UNKNOWN;
@@ -98,6 +115,17 @@ public final class Messages {
 
     private static ServerEvent decodeError(JsonObject obj) {
         return new ServerEvent.ErrorMsg(stringOr(obj, "msg", "unknown error"));
+    }
+
+    private static ServerEvent decodeVoiceRoster(JsonObject obj) {
+        List<String> uuids = new ArrayList<>();
+        if (obj.has("uuids") && obj.get("uuids").isJsonArray()) {
+            JsonArray arr = obj.getAsJsonArray("uuids");
+            for (JsonElement el : arr) {
+                if (el.isJsonPrimitive()) uuids.add(el.getAsString());
+            }
+        }
+        return new ServerEvent.VoiceRoster(Collections.unmodifiableList(uuids));
     }
 
     private static String stringOr(JsonObject obj, String key, String fallback) {

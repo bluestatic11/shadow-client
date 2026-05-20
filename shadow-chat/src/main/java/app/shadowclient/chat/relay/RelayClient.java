@@ -154,6 +154,25 @@ public final class RelayClient {
     }
 
     /**
+     * Opt this connection in to voice. Until called, the relay won't
+     * fan out anyone else's voice frames to us (and ours don't reach
+     * anyone unless they've also opted in). Silently dropped if no
+     * connection is open.
+     */
+    public void joinVoice() {
+        Session s = current.get();
+        if (s == null || s.socket == null) return;
+        try { s.socket.sendText(Messages.encodeVoiceJoin(), true); } catch (Exception ignored) {}
+    }
+
+    /** Opposite of {@link #joinVoice} — leave the voice room without disconnecting. */
+    public void leaveVoice() {
+        Session s = current.get();
+        if (s == null || s.socket == null) return;
+        try { s.socket.sendText(Messages.encodeVoiceLeave(), true); } catch (Exception ignored) {}
+    }
+
+    /**
      * Send a binary voice frame on the active connection. Uplink wire
      * format is {@code [FRAME_VOICE][opus...]} — the relay verifies the
      * sender from the socket's auth and prepends the sender UUID before

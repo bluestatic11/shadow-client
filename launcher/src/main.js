@@ -1011,6 +1011,10 @@ function formatLauncher(id) {
     case 'atlauncher':    return 'ATLauncher';
     case 'curseforge':    return 'CurseForge';
     case 'multimc':       return 'MultiMC';
+    // Sentinel emitted by server-ping detection — we can prove the
+    // friend is on that server but the ping protocol doesn't reveal
+    // what launcher they used to get there.
+    case 'unknown':       return 'launcher unknown';
     default:              return id;
   }
 }
@@ -1018,7 +1022,7 @@ function formatLauncher(id) {
 function makeStatusLine(f) {
   if (f.status === 'playing') {
     const where = f.server ? ` · ${f.server}` : '';
-    const via = f.launcher ? ` · via ${formatLauncher(f.launcher)}` : '';
+    const via = f.launcher ? ` · ${formatLauncher(f.launcher)}` : '';
     return makeStatusLineRaw('playing', `Playing Minecraft${where}${via}`);
   }
   if (f.status === 'idle' || f.status === 'online' || f.status === 'in_menu') {
@@ -1028,7 +1032,7 @@ function makeStatusLine(f) {
   // Offline / unknown.
   const text = f.last_seen
     ? `Offline · ${formatRelativeTime(f.last_seen)}`
-    : 'Offline · needs Shadow Client to show as playing';
+    : 'Offline · add a server below to detect them on it';
   return makeStatusLineRaw('offline', text);
 }
 
@@ -1131,7 +1135,143 @@ setInterval(pollFriendPresence, 30_000);
 setTimeout(() => {
   publishPresence(mcRunning);
   pollFriendPresence();
+  pollTrackedServers();
 }, 2_000);
+
+// ───── Server-ping friend detection (cross-launcher) ──────────────
+// The presence relay only sees Shadow Client users. For friends on
+// other launchers (Lunar, Feather, Vanilla, etc.) we fall back to
+// Minecraft's standard Server List Ping protocol: for each server in
+// the user's tracked-servers list, we ping it every 90 s and check
+// if any friend usernames appear in the `players.sample` list. If so,
+// we mark them as playing on that server even though we have no
+// presence-relay data for them. Launcher field stays "unknown"
+// because the Server List Ping protocol doesn't reveal it (and no
+// non-Shadow-Client launcher publishes that information to us
+// anywhere we can reach).
+//
+// Tracked-servers list lives in localStorage so the user controls
+// what we ping. Default is empty; add via the input under the
+// friends panel.
+
+function loadTrackedServers() {
+  try {
+    const raw = localStorage.getItem('shadow.trackedServers');
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(s => typeof s === 'string' && s.trim());
+  } catch (_) { return []; }
+}
+
+function saveTrackedServers(servers) {
+  try {
+    localStorage.setItem('shadow.trackedServers',
+      JSON.stringify(servers.slice(0, 16)));  // hard cap so we don't ping forever
+  } catch (_) {}
+}
+
+/**
+ * Parse "hypixel.net" or "play.example.com:25566" into {host, port}.
+ * Lowercases the host so duplicate adds collapse.
+ */
+function parseServerAddr(input) {
+  let s = (input || '').trim().toLowerCase();
+  if (!s) return null;
+  // strip any scheme/path the user might paste
+  s = s.replace(/^[a-z]+:\/\//, '').replace(/[/?].*$/, '');
+  let port = 0;
+  const colon = s.lastIndexOf(':');
+  if (colon > 0) {
+    const p = parseInt(s.slice(colon + 1), 10);
+    if (Number.isFinite(p) && p > 0 && p < 65536) {
+      port = p;
+      s = s.slice(0, colon);
+    }
+  }
+  if (!s) return null;
+  return { host: s, port };
+}
+
+/** Tracked-server poll state (per-server cached sample-name list). */
+const trackedServerSamples = new Map();  // host:port → { names: Set<string>, lastPingMs }
+
+async function pollTrackedServers() {
+  if (!cachedFriends.length) return;
+  const servers = loadTrackedServers();
+  if (!servers.length) return;
+  let anyChanged = false;
+  for (const raw of servers) {
+    const addr = parseServerAddr(raw);
+    if (!addr) continue;
+    const key = `${addr.host}:${addr.port || 25565}`;
+    let status;
+    try {
+      status = await invoke('ping_minecraft_server', {
+        host: addr.host,
+        port: addr.port || null,
+      });
+    } catch (e) {
+      // Network error / connect timeout → treat as "no info".
+      trackedServerSamples.set(key, { names: new Set(), lastPingMs: Date.now() });
+      continue;
+    }
+    if (!status || !status.online) {
+      trackedServerSamples.set(key, { names: new Set(), lastPingMs: Date.now() });
+      continue;
+    }
+    const names = new Set((status.sample_names || []).map(n => n.toLowerCase()));
+    trackedServerSamples.set(key, { names, lastPingMs: Date.now() });
+  }
+  // Merge into friends — only override status if we don't already have
+  // a more-trustworthy presence-relay entry for them.
+  for (const f of cachedFriends) {
+    const isRelayKnown = f.launcher === 'shadow-client';
+    if (isRelayKnown) continue;  // relay data wins
+    let foundOn = null;
+    for (const [serverKey, { names }] of trackedServerSamples) {
+      if (names.has(f.username.toLowerCase())) {
+        foundOn = serverKey.replace(/:25565$/, '');
+        break;
+      }
+    }
+    const prev = `${f.status}|${f.server}|${f.launcher}`;
+    if (foundOn) {
+      f.status = 'playing';
+      f.server = foundOn;
+      f.launcher = 'unknown';  // can't tell from server ping
+      f.last_seen = Math.floor(Date.now() / 1000);
+    } else if (f.launcher === 'unknown') {
+      // Was found via ping previously, now isn't — flip back to offline.
+      f.status = null;
+      f.server = null;
+      f.launcher = null;
+    }
+    if (prev !== `${f.status}|${f.server}|${f.launcher}`) anyChanged = true;
+  }
+  if (anyChanged) renderFriends(cachedFriends);
+}
+
+setInterval(pollTrackedServers, 90_000);
+
+// Expose for UI binding.
+window.shadowAddTrackedServer = (input) => {
+  const addr = parseServerAddr(input);
+  if (!addr) return false;
+  const servers = loadTrackedServers();
+  const norm = `${addr.host}${addr.port ? ':' + addr.port : ''}`;
+  if (servers.includes(norm)) return false;
+  servers.unshift(norm);
+  saveTrackedServers(servers);
+  pollTrackedServers();
+  return true;
+};
+window.shadowRemoveTrackedServer = (host) => {
+  const servers = loadTrackedServers().filter(s => s !== host);
+  saveTrackedServers(servers);
+  pollTrackedServers();
+};
+window.shadowListTrackedServers = () => loadTrackedServers();
 
 // Listen for MC start/exit events so the "You" row re-renders to reflect
 // the actual running state without polling. Also kicks the presence
@@ -1286,6 +1426,62 @@ friendsAddForm?.addEventListener('submit', async (e) => {
     }, 3000);
   }
 });
+
+// ───── Tracked-servers form (cross-launcher friend detection) ──────
+const trackedAddForm = $('tracked-add-form');
+const trackedAddInput = $('tracked-add-input');
+const trackedListEl = $('tracked-servers-list');
+
+function renderTrackedServers() {
+  if (!trackedListEl) return;
+  trackedListEl.innerHTML = '';
+  const servers = loadTrackedServers();
+  if (!servers.length) {
+    const empty = document.createElement('li');
+    empty.className = 'tracked-empty';
+    empty.textContent = 'No servers tracked.';
+    trackedListEl.appendChild(empty);
+    return;
+  }
+  for (const host of servers) {
+    const row = document.createElement('li');
+    row.className = 'tracked-server-row';
+    const name = document.createElement('span');
+    name.className = 'tracked-server-host';
+    name.textContent = host;
+    const remove = document.createElement('button');
+    remove.className = 'tracked-server-remove';
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `Stop tracking ${host}`);
+    remove.addEventListener('click', () => {
+      window.shadowRemoveTrackedServer(host);
+      renderTrackedServers();
+    });
+    row.appendChild(name);
+    row.appendChild(remove);
+    trackedListEl.appendChild(row);
+  }
+}
+
+trackedAddForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!trackedAddInput) return;
+  const raw = trackedAddInput.value.trim();
+  if (!raw) return;
+  if (window.shadowAddTrackedServer(raw)) {
+    trackedAddInput.value = '';
+    trackedAddInput.focus();
+    renderTrackedServers();
+  } else {
+    // Either duplicate or unparseable — flash the input.
+    trackedAddInput.classList.add('error');
+    setTimeout(() => trackedAddInput.classList.remove('error'), 1500);
+  }
+});
+
+// Initial render so the list reflects whatever's stored.
+renderTrackedServers();
 
 // ───── Quick action tiles ───────────────────────────────────────
 document.getElementById('action-mods')?.addEventListener('click', () => {

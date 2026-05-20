@@ -13,6 +13,7 @@ mod jvm;
 mod mods;
 mod mojang;
 mod presence;
+mod server_ping;
 mod setup;
 mod shadow_chat;
 
@@ -582,6 +583,22 @@ async fn presence_heartbeat(playing: bool, server: Option<String>) -> Result<(),
 #[tauri::command]
 async fn presence_query(uuids: Vec<String>) -> Result<Vec<presence::PresenceEntry>, String> {
     presence::query(uuids).await.map_err(|e| e.to_string())
+}
+
+/// Ping an arbitrary Minecraft server's status endpoint. Used by the
+/// friends panel to detect friends playing on shared servers
+/// regardless of launcher — if a friend's name appears in the
+/// returned `sample_names` list, they're playing there *right now*.
+///
+/// `host` may be a hostname or IP; default port is 25565 when port=0
+/// or port is not passed.
+#[tauri::command]
+async fn ping_minecraft_server(host: String, port: Option<u16>) -> Result<server_ping::ServerStatus, String> {
+    let port = match port {
+        Some(0) | None => 25565,
+        Some(p) => p,
+    };
+    server_ping::ping(&host, port).await.map_err(|e| e.to_string())
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -1339,6 +1356,7 @@ pub fn run() {
             friends_remove,
             presence_heartbeat,
             presence_query,
+            ping_minecraft_server,
             read_cosmetics,
             save_cosmetics,
         ])

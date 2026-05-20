@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.53</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.54</span>
     </h1>
 
     <div class="topbar-actions">
@@ -113,9 +113,34 @@
                spellcheck="false">
         <button type="submit" class="friends-add-btn" aria-label="Add friend">+</button>
       </form>
+      <!-- Tracked-servers list: lets us detect friends on non-Shadow-Client
+           launchers. We ping each entered server every 90 s and check if
+           friend usernames appear in the standard players.sample list. -->
+      <details class="friends-trackers">
+        <summary>Detect friends on shared servers</summary>
+        <p class="friends-trackers-blurb">
+          We can only see Shadow Client users via our presence service. To
+          detect friends using Lunar / Feather / Vanilla / etc., add the
+          Minecraft servers they play on — we'll ping each one every 90 s
+          and match friend usernames against the server's player list.
+        </p>
+        <form class="friends-add" id="tracked-add-form">
+          <input type="text" id="tracked-add-input"
+                 placeholder="e.g. hypixel.net"
+                 autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button type="submit" class="friends-add-btn"
+                  aria-label="Add tracked server">+</button>
+        </form>
+        <ul class="tracked-servers-list" id="tracked-servers-list"></ul>
+        <p class="friends-trackers-note">
+          Note: large servers like Hypixel rotate which names they expose in
+          the sample, so detection isn't 100% — your friend might be online
+          and not show up on every poll.
+        </p>
+      </details>
       <p class="friends-note">
-        Friends only show as "Playing" when they're also running Shadow Client.
-        Status syncs once a presence service is wired up — coming soon.
+        Shadow Client users show up live via our presence service. For other
+        launchers, add their server above and we'll detect them by name.
       </p>
     </aside>
 

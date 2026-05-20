@@ -7,11 +7,15 @@ import app.shadowclient.chat.config.ModConfig;
 import app.shadowclient.chat.relay.Messages.ServerEvent;
 import app.shadowclient.chat.voice.VoiceController;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.PlayerSkin;
 import org.lwjgl.glfw.GLFW;
 
 import java.time.Instant;
@@ -204,7 +208,7 @@ public final class DiscordChatScreen extends Screen {
                 mouseX, mouseY);
         for (UUID id : speakers) {
             String name = sc.displayNameForUuid(id);
-            rowY = drawSpeakerRow(gfx, x, rowY, w, name);
+            rowY = drawSpeakerRow(gfx, x, rowY, w, id, name);
         }
 
         // -- user info bar pinned to bottom --
@@ -298,14 +302,17 @@ public final class DiscordChatScreen extends Screen {
         return y + btnH;
     }
 
-    private int drawSpeakerRow(GuiGraphics gfx, int x, int y, int w, String name) {
+    private int drawSpeakerRow(GuiGraphics gfx, int x, int y, int w, UUID uuid, String name) {
         int rowX = x + 18;
-        int dotX = rowX + 4;
-        int dotY = y + CHAN_ROW_H / 2;
-        // Green speaking dot.
-        gfx.fill(dotX - 3, dotY - 3, dotX + 3, dotY + 3, GREEN);
+        int faceSize = 14;
+        int faceX = rowX + 2;
+        int faceY = y + (CHAN_ROW_H - faceSize) / 2;
+        // Green ring around the face — this row is only drawn for users
+        // actively transmitting, so the ring is always lit.
+        gfx.fill(faceX - 1, faceY - 1, faceX + faceSize + 1, faceY + faceSize + 1, GREEN);
+        drawPlayerFace(gfx, uuid, name, faceX, faceY, faceSize);
         gfx.drawString(this.font, name,
-                rowX + 14, y + (CHAN_ROW_H - this.font.lineHeight) / 2 + 1,
+                faceX + faceSize + 6, y + (CHAN_ROW_H - this.font.lineHeight) / 2 + 1,
                 TEXT, false);
         return y + CHAN_ROW_H;
     }
@@ -315,20 +322,12 @@ public final class DiscordChatScreen extends Screen {
         ShadowChatClient sc = ShadowChatClient.get();
         AuthConfig auth = sc.authConfig();
         String displayName = auth.isUsable() ? auth.name() : "Not signed in";
-        char initial = (displayName != null && !displayName.isEmpty())
-                ? Character.toUpperCase(displayName.charAt(0)) : '?';
-        // Avatar
         int avSize = 28;
         int avX = x + 8;
         int avY = y + (h - avSize) / 2;
-        gfx.fill(avX, avY, avX + avSize, avY + avSize,
-                NAME_COLORS[Math.floorMod((displayName == null ? 0 : displayName.hashCode()), NAME_COLORS.length)]);
-        String letter = String.valueOf(initial);
-        int lw = this.font.width(letter);
-        gfx.drawString(this.font, letter,
-                avX + (avSize - lw) / 2,
-                avY + (avSize - this.font.lineHeight) / 2 + 1,
-                TEXT_BRIGHT, false);
+        // Our own skin via mc.player when in-world; falls back to the
+        // letter avatar at the main menu / sign-out state.
+        drawPlayerFace(gfx, parseUuid(auth.uuid()), displayName, avX, avY, avSize);
         // Name + status
         gfx.drawString(this.font, displayName,
                 avX + avSize + 8, avY + 3, TEXT_BRIGHT, false);
@@ -336,6 +335,52 @@ public final class DiscordChatScreen extends Screen {
         gfx.drawString(this.font, status,
                 avX + avSize + 8, avY + 3 + this.font.lineHeight + 2,
                 auth.isUsable() ? GREEN : TEXT_DIM, false);
+    }
+
+    /**
+     * Draw a player's MC head (face + hat layer) at the given pixel
+     * rect. Looks up the connected server's player roster by UUID; if
+     * present, uses {@link PlayerFaceRenderer} with the player's real
+     * {@link PlayerSkin}. If not (sign-out state, voice peer from a
+     * different MC server, etc.) falls back to a colored square with
+     * the player's first-letter initial.
+     */
+    private void drawPlayerFace(GuiGraphics gfx, UUID uuid, String name, int x, int y, int size) {
+        PlayerSkin skin = lookupSkin(uuid);
+        if (skin != null) {
+            PlayerFaceRenderer.draw(gfx, skin, x, y, size);
+            return;
+        }
+        int color = NAME_COLORS[Math.floorMod(name == null ? 0 : name.hashCode(), NAME_COLORS.length)];
+        gfx.fill(x, y, x + size, y + size, color);
+        char initial = (name != null && !name.isEmpty())
+                ? Character.toUpperCase(name.charAt(0)) : '?';
+        String letter = String.valueOf(initial);
+        int lw = this.font.width(letter);
+        gfx.drawString(this.font, letter,
+                x + (size - lw) / 2,
+                y + (size - this.font.lineHeight) / 2 + 1,
+                TEXT_BRIGHT, false);
+    }
+
+    /** Resolve a UUID to a PlayerSkin via the active multiplayer connection. */
+    private PlayerSkin lookupSkin(UUID uuid) {
+        if (uuid == null || this.minecraft == null) return null;
+        // Local player short-circuit — their PlayerInfo isn't always in
+        // the connection roster on world load.
+        if (this.minecraft.player != null
+                && uuid.equals(this.minecraft.player.getUUID())) {
+            return this.minecraft.player.getSkin();
+        }
+        ClientPacketListener conn = this.minecraft.getConnection();
+        if (conn == null) return null;
+        PlayerInfo info = conn.getPlayerInfo(uuid);
+        return info == null ? null : info.getSkin();
+    }
+
+    private static UUID parseUuid(String s) {
+        if (s == null || s.isEmpty()) return null;
+        try { return UUID.fromString(s); } catch (Exception e) { return null; }
     }
 
     // ------------------------------------------------------ main area

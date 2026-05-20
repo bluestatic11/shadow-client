@@ -73,7 +73,17 @@ public final class VoicePlayback {
     private SourceDataLine line;
     private Thread mixer;
     private final AtomicBoolean alive = new AtomicBoolean(true);
+    /** When true the mixer still decodes incoming frames (so the
+     *  speaking indicator + voice roster stay accurate) but skips
+     *  writing the resulting PCM to the output line — incoming voice
+     *  is inaudible without leaving voice on the relay. */
+    private final AtomicBoolean muted = new AtomicBoolean(false);
     private volatile boolean available = false;
+
+    /** Flip the playback-mute flag. Decoding continues so the
+     *  currentSpeakers() indicator and unmute latency are unaffected. */
+    public void setMuted(boolean v) { muted.set(v); }
+    public boolean isMuted() { return muted.get(); }
 
     /** Whether the platform has a working output device. */
     public boolean isAvailable() { return available; }
@@ -248,10 +258,17 @@ public final class VoicePlayback {
             scratch.put(saturated);
 
             if (anyAudio) {
-                try {
-                    line.write(outBytes, 0, outBytes.length);
-                } catch (Exception ex) {
-                    LOG.debug("output write failed: {}", ex.toString());
+                if (muted.get()) {
+                    // Decoding ran (so speaker indicator stays accurate
+                    // and the decoder's PLC isn't cold when we unmute)
+                    // — we just drop the rendered sample instead of
+                    // pushing it to the output line.
+                } else {
+                    try {
+                        line.write(outBytes, 0, outBytes.length);
+                    } catch (Exception ex) {
+                        LOG.debug("output write failed: {}", ex.toString());
+                    }
                 }
             } else {
                 // No active speakers — sleep a frame's worth so we

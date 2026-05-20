@@ -107,6 +107,9 @@ public final class ShadowChatClient implements ClientModInitializer {
         // stays a no-op; nothing else in the mod cares.
         this.voice = new VoiceController();
         this.voice.init(relay);
+        // Restore the persisted mute state — settings panel writes it,
+        // and the playback line was just constructed with muted=false.
+        this.voice.playback().setMuted(modConfig.voiceMuted());
 
         // Set initial banner so the overlay says something useful even
         // before the player joins a server.
@@ -221,6 +224,24 @@ public final class ShadowChatClient implements ClientModInitializer {
 
     /** True when we've opted in to voice on the current channel. */
     public boolean isInVoice() { return inVoice; }
+
+    /** Whether incoming voice playback is currently muted. */
+    public boolean isVoiceMuted() {
+        return modConfig.voiceMuted();
+    }
+
+    /**
+     * Toggle the voice-playback mute. Propagates to VoicePlayback
+     * immediately (next 20 ms mixer tick) and persists to
+     * shadow-chat-config.json so the choice survives restarts.
+     */
+    public void toggleVoiceMuted() {
+        boolean next = !modConfig.voiceMuted();
+        modConfig.setVoiceMuted(next);
+        if (voice != null) voice.playback().setMuted(next);
+        uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(
+                next ? "Incoming voice muted." : "Incoming voice un-muted."));
+    }
 
     /** True while the chat-screen Mic button is in its on (transmitting) state. */
     public boolean isHotMicOn() { return hotMicOn; }

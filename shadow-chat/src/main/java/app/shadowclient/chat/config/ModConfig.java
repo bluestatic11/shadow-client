@@ -69,6 +69,12 @@ public final class ModConfig {
      * {@code /auto-open-chat on|off}.
      */
     private boolean autoOpenChatOnJoin = false;
+    /**
+     * When true the voice playback line is silenced (decoding still
+     * happens to keep speaker-indicator state warm). Persists across
+     * sessions so a "I want quiet" toggle survives restarts.
+     */
+    private boolean voiceMuted = false;
 
     private ModConfig() {}
 
@@ -76,6 +82,7 @@ public final class ModConfig {
     public String activeChannel() { return activeChannel; }
     public boolean autoJoinVoice() { return autoJoinVoice; }
     public boolean autoOpenChatOnJoin() { return autoOpenChatOnJoin; }
+    public boolean voiceMuted() { return voiceMuted; }
 
     public void setActiveChannel(String channel) {
         this.activeChannel = channel;
@@ -89,6 +96,11 @@ public final class ModConfig {
 
     public void setAutoOpenChatOnJoin(boolean v) {
         this.autoOpenChatOnJoin = v;
+        save();
+    }
+
+    public void setVoiceMuted(boolean v) {
+        this.voiceMuted = v;
         save();
     }
 
@@ -145,6 +157,9 @@ public final class ModConfig {
             if (obj.has("auto_open_chat_on_join") && !obj.get("auto_open_chat_on_join").isJsonNull()) {
                 cfg.autoOpenChatOnJoin = obj.get("auto_open_chat_on_join").getAsBoolean();
             }
+            if (obj.has("voice_muted") && !obj.get("voice_muted").isJsonNull()) {
+                cfg.voiceMuted = obj.get("voice_muted").getAsBoolean();
+            }
             if (obj.has("joined_groups") && obj.get("joined_groups").isJsonArray()) {
                 JsonArray arr = obj.getAsJsonArray("joined_groups");
                 for (var el : arr) {
@@ -174,6 +189,7 @@ public final class ModConfig {
             root.addProperty("active_channel", activeChannel);
             root.addProperty("auto_join_voice", autoJoinVoice);
             root.addProperty("auto_open_chat_on_join", autoOpenChatOnJoin);
+            root.addProperty("voice_muted", voiceMuted);
             JsonArray arr = new JsonArray();
             for (Group g : joinedGroups) {
                 JsonObject o = new JsonObject();

@@ -554,6 +554,10 @@ public final class DiscordChatScreen extends Screen {
                 "Auto-rejoin voice on connect",
                 "After clicking Join voice once, you stay opted in across reconnects + channel switches.",
                 "auto_join_voice", cfg.autoJoinVoice());
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Mute incoming voice",
+                "Silences other people's voice locally. Decoding keeps running so you can un-mute instantly.",
+                "voice_muted", cfg.voiceMuted());
 
         // Hint at the bottom — keyboard shortcuts users might miss.
         int hintY = y + h - 22;
@@ -1044,6 +1048,10 @@ public final class DiscordChatScreen extends Screen {
                 switch (hit.key) {
                     case "auto_open_chat" -> cfg.setAutoOpenChatOnJoin(!cfg.autoOpenChatOnJoin());
                     case "auto_join_voice" -> cfg.setAutoJoinVoice(!cfg.autoJoinVoice());
+                    // Route mute through ShadowChatClient so VoicePlayback
+                    // picks the change up live instead of waiting for the
+                    // next restart.
+                    case "voice_muted" -> sc.toggleVoiceMuted();
                     default -> {}
                 }
                 return true;

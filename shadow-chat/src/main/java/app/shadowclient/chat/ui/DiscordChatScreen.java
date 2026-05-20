@@ -91,6 +91,14 @@ public final class DiscordChatScreen extends Screen {
     private int copyIdBtnX1, copyIdBtnY1, copyIdBtnX2, copyIdBtnY2;
     /** Set when the Copy ID button was clicked — paints "Copied!" for ~1s. */
     private long copiedFlashUntil = 0;
+    /**
+     * How many message-lines back from the newest the log is scrolled.
+     * Zero means "stuck to the bottom showing the latest". Bumped by
+     * mouse wheel up; clamped against the log's length on render.
+     */
+    private int scrollOffset = 0;
+    /** Channel the scroll offset is currently anchored to — reset when it changes. */
+    private String scrollAnchorChannel = null;
 
     public DiscordChatScreen(ChatOverlay legacyOverlay) {
         super(Component.literal("Shadow Chat"));
@@ -434,15 +442,39 @@ public final class DiscordChatScreen extends Screen {
         int lineH = this.font.lineHeight + 4;
         int maxLines = Math.max(0, h / lineH);
         if (maxLines == 0) return;
+        // Reset scroll if user switched channels — different log, different
+        // bottom. Sticking to the previous offset would land us mid-log.
+        if (!activeChannel.equals(scrollAnchorChannel)) {
+            scrollOffset = 0;
+            scrollAnchorChannel = activeChannel;
+        }
         List<InputState.DisplayLine> lines = st.linesFor(activeChannel);
-        int start = Math.max(0, lines.size() - maxLines);
-        int drawY = y + (h - (Math.min(lines.size() - start, maxLines) * lineH));
-        if (drawY < y) drawY = y;
+        // Clamp scrollOffset against current log size so it can't sit past
+        // the oldest message after eviction.
+        int maxScroll = Math.max(0, lines.size() - maxLines);
+        if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+        if (scrollOffset < 0) scrollOffset = 0;
+        int endExclusive = lines.size() - scrollOffset;
+        int start = Math.max(0, endExclusive - maxLines);
+        int visible = endExclusive - start;
+        int drawY = y + Math.max(0, h - visible * lineH);
         int textMaxRight = x + w - 16;
-        for (int i = start; i < lines.size(); i++) {
+        for (int i = start; i < endExclusive; i++) {
             InputState.DisplayLine line = lines.get(i);
             drawMessageLine(gfx, x + 12, drawY, textMaxRight, line);
             drawY += lineH;
+        }
+        // "Scrolled up — jump to latest" hint when we're not anchored to bottom.
+        if (scrollOffset > 0) {
+            String hint = "↑ Scrolled up " + scrollOffset + " line"
+                    + (scrollOffset == 1 ? "" : "s")
+                    + " — scroll down to follow";
+            int hw = this.font.width(hint);
+            gfx.fill(x + w - hw - 24, y + h - this.font.lineHeight - 10,
+                     x + w - 8, y + h - 4, 0xC0202329);
+            gfx.drawString(this.font, hint,
+                    x + w - hw - 16, y + h - this.font.lineHeight - 6,
+                    ACCENT, false);
         }
     }
 
@@ -580,6 +612,17 @@ public final class DiscordChatScreen extends Screen {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        // Three lines per notch — feels about right vs Discord's smoother
+        // pixel scrolling.
+        int delta = (int) Math.signum(scrollY) * 3;
+        // scrollY positive = wheel up = look further back in history.
+        scrollOffset += delta;
+        if (scrollOffset < 0) scrollOffset = 0;
+        return true;
     }
 
     @Override

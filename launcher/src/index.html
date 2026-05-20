@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.54</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.55</span>
     </h1>
 
     <div class="topbar-actions">
@@ -117,30 +117,34 @@
            launchers. We ping each entered server every 90 s and check if
            friend usernames appear in the standard players.sample list. -->
       <details class="friends-trackers">
-        <summary>Detect friends on shared servers</summary>
+        <summary>Where we look for your friends</summary>
         <p class="friends-trackers-blurb">
-          We can only see Shadow Client users via our presence service. To
-          detect friends using Lunar / Feather / Vanilla / etc., add the
-          Minecraft servers they play on — we'll ping each one every 90 s
-          and match friend usernames against the server's player list.
+          We auto-scan three places every 90 s and mark a friend as Playing
+          if their username appears in any server's player list:
+          <strong>(1)</strong> every server you've ever added in Minecraft's
+          Multiplayer menu (read from servers.dat in each profile),
+          <strong>(2)</strong> a small curated list of popular public
+          servers (Hypixel, CubeCraft, Hive, Wynncraft, 2b2t, …), and
+          <strong>(3)</strong> anything you add below.
         </p>
         <form class="friends-add" id="tracked-add-form">
           <input type="text" id="tracked-add-input"
-                 placeholder="e.g. hypixel.net"
+                 placeholder="Add a server (e.g. hypixel.net)"
                  autocomplete="off" autocapitalize="off" spellcheck="false">
           <button type="submit" class="friends-add-btn"
                   aria-label="Add tracked server">+</button>
         </form>
         <ul class="tracked-servers-list" id="tracked-servers-list"></ul>
         <p class="friends-trackers-note">
-          Note: large servers like Hypixel rotate which names they expose in
-          the sample, so detection isn't 100% — your friend might be online
-          and not show up on every poll.
+          Big servers (Hypixel etc.) rotate which names they expose per ping,
+          so a friend who's online there might not show up every cycle.
+          Small / private servers return their full player list, so detection
+          is reliable.
         </p>
       </details>
       <p class="friends-note">
         Shadow Client users show up live via our presence service. For other
-        launchers, add their server above and we'll detect them by name.
+        launchers, we detect them by pinging the servers above.
       </p>
     </aside>
 

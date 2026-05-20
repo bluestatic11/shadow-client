@@ -10,6 +10,7 @@ mod auth;
 mod fabric;
 mod jdk;
 mod jvm;
+mod mc_servers;
 mod mods;
 mod mojang;
 mod presence;
@@ -599,6 +600,18 @@ async fn ping_minecraft_server(host: String, port: Option<u16>) -> Result<server
         Some(p) => p,
     };
     server_ping::ping(&host, port).await.map_err(|e| e.to_string())
+}
+
+/// Enumerate every Minecraft server the user has saved in any profile's
+/// servers.dat. Returned to the front-end so it can auto-add them to
+/// the tracked-servers ping list — friends usually play on the same
+/// servers as the user, so the user's own MC server list is the best
+/// free hint for "where might my friends be."
+#[tauri::command]
+fn list_local_mc_servers() -> Vec<mc_servers::McServerEntry> {
+    let here = project_root();
+    let game_dir = here.join("game_dir");
+    mc_servers::collect_all(&game_dir).unwrap_or_default()
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -1357,6 +1370,7 @@ pub fn run() {
             presence_heartbeat,
             presence_query,
             ping_minecraft_server,
+            list_local_mc_servers,
             read_cosmetics,
             save_cosmetics,
         ])

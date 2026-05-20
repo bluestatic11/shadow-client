@@ -1194,44 +1194,98 @@ function parseServerAddr(input) {
 }
 
 /** Tracked-server poll state (per-server cached sample-name list). */
-const trackedServerSamples = new Map();  // host:port → { names: Set<string>, lastPingMs }
+const trackedServerSamples = new Map();  // host:port → { names: Set<string>, lastPingMs, label }
+
+/**
+ * Curated list of well-known public MC servers we always ping. Tiny
+ * by design — these are the ones friends are most likely to be on.
+ * The user's own servers.dat is the bigger source.
+ */
+const POPULAR_SERVERS = [
+  { host: 'mc.hypixel.net',     port: 25565, label: 'Hypixel' },
+  { host: 'play.cubecraft.net', port: 25565, label: 'CubeCraft' },
+  { host: 'play.hivemc.com',    port: 25565, label: 'The Hive' },
+  { host: 'play.wynncraft.com', port: 25565, label: 'Wynncraft' },
+  { host: 'mineplex.com',       port: 25565, label: 'Mineplex' },
+  { host: '2b2t.org',           port: 25565, label: '2b2t' },
+  { host: 'play.mc-central.net', port: 25565, label: 'MC Central' },
+];
+
+/** Cached results of list_local_mc_servers — refreshed every 10 min. */
+let cachedLocalServers = [];
+let cachedLocalServersAt = 0;
+
+async function getServerPingTargets() {
+  // 1. Refresh local servers.dat scan every 10 min (cheap I/O, but no
+  //    point doing it on every poll cycle).
+  if (Date.now() - cachedLocalServersAt > 10 * 60_000) {
+    try {
+      cachedLocalServers = await invoke('list_local_mc_servers') || [];
+      cachedLocalServersAt = Date.now();
+    } catch (_) { cachedLocalServers = []; }
+  }
+  // 2. Merge: popular + local + user-added. Keyed by host:port so a
+  //    server in two sources only gets pinged once.
+  const merged = new Map();
+  const add = (host, port, label) => {
+    const h = (host || '').trim().toLowerCase();
+    if (!h) return;
+    const p = port && port > 0 ? port : 25565;
+    const key = `${h}:${p}`;
+    if (!merged.has(key)) merged.set(key, { host: h, port: p, label: label || h });
+  };
+  for (const s of POPULAR_SERVERS) add(s.host, s.port, s.label);
+  for (const s of cachedLocalServers) add(s.host, s.port, s.name);
+  for (const raw of loadTrackedServers()) {
+    const addr = parseServerAddr(raw);
+    if (addr) add(addr.host, addr.port, addr.host);
+  }
+  return Array.from(merged.values());
+}
+
+/** Ping `n` servers in parallel. Returns nothing — populates the
+ *  trackedServerSamples map. */
+async function pingBatch(targets, concurrency = 8) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(concurrency, targets.length) }, async () => {
+    while (i < targets.length) {
+      const t = targets[i++];
+      const key = `${t.host}:${t.port}`;
+      try {
+        const status = await invoke('ping_minecraft_server', {
+          host: t.host, port: t.port,
+        });
+        const names = new Set(((status && status.sample_names) || []).map(n => n.toLowerCase()));
+        trackedServerSamples.set(key, {
+          names,
+          lastPingMs: Date.now(),
+          label: t.label,
+        });
+      } catch (_) {
+        trackedServerSamples.set(key, {
+          names: new Set(), lastPingMs: Date.now(), label: t.label,
+        });
+      }
+    }
+  });
+  await Promise.all(workers);
+}
 
 async function pollTrackedServers() {
   if (!cachedFriends.length) return;
-  const servers = loadTrackedServers();
-  if (!servers.length) return;
-  let anyChanged = false;
-  for (const raw of servers) {
-    const addr = parseServerAddr(raw);
-    if (!addr) continue;
-    const key = `${addr.host}:${addr.port || 25565}`;
-    let status;
-    try {
-      status = await invoke('ping_minecraft_server', {
-        host: addr.host,
-        port: addr.port || null,
-      });
-    } catch (e) {
-      // Network error / connect timeout → treat as "no info".
-      trackedServerSamples.set(key, { names: new Set(), lastPingMs: Date.now() });
-      continue;
-    }
-    if (!status || !status.online) {
-      trackedServerSamples.set(key, { names: new Set(), lastPingMs: Date.now() });
-      continue;
-    }
-    const names = new Set((status.sample_names || []).map(n => n.toLowerCase()));
-    trackedServerSamples.set(key, { names, lastPingMs: Date.now() });
-  }
+  const targets = await getServerPingTargets();
+  if (!targets.length) return;
+  await pingBatch(targets);
   // Merge into friends — only override status if we don't already have
   // a more-trustworthy presence-relay entry for them.
+  let anyChanged = false;
   for (const f of cachedFriends) {
     const isRelayKnown = f.launcher === 'shadow-client';
     if (isRelayKnown) continue;  // relay data wins
     let foundOn = null;
-    for (const [serverKey, { names }] of trackedServerSamples) {
+    for (const [key, { names, label }] of trackedServerSamples) {
       if (names.has(f.username.toLowerCase())) {
-        foundOn = serverKey.replace(/:25565$/, '');
+        foundOn = label || key.replace(/:25565$/, '');
         break;
       }
     }

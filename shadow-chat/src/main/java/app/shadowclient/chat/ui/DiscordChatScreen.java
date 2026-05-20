@@ -726,24 +726,54 @@ public final class DiscordChatScreen extends Screen {
                 plusY1 + ((plusY2 - plusY1) - this.font.lineHeight) / 2 + 1,
                 TEXT, false);
 
-        // Mic toggle button — rightmost. Click flips hot-mic; red while on.
+        // Mic toggle button — rightmost. Four states:
+        //   - No mic         (capture device unavailable; click is a no-op)
+        //   - Mic            (off; click arms hot-mic)
+        //   - Mic ●          (hot-mic armed but currently silent; click disarms)
+        //   - ● Talking      (actively transmitting — PTT held or hot-mic on +
+        //                     real audio leaving the box; click disarms hot-mic)
         ShadowChatClient scForMic = ShadowChatClient.get();
-        boolean micOn = scForMic.isHotMicOn();
-        String micLabel = micOn ? "● Mic" : "Mic";
+        VoiceController vcForMic = scForMic.voice();
+        boolean micAvailable = vcForMic != null && vcForMic.capture().isAvailable();
+        boolean transmitting = vcForMic != null && vcForMic.isTransmitting();
+        boolean micArmed = scForMic.isHotMicOn();
+        String micLabel;
+        int micBg, micFg;
+        if (!micAvailable) {
+            micLabel = "No mic";
+            micBg = 0xFF2A2A2A;
+            micFg = TEXT_DIM;
+        } else if (transmitting) {
+            // Subtle pulse so the user notices they're hot.
+            boolean blink = System.currentTimeMillis() % 800 < 400;
+            micLabel = "● Talking";
+            micBg = blink ? RED_PILL : 0xFFC23A3A;
+            micFg = TEXT_BRIGHT;
+        } else if (micArmed) {
+            micLabel = "Mic ●";
+            micBg = 0xFFD89B2A;       // amber — armed but silent
+            micFg = TEXT_BRIGHT;
+        } else {
+            micLabel = "Mic";
+            micBg = CHIP_HOVER;
+            micFg = TEXT;
+        }
         int micW = this.font.width(micLabel) + 14;
         int micBX2 = boxX2 - 6;
         int micBX1 = micBX2 - micW;
         int micBY1 = y + 6;
         int micBY2 = y + h - 6;
-        int micBg = micOn ? RED_PILL : CHIP_HOVER;
-        int micFg = micOn ? TEXT_BRIGHT : TEXT;
         gfx.fill(micBX1, micBY1, micBX2, micBY2, micBg);
         gfx.drawString(this.font, micLabel,
                 micBX1 + 7,
                 micBY1 + ((micBY2 - micBY1) - this.font.lineHeight) / 2 + 1,
                 micFg, false);
-        micBtnX1 = micBX1; micBtnY1 = micBY1;
-        micBtnX2 = micBX2; micBtnY2 = micBY2;
+        // Only register the hit-rect when the mic is usable — clicking a
+        // greyed-out "No mic" button shouldn't do anything.
+        if (micAvailable) {
+            micBtnX1 = micBX1; micBtnY1 = micBY1;
+            micBtnX2 = micBX2; micBtnY2 = micBY2;
+        }
 
         // Coords button — just left of the Mic button.
         String btnLabel = "Coords";

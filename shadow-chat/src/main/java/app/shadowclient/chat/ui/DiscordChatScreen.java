@@ -1033,6 +1033,25 @@ public final class DiscordChatScreen extends Screen {
             int caretX = textX1;
             gfx.fill(caretX, y + 8, caretX + 1, y + h - 8, TEXT_DIM);
         }
+
+        // Character counter when approaching the 512-char cap. Hidden
+        // when the buffer is short (~ < 80%) to keep the input row
+        // uncluttered for the common case. Amber as we approach the
+        // limit, red when at it — and at the cap the user is silently
+        // dropping further keystrokes via appendSafe, which is
+        // confusing without this indicator.
+        int len = buffer.length();
+        int threshold = MAX_INPUT * 4 / 5;       // 80 %
+        if (len >= threshold) {
+            String counter = len + " / " + MAX_INPUT;
+            int color2 = (len >= MAX_INPUT) ? RED_PILL
+                                            : 0xFFD89B2A;   // amber
+            int cw = this.font.width(counter);
+            // Float the counter just above the input pill, right-aligned.
+            int cx = boxX2 - cw - 8;
+            int cy = y - this.font.lineHeight - 2;
+            gfx.drawString(this.font, counter, cx, cy, color2, false);
+        }
     }
 
     // ============================================================ input

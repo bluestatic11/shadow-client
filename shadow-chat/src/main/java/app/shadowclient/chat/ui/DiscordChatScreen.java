@@ -122,6 +122,14 @@ public final class DiscordChatScreen extends Screen {
     private int settingsBtnX1, settingsBtnY1, settingsBtnX2, settingsBtnY2;
     /** Inline "Join voice" button on the voice-room empty state. */
     private int emptyJoinBtnX1, emptyJoinBtnY1, emptyJoinBtnX2, emptyJoinBtnY2;
+    /** One hit-rect per coords-share line in the current render. */
+    private record CoordsHit(int x1, int y1, int x2, int y2, String text) {}
+    private final List<CoordsHit> coordsHits = new ArrayList<>();
+    /** Timestamp until which we paint a "Copied" badge over the
+     *  last-clicked coords line (ms since epoch). */
+    private long coordsCopiedUntil = 0;
+    /** Bounds of the line the user just copied, for the "Copied" badge. */
+    private int copiedLineX1, copiedLineY1, copiedLineX2, copiedLineY2;
     /** Per-toggle hit-rects inside the settings panel. Cleared each
      *  render and repopulated by drawSettings. */
     private final List<ToggleHit> settingsToggleHits = new ArrayList<>();
@@ -156,6 +164,7 @@ public final class DiscordChatScreen extends Screen {
         settingsBtnX2 = 0;
         settingsToggleHits.clear();
         emptyJoinBtnX2 = 0;
+        coordsHits.clear();
 
         drawServerRail(gfx, 0, 0, SERVER_RAIL_W, this.height);
         drawSidebar(gfx, SERVER_RAIL_W, 0, SIDEBAR_W, this.height, mouseX, mouseY);
@@ -817,7 +826,26 @@ public final class DiscordChatScreen extends Screen {
         if (isCoords) {
             int rightEdge = Math.min(xRight,
                     cursor + this.font.width(name) + this.font.width(sep) + this.font.width(line.text()) + 6);
-            gfx.fill(cursor - 2, y - 1, rightEdge + 2, y + this.font.lineHeight + 1, COORDS_HIGHLIGHT);
+            int hitX1 = cursor - 2;
+            int hitY1 = y - 1;
+            int hitX2 = rightEdge + 2;
+            int hitY2 = y + this.font.lineHeight + 1;
+            gfx.fill(hitX1, hitY1, hitX2, hitY2, COORDS_HIGHLIGHT);
+            // Register the line for click-to-copy. The text we copy
+            // is the coords body only (no name / timestamp) so it
+            // pastes cleanly into in-game chat.
+            coordsHits.add(new CoordsHit(hitX1, hitY1, hitX2, hitY2, line.text()));
+            // "Copied" overlay when this line was just clicked.
+            if (System.currentTimeMillis() < coordsCopiedUntil
+                    && copiedLineX1 == hitX1 && copiedLineY1 == hitY1) {
+                String badge = "Copied";
+                int bw = this.font.width(badge) + 10;
+                int bx2 = hitX2 - 2;
+                int bx1 = bx2 - bw;
+                gfx.fill(bx1, hitY1, bx2, hitY2, GREEN);
+                gfx.drawString(this.font, badge,
+                        bx1 + 5, y, TEXT_BRIGHT, false);
+            }
         }
         gfx.drawString(this.font, name, cursor, y, nameColor(name), false);
         cursor += this.font.width(name);
@@ -1070,6 +1098,20 @@ public final class DiscordChatScreen extends Screen {
             viewingSettings = !viewingSettings;
             if (viewingSettings) viewingVoiceRoom = false;
             return true;
+        }
+
+        // Coords share lines — click anywhere on the highlighted
+        // line to copy the coords body to the system clipboard.
+        for (CoordsHit hit : coordsHits) {
+            if (mx >= hit.x1 && mx <= hit.x2 && my >= hit.y1 && my <= hit.y2) {
+                if (this.minecraft != null) {
+                    this.minecraft.keyboardHandler.setClipboard(hit.text);
+                }
+                coordsCopiedUntil = System.currentTimeMillis() + 1200;
+                copiedLineX1 = hit.x1; copiedLineY1 = hit.y1;
+                copiedLineX2 = hit.x2; copiedLineY2 = hit.y2;
+                return true;
+            }
         }
 
         // Settings toggle chips — map the chip key to the right

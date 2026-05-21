@@ -1868,6 +1868,16 @@ async function showLatestCrashReport() {
   // 60 s). Otherwise we'd surface stale crashes on every clean exit.
   const ageSeconds = (Date.now() / 1000) - (report.mtime_unix || 0);
   if (ageSeconds > 120) return;
+  renderCrashReportModal(report);
+}
+
+/**
+ * Render the crash report modal for an arbitrary report. Used both
+ * by the auto-pop on MC exit (showLatestCrashReport) and by the
+ * Crash log history dialog when the user clicks a past row.
+ */
+function renderCrashReportModal(report) {
+  if (!report) return;
 
   // Lightweight modal — overlay + dismissable panel. Reusing the
   // <dialog> element gets us focus trapping + Esc-to-close for free.
@@ -1930,6 +1940,89 @@ async function showLatestCrashReport() {
   modal.querySelector('#crash-content').textContent = report.head || '(empty)';
   modal.showModal();
 }
+
+// ───── Crash log history dialog ────────────────────────────────
+// Opened from the "Crash log" Quick Action tile. Lists recent
+// crashes in the active profile's crash-reports/ folder; click
+// any row to render its body in the existing crash modal.
+const crashLogDialog       = $('crash-log-dialog');
+const crashLogDialogClose  = $('crash-log-dialog-close');
+const crashLogDialogDone   = $('crash-log-dialog-done');
+const crashListEl          = $('crash-list');
+const actionCrashLog       = $('action-crash-log');
+
+async function refreshCrashLog() {
+  if (!crashListEl) return;
+  crashListEl.innerHTML = '';
+  let crashes = [];
+  try {
+    crashes = await invoke('list_recent_crash_reports', {
+      version: getPickedVersion(), limit: 25,
+    }) || [];
+  } catch (e) {
+    const err = document.createElement('li');
+    err.className = 'crash-empty';
+    err.textContent = `Couldn't read crash-reports folder: ${e}`;
+    crashListEl.appendChild(err);
+    return;
+  }
+  if (!crashes.length) {
+    const empty = document.createElement('li');
+    empty.className = 'crash-empty';
+    empty.textContent = "No crashes for this profile. (Bragging rights.) New crashes auto-pop a window the moment they happen.";
+    crashListEl.appendChild(empty);
+    return;
+  }
+  for (const c of crashes) {
+    const row = document.createElement('li');
+    row.className = 'crash-row';
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+
+    const info = document.createElement('div');
+    info.className = 'crash-row-info';
+    const top = document.createElement('div');
+    top.className = 'crash-row-name';
+    top.textContent = c.filename;
+    info.appendChild(top);
+    const meta = document.createElement('div');
+    meta.className = 'crash-row-meta';
+    meta.textContent =
+      `${formatRelativeTime(c.mtime_unix)} · ${Math.round(c.size_bytes / 1024)} KB`;
+    info.appendChild(meta);
+    if (c.probable_cause) {
+      const cause = document.createElement('div');
+      cause.className = 'crash-row-cause';
+      cause.textContent = c.probable_cause;
+      info.appendChild(cause);
+    }
+    row.appendChild(info);
+
+    const trigger = () => {
+      crashLogDialog?.close();
+      renderCrashReportModal(c);
+    };
+    row.addEventListener('click', trigger);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        trigger();
+      }
+    });
+    crashListEl.appendChild(row);
+  }
+}
+
+actionCrashLog?.addEventListener('click', () => {
+  if (!crashLogDialog) return;
+  crashLogDialog.showModal();
+  refreshCrashLog();
+});
+crashLogDialogClose?.addEventListener('click', () => crashLogDialog?.close());
+crashLogDialogDone?.addEventListener('click', () => crashLogDialog?.close());
+crashLogDialog?.addEventListener('click', (e) => {
+  if (e.target === crashLogDialog) crashLogDialog.close();
+});
 
 // v0.3.37: Microsoft sign-in prompt banner. The Rust microsoft_login
 // command emits `ms-prompt` with the device code + verification URL the

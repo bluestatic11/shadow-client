@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.75</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.76</span>
     </h1>
 
     <div class="topbar-actions">
@@ -237,6 +237,10 @@
           <span class="action-icon" aria-hidden="true">⌗</span>
           <span class="action-label">Servers</span>
         </button>
+        <button class="action-tile" id="action-crash-log" type="button">
+          <span class="action-icon" aria-hidden="true">⚠</span>
+          <span class="action-label">Crash log</span>
+        </button>
         <button class="action-tile" id="action-hud-editor" type="button">
           <span class="action-icon" aria-hidden="true">⚡</span>
           <span class="action-label">HUD editor</span>
@@ -246,6 +250,31 @@
           <span class="action-label">Open folder</span>
         </button>
       </div>
+
+      <!-- Crash log history dialog — list of recent .txt crash
+           reports in the active profile's crash-reports/ folder.
+           Each row click opens the existing crash modal pre-loaded
+           with that report's data. -->
+      <dialog id="crash-log-dialog" class="settings-dialog" aria-labelledby="crash-log-title">
+        <div class="dialog-head">
+          <h2 id="crash-log-title" class="dialog-title">Crash log</h2>
+          <button class="dialog-close" id="crash-log-dialog-close" type="button"
+                  aria-label="Close">×</button>
+        </div>
+        <div class="dialog-body">
+          <p class="dialog-blurb">
+            Recent crashes for this profile, newest first. Click any
+            row to view the full report. Files live under
+            <code>game_dir/profiles/&lt;version&gt;/crash-reports/</code>.
+          </p>
+          <ul class="crash-list" id="crash-list" aria-live="polite">
+            <li class="crash-empty">Loading…</li>
+          </ul>
+        </div>
+        <div class="dialog-footer">
+          <button id="crash-log-dialog-done" class="primary-btn" type="button">Done</button>
+        </div>
+      </dialog>
 
       <!-- Server browser dialog — opened from the "Servers"
            quick-action tile. Curated public servers up top, the

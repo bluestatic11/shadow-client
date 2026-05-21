@@ -2836,6 +2836,64 @@ body.drag-active::after {
   border-top: 1px solid var(--line-soft);
 }
 
+/* Crash log history dialog — same row shape as packs/servers
+   lists, with a probable-cause sub-line in amber. */
+.crash-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+.crash-empty {
+  list-style: none;
+  padding: 18px;
+  text-align: center;
+  color: var(--text-mute);
+  font-style: italic;
+}
+.crash-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.crash-row:hover, .crash-row:focus {
+  background: var(--bg-3);
+  outline: none;
+  border-color: var(--line);
+}
+.crash-row-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.crash-row-name {
+  color: var(--text);
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crash-row-meta {
+  color: var(--text-mute);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.crash-row-cause {
+  margin-top: 4px;
+  color: var(--amber);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* Server browser dialog. Mirrors the packs dialog layout but with
    separate sections for curated vs local servers. */
 .server-section-title {

@@ -596,6 +596,59 @@ fn read_latest_crash_report(version: Option<String>) -> Result<Option<CrashRepor
     }))
 }
 
+/// List the N most-recent crash reports in the active profile.
+/// Each entry is a full CrashReport (head included) so the front-end
+/// can show probable cause inline without a second round-trip per row.
+/// Cap defaults to 25 if the caller omits `limit`.
+#[tauri::command]
+fn list_recent_crash_reports(version: Option<String>, limit: Option<usize>) -> Result<Vec<CrashReport>, String> {
+    let here = project_root();
+    let state_file = here.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let profile = version.or(state.last_used).ok_or_else(|| "no profile to query".to_string())?;
+    let crash_dir = here.join("game_dir").join("profiles").join(&profile).join("crash-reports");
+    if !crash_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let cap = limit.unwrap_or(25).min(100);
+
+    let mut entries: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = Vec::new();
+    if let Ok(read) = std::fs::read_dir(&crash_dir) {
+        for e in read.flatten() {
+            let path = e.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("txt") { continue; }
+            let Ok(meta) = e.metadata() else { continue };
+            let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            entries.push((path, mtime, meta.len()));
+        }
+    }
+    // Newest first.
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    entries.truncate(cap);
+
+    let mut out = Vec::with_capacity(entries.len());
+    for (path, mtime, size) in entries {
+        // Read just the first 4 KB for cause-analysis; the modal
+        // re-fetches the full report when the user clicks a row.
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let head: String = raw.lines().take(200).collect::<Vec<_>>().join("\n");
+        let probable_cause = analyze_crash(&head);
+        let mtime_unix = mtime.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        out.push(CrashReport {
+            filename: path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(),
+            path: path.display().to_string(),
+            mtime_unix,
+            probable_cause,
+            head,
+            size_bytes: size,
+        });
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 fn chat_test_token() -> Result<String, String> {
     let here = project_root();
@@ -1491,6 +1544,7 @@ pub fn run() {
             chat_diagnostics,
             chat_test_token,
             read_latest_crash_report,
+            list_recent_crash_reports,
             list_profiles,
             delete_profile,
             switch_profile,

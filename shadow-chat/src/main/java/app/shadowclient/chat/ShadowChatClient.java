@@ -569,16 +569,47 @@ public final class ShadowChatClient implements ClientModInitializer {
     }
 
     private void printHelp() {
+        // Decorate each line with the current state when one applies —
+        // /help doubles as a status read-out so the user doesn't have
+        // to remember whether they previously toggled something on.
+        String activeChannel = uiState.activeChannel();
+        String activeChannelDesc;
+        if (ModConfig.CHANNEL_SERVER.equals(activeChannel)) {
+            String host = currentServerHost();
+            activeChannelDesc = host.isEmpty() ? "the server channel" : "server: " + host;
+        } else if (activeChannel != null && activeChannel.startsWith("group:")) {
+            String id = activeChannel.substring("group:".length());
+            ModConfig.Group g = modConfig.findGroup(id);
+            String name = g != null && g.name != null && !g.name.isBlank() ? g.name : id;
+            activeChannelDesc = "group: " + name;
+        } else {
+            activeChannelDesc = activeChannel == null ? "none" : activeChannel;
+        }
+        String voiceMutedDesc = modConfig.voiceMuted() ? "yes" : "no";
+        String autoOpenDesc = modConfig.autoOpenChatOnJoin() ? "ON" : "off";
+        String voiceStateDesc = inVoice ? "joined" : "not joined";
+        String autoJoinDesc = modConfig.autoJoinVoice() ? "ON" : "off";
+
         String[] lines = {
-                "Shadow Chat commands:",
+                "Shadow Chat — current state and commands:",
+                "Active channel:      " + activeChannelDesc,
+                "Voice opt-in:        " + voiceStateDesc + " (auto-rejoin " + autoJoinDesc + ")",
+                "Voice playback:      " + (modConfig.voiceMuted() ? "MUTED" : "audible"),
+                "Auto-open on join:   " + autoOpenDesc,
+                "",
+                "Slash commands:",
                 "/group create <label> — make a private group; share the ID it prints",
                 "/group join <uuid>    — join an existing group",
                 "/group leave          — leave the current group",
-                "/voice join | leave   — opt in / out of voice on this channel",
-                "/auto-open-chat on|off|status — pop the chat screen open every world join",
+                "/voice join | leave   — opt in / out of voice (currently " + voiceStateDesc + ")",
+                "/auto-open-chat on|off|status — pop the chat screen open every world join"
+                        + " (currently " + autoOpenDesc + ")",
                 "/coords               — paste your X/Y/Z into chat",
                 "/whoami               — show your UUID and display name",
                 "/help                 — show this list",
+                "",
+                "(Mute incoming voice currently: " + voiceMutedDesc
+                        + " — toggle from the settings * in the user bar.)",
         };
         for (String l : lines) {
             uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(l));

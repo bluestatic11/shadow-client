@@ -917,6 +917,19 @@ function renderFriends(friends) {
   // live status side-by-side with their friends.
   friendsListEl.appendChild(buildYouRow());
 
+  // Offline-mode users: their presence heartbeat is a no-op (no
+  // Microsoft token to verify) so friends never see them as Playing,
+  // and the presence service can't tag their friends in return. Make
+  // that mismatch visible instead of silently broken.
+  if (!signedIn) {
+    const banner = document.createElement('li');
+    banner.className = 'friends-signin-banner';
+    banner.innerHTML =
+      '<strong>Offline mode.</strong> Sign in with Microsoft (top-right) ' +
+      'so friends can see you as Playing and so this list updates live.';
+    friendsListEl.appendChild(banner);
+  }
+
   if (!cachedFriends.length) {
     const empty = document.createElement('li');
     empty.className = 'friends-empty';

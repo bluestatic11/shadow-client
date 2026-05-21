@@ -2864,6 +2864,25 @@ body.drag-active::after {
   border-top: 1px solid var(--line-soft);
 }
 
+/* Friends-panel signed-out banner. Brand-red accent strip + tinted
+   background so it reads as "you've got a thing to do" rather than
+   "your friends are broken". */
+.friends-signin-banner {
+  list-style: none;
+  margin: 6px 0;
+  padding: 10px 12px;
+  background: rgba(175, 18, 26, 0.12);
+  border-left: 3px solid var(--accent-2);
+  border-radius: 0 6px 6px 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.friends-signin-banner strong {
+  color: var(--accent-3);
+  margin-right: 4px;
+}
+
 /* Crash log history dialog — same row shape as packs/servers
    lists, with a probable-cause sub-line in amber. */
 .crash-list {

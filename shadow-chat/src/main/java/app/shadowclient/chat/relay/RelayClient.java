@@ -212,6 +212,7 @@ public final class RelayClient {
      *  hook) explicitly wants out, we don't second-guess that. */
     public void disconnect() {
         manuallyDisconnected.set(true);
+        nextReconnectAtMs = 0;
         closeCurrent("client closed");
     }
 
@@ -219,10 +220,26 @@ public final class RelayClient {
     private final java.util.concurrent.atomic.AtomicInteger reconnectAttempt =
             new java.util.concurrent.atomic.AtomicInteger(0);
 
+    /**
+     * Epoch-ms when the *next* scheduled reconnect attempt will fire.
+     * 0 means "no reconnect pending". Published so the UI can render
+     * a "Reconnecting in Ns…" countdown without polling the worker.
+     */
+    private volatile long nextReconnectAtMs = 0;
+
     /** Reset on a successful connect so the next failure starts at attempt #1. */
     void noteConnectedForBackoff() {
         reconnectAttempt.set(0);
+        nextReconnectAtMs = 0;
     }
+
+    /**
+     * @return the epoch-ms timestamp of the next pending reconnect
+     *         attempt, or 0 if no reconnect is currently scheduled.
+     *         UI code can subtract this from System.currentTimeMillis()
+     *         to render a live countdown.
+     */
+    public long nextReconnectAtMs() { return nextReconnectAtMs; }
 
     /**
      * Schedule a reconnect with exponential backoff: 1s, 2s, 4s, 8s, …
@@ -241,13 +258,17 @@ public final class RelayClient {
             return;
         }
         long delayMs = Math.min(60_000L, 1000L * (1L << Math.min(6, attempt - 1)));
+        nextReconnectAtMs = System.currentTimeMillis() + delayMs;
         Thread t = new Thread(() -> {
             try { Thread.sleep(delayMs); }
-            catch (InterruptedException e) { return; }
+            catch (InterruptedException e) { nextReconnectAtMs = 0; return; }
             // Re-check intent — user may have disconnected during the
             // wait, or another connect() may have already landed.
-            if (manuallyDisconnected.get()) return;
-            if (current.get() != null) return;
+            if (manuallyDisconnected.get()) { nextReconnectAtMs = 0; return; }
+            if (current.get() != null) { nextReconnectAtMs = 0; return; }
+            // Clear before connect() so the UI doesn't read a stale
+            // countdown while the new attempt is in flight.
+            nextReconnectAtMs = 0;
             connect(channel, sink);
         }, "shadow-chat-reconnect-" + attempt);
         t.setDaemon(true);

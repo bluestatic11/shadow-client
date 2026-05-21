@@ -173,6 +173,7 @@ public final class ShadowChatClient implements ClientModInitializer {
         // draining click events.
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             tickAutoOpenChat(client);
+            tickReconnectCountdown();
             while (Keybinds.TOGGLE_CHAT.consumeClick()) {
                 handleToggleHotkey(client);
             }
@@ -518,6 +519,24 @@ public final class ShadowChatClient implements ClientModInitializer {
     /** Arm the auto-open countdown — fires once after the given tick delay. */
     private void scheduleAutoOpenChat(int ticks) {
         autoOpenChatCountdown = Math.max(1, ticks);
+    }
+
+    /**
+     * Drive the "Reconnecting in Ns…" countdown shown in the status
+     * line while RelayClient is between attempts. We only overwrite
+     * the status when there's actually no live connection and the
+     * relay has a pending reconnect — otherwise other status updates
+     * (Signed in, Connecting…) take precedence.
+     */
+    private void tickReconnectCountdown() {
+        if (relay == null) return;
+        long nextAt = relay.nextReconnectAtMs();
+        if (nextAt <= 0) return;
+        if (relay.currentChannel() != null) return; // we're actually connected
+        long secsLeft = Math.max(0, (nextAt - System.currentTimeMillis() + 500) / 1000);
+        statusLine = secsLeft > 0
+                ? "Reconnecting in " + secsLeft + "s…"
+                : "Reconnecting…";
     }
 
     /** Called from the client-tick handler to drive the countdown. */

@@ -1115,9 +1115,13 @@ body {
 }
 
 /* ───── Quick action tiles ─────────────────────────────────── */
+/* auto-fit + minmax(min-tile-width, 1fr) lets the row pack as many
+   tiles per line as the container allows, then wraps naturally. We
+   accumulated 7 tiles over time and a fixed 4-column grid was making
+   them squish too small at intermediate widths. */
 .action-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
 }
 
@@ -1289,7 +1293,11 @@ body {
 }
 @media (max-width: 720px) {
   .home-content { padding: 24px 24px 16px 24px; }
-  .stat-row, .action-row { grid-template-columns: repeat(2, 1fr); }
+  /* Stat row keeps its strict 2-column shape (only 4 tiles, all
+     should fit). Action row keeps the auto-fit grid so 7 tiles can
+     re-flow into 2-3-2 or 3-2-2 depending on width without us
+     hand-tuning a column count per breakpoint. */
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
   .greeting-name { font-size: 24px; }
 }
 

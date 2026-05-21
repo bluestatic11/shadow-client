@@ -974,7 +974,118 @@ function buildFriendRow(f) {
     } catch (e) { console.warn('[shadow] signal_mod open-chat-with failed:', e); }
     await playFlow();
   });
+
+  // Right-click → context menu (Copy username / Copy UUID / NameMC /
+  // Remove). Opens at the cursor; click outside or Esc closes.
+  row.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showFriendContextMenu(f, e.clientX, e.clientY);
+  });
   return row;
+}
+
+// ───── Friend context menu ─────────────────────────────────────
+let openContextMenu = null;
+function closeFriendContextMenu() {
+  if (openContextMenu) {
+    openContextMenu.remove();
+    openContextMenu = null;
+    document.removeEventListener('click', onContextOutside, true);
+    document.removeEventListener('keydown', onContextEscape, true);
+  }
+}
+function onContextOutside(e) {
+  if (openContextMenu && !openContextMenu.contains(e.target)) {
+    closeFriendContextMenu();
+  }
+}
+function onContextEscape(e) {
+  if (e.key === 'Escape') closeFriendContextMenu();
+}
+function showFriendContextMenu(f, x, y) {
+  closeFriendContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'friend-context-menu';
+  menu.setAttribute('role', 'menu');
+
+  const items = [
+    {
+      label: 'Copy username',
+      enabled: true,
+      run: () => navigator.clipboard.writeText(f.username),
+    },
+    {
+      label: 'Copy UUID',
+      enabled: !!f.uuid,
+      hint: f.uuid ? '' : '(not resolved yet)',
+      run: () => navigator.clipboard.writeText(f.uuid || ''),
+    },
+    {
+      label: 'Open on NameMC',
+      enabled: !!f.uuid,
+      hint: f.uuid ? '' : '(need UUID)',
+      run: () => window.open(`https://namemc.com/profile/${f.uuid}`, '_blank', 'noopener'),
+    },
+    { kind: 'separator' },
+    {
+      label: 'Remove friend',
+      danger: true,
+      enabled: true,
+      run: async () => {
+        try {
+          const updated = await invoke('friends_remove', { username: f.username });
+          renderFriends(updated);
+        } catch (e) {
+          console.warn('[shadow] friends_remove failed:', e);
+        }
+      },
+    },
+  ];
+
+  for (const item of items) {
+    if (item.kind === 'separator') {
+      const sep = document.createElement('hr');
+      sep.className = 'friend-context-sep';
+      menu.appendChild(sep);
+      continue;
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'friend-context-item';
+    if (item.danger) btn.classList.add('danger');
+    if (!item.enabled) btn.classList.add('disabled');
+    btn.disabled = !item.enabled;
+    btn.setAttribute('role', 'menuitem');
+    btn.textContent = item.label;
+    if (item.hint) {
+      const hint = document.createElement('span');
+      hint.className = 'friend-context-hint';
+      hint.textContent = item.hint;
+      btn.appendChild(hint);
+    }
+    btn.addEventListener('click', async () => {
+      closeFriendContextMenu();
+      try { await item.run(); } catch (err) { console.warn('[shadow] context item failed:', err); }
+    });
+    menu.appendChild(btn);
+  }
+
+  document.body.appendChild(menu);
+  // Position: clamp inside the viewport so a menu opened near the
+  // right/bottom edge doesn't get clipped.
+  const rect = menu.getBoundingClientRect();
+  const px = Math.min(x, window.innerWidth - rect.width - 8);
+  const py = Math.min(y, window.innerHeight - rect.height - 8);
+  menu.style.left = `${Math.max(8, px)}px`;
+  menu.style.top  = `${Math.max(8, py)}px`;
+  openContextMenu = menu;
+  // Attach the dismiss listeners on the next tick so the same right-
+  // click that opened the menu doesn't immediately close it.
+  setTimeout(() => {
+    document.addEventListener('click', onContextOutside, true);
+    document.addEventListener('keydown', onContextEscape, true);
+  }, 0);
 }
 
 function buildYouRow() {

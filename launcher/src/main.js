@@ -1509,6 +1509,132 @@ packsDialog?.addEventListener('click', (e) => {
   if (e.target === packsDialog) packsDialog.close();
 });
 
+// ───── Server browser dialog ────────────────────────────────────
+// Shows curated popular servers + the user's own servers.dat
+// entries. Add buttons funnel through shadowAddTrackedServer /
+// shadowRemoveTrackedServer so the friend-detection ping list is
+// the single source of truth — same backend the friends-panel
+// trackers UI uses.
+const serversDialog       = $('servers-dialog');
+const serversDialogClose  = $('servers-dialog-close');
+const serversDialogDone   = $('servers-dialog-done');
+const serverListPopular   = $('server-list-popular');
+const serverListSaved     = $('server-list-saved');
+const actionServers       = $('action-servers');
+
+function serverKeyMatches(tracked, host, port) {
+  // shadowAddTrackedServer stores "host" or "host:port" (default
+  // port elided). Match either form.
+  const h = (host || '').toLowerCase();
+  if (!h) return false;
+  if (port && port !== 25565) {
+    return tracked === `${h}:${port}` || tracked === `${h}:${port}/`;
+  }
+  return tracked === h || tracked === `${h}:25565`;
+}
+
+function buildServerRow(displayName, host, port, isTracked) {
+  const row = document.createElement('li');
+  row.className = 'server-row';
+
+  const info = document.createElement('div');
+  info.className = 'server-info';
+  const name = document.createElement('div');
+  name.className = 'server-name';
+  name.textContent = displayName;
+  const hostLine = document.createElement('div');
+  hostLine.className = 'server-host';
+  hostLine.textContent = port && port !== 25565 ? `${host}:${port}` : host;
+  info.appendChild(name);
+  info.appendChild(hostLine);
+
+  // Live status pulled from the existing pollTrackedServers cache.
+  const cacheKey = `${(host || '').toLowerCase()}:${port || 25565}`;
+  const sample = trackedServerSamples.get(cacheKey);
+  if (sample) {
+    const status = document.createElement('div');
+    status.className = 'server-status';
+    if (sample.names.size > 0) {
+      status.textContent = `${sample.names.size} player${sample.names.size === 1 ? '' : 's'} in sample`;
+    } else {
+      status.textContent = 'No sample yet';
+    }
+    info.appendChild(status);
+  }
+  row.appendChild(info);
+
+  const btn = document.createElement('button');
+  btn.className = 'server-add-btn';
+  btn.type = 'button';
+  if (isTracked) {
+    btn.textContent = '✓ Tracking';
+    btn.classList.add('tracking');
+    btn.title = 'Click to stop tracking this server';
+  } else {
+    btn.textContent = '+ Track';
+    btn.title = 'Add to friend-detection ping list';
+  }
+  btn.addEventListener('click', () => {
+    if (isTracked) {
+      // Remove via the same key form we stored under.
+      const tracked = loadTrackedServers();
+      const norm = (port && port !== 25565) ? `${host}:${port}` : host;
+      const found = tracked.find(t => serverKeyMatches(t, host, port)) || norm;
+      window.shadowRemoveTrackedServer(found);
+    } else {
+      const norm = (port && port !== 25565) ? `${host}:${port}` : host;
+      window.shadowAddTrackedServer(norm);
+    }
+    refreshServersDialog();
+    renderTrackedServers();  // keep the friends-panel list in sync
+  });
+  row.appendChild(btn);
+
+  return row;
+}
+
+async function refreshServersDialog() {
+  if (!serverListPopular || !serverListSaved) return;
+  const tracked = loadTrackedServers().map(t => t.toLowerCase());
+
+  // Popular section.
+  serverListPopular.innerHTML = '';
+  for (const s of POPULAR_SERVERS) {
+    const isTracked = tracked.some(t => serverKeyMatches(t, s.host, s.port));
+    serverListPopular.appendChild(buildServerRow(s.label, s.host, s.port, isTracked));
+  }
+
+  // Saved section.
+  serverListSaved.innerHTML = '';
+  let local = [];
+  try {
+    local = await invoke('list_local_mc_servers') || [];
+  } catch (_) {}
+  if (!local.length) {
+    const empty = document.createElement('li');
+    empty.className = 'server-empty';
+    empty.textContent = "Nothing in this launcher's servers.dat yet. Add a server inside Minecraft's Multiplayer menu and it'll show up here.";
+    serverListSaved.appendChild(empty);
+  } else {
+    for (const s of local) {
+      const isTracked = tracked.some(t => serverKeyMatches(t, s.host, s.port));
+      const label = s.name && s.name !== s.host ? s.name : s.host;
+      serverListSaved.appendChild(buildServerRow(label, s.host, s.port, isTracked));
+    }
+  }
+}
+
+actionServers?.addEventListener('click', () => {
+  if (!serversDialog) return;
+  serversDialog.showModal();
+  refreshServersDialog();
+});
+serversDialogClose?.addEventListener('click', () => serversDialog?.close());
+serversDialogDone?.addEventListener('click', () => serversDialog?.close());
+serversDialog?.addEventListener('click', (e) => {
+  if (e.target === serversDialog) serversDialog.close();
+});
+
 // Also clear the drag-active class on leave events the webview routes
 // through the same channel — covers the user dragging back out.
 (async () => {

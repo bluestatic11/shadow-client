@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.67</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.68</span>
     </h1>
 
     <div class="topbar-actions">
@@ -233,6 +233,10 @@
           <span class="action-icon" aria-hidden="true">▤</span>
           <span class="action-label">Resource packs</span>
         </button>
+        <button class="action-tile" id="action-servers" type="button">
+          <span class="action-icon" aria-hidden="true">⌗</span>
+          <span class="action-label">Servers</span>
+        </button>
         <button class="action-tile" id="action-hud-editor" type="button">
           <span class="action-icon" aria-hidden="true">⚡</span>
           <span class="action-label">HUD editor</span>
@@ -242,6 +246,36 @@
           <span class="action-label">Open folder</span>
         </button>
       </div>
+
+      <!-- Server browser dialog — opened from the "Servers"
+           quick-action tile. Curated public servers up top, the
+           user's own servers.dat entries below, each with an Add /
+           Tracking toggle that calls the same shadowAddTrackedServer
+           the friends-panel UI uses. -->
+      <dialog id="servers-dialog" class="settings-dialog" aria-labelledby="servers-title">
+        <div class="dialog-head">
+          <h2 id="servers-title" class="dialog-title">Servers</h2>
+          <button class="dialog-close" id="servers-dialog-close" type="button"
+                  aria-label="Close">×</button>
+        </div>
+        <div class="dialog-body">
+          <p class="dialog-blurb">
+            One-click add to the friend-detection ping list. Tracked
+            servers get pinged every 90 s — when a friend's username
+            shows up in the player sample, their row flips to
+            "Playing on this server".
+          </p>
+          <h3 class="server-section-title">Popular public servers</h3>
+          <ul class="server-list" id="server-list-popular" aria-live="polite"></ul>
+          <h3 class="server-section-title">Your saved servers</h3>
+          <ul class="server-list" id="server-list-saved" aria-live="polite">
+            <li class="server-empty">Loading…</li>
+          </ul>
+        </div>
+        <div class="dialog-footer">
+          <button id="servers-dialog-done" class="primary-btn" type="button">Done</button>
+        </div>
+      </dialog>
 
       <!-- Resource-packs management dialog — opened from the
            "Resource packs" quick-action tile. List comes from

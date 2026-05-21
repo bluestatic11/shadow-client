@@ -512,12 +512,32 @@ public final class DiscordChatScreen extends Screen {
             copyIdBtnX2 = btnX2; copyIdBtnY2 = btnY2;
         }
 
-        // Status line on the right.
+        // Status line on the right — truncated with ellipsis so it
+        // can't overlap the channel header / group-ID chip on the
+        // left. `cursor` here is the rightmost x consumed by the
+        // left-side content (channel name + presence + group chips).
+        // Reserve a 16 px gap between left content and the status,
+        // and 12 px from the right edge.
         String status = sc.statusLine();
         if (status != null && !status.isBlank()) {
-            int statusW = this.font.width(status);
-            gfx.drawString(this.font, status,
-                    x + w - statusW - 12, labelY, TEXT_DIM, false);
+            int leftBoundary = cursor + 16;
+            int rightBoundary = x + w - 12;
+            int budget = Math.max(0, rightBoundary - leftBoundary);
+            String shown = status;
+            if (budget > 0 && this.font.width(shown) > budget) {
+                while (shown.length() > 1 && this.font.width(shown + "…") > budget) {
+                    shown = shown.substring(0, shown.length() - 1);
+                }
+                shown = shown + "…";
+            }
+            int statusW = this.font.width(shown);
+            // Only paint if there's room — for an extremely narrow
+            // header (or an extremely busy group title) we'd rather
+            // hide the status than have one-character soup.
+            if (budget >= this.font.width("…") + 4) {
+                gfx.drawString(this.font, shown,
+                        rightBoundary - statusW, labelY, TEXT_DIM, false);
+            }
         }
         gfx.fill(x, y + HEADER_H - 1, x + w, y + HEADER_H, DIVIDER);
 

@@ -928,7 +928,7 @@ function renderFriends(friends) {
 function buildFriendRow(f) {
   const row = document.createElement('li');
   row.className = 'friend-row friend-row-clickable';
-  row.title = `Open chat with ${f.username} (launches Minecraft)`;
+  row.title = buildFriendTooltip(f);
   row.appendChild(makeAvatar(f.username));
 
   const info = document.createElement('div');
@@ -1094,6 +1094,24 @@ function buildYouRow() {
   const username = (signedIn && account?.username) ||
     (usernameInput?.value || '').trim() || 'Player';
 
+  // Tooltip — mirrors the friend-row pattern but tailored to "you":
+  // status comes from local state, UUID from the launcher's account.
+  const youLines = [`${username} (this is you)`];
+  if (mcRunning) {
+    youLines.push(`Playing Minecraft (version ${getPickedVersion()})`);
+  } else if (busy) {
+    youLines.push(`Shadow Client busy — working on something`);
+  } else {
+    youLines.push(`In launcher`);
+  }
+  if (signedIn && account?.uuid) {
+    youLines.push(`UUID: ${account.uuid}`);
+    youLines.push(`Microsoft account`);
+  } else {
+    youLines.push(`Offline mode (no Microsoft sign-in)`);
+  }
+  row.title = youLines.join('\n');
+
   row.appendChild(makeAvatar(username));
 
   const info = document.createElement('div');
@@ -1118,6 +1136,42 @@ function buildYouRow() {
   info.appendChild(makeStatusLineRaw(status, text));
   row.appendChild(info);
   return row;
+}
+
+/**
+ * Build a multi-line tooltip for a friend row that surfaces the
+ * presence data without requiring a right-click. Browser title=
+ * attributes render \n as line breaks across Win/Mac/Linux.
+ */
+function buildFriendTooltip(f) {
+  const lines = [
+    `${f.username}`,
+    `Click to open chat with them (launches Minecraft)`,
+    `Right-click for more options`,
+    '',
+  ];
+  if (f.status === 'playing') {
+    const where = f.server ? ` on ${f.server}` : '';
+    const via = f.launcher ? ` via ${formatLauncher(f.launcher)}` : '';
+    lines.push(`Playing Minecraft${where}${via}`);
+  } else if (f.status === 'idle' || f.status === 'online' || f.status === 'in_menu') {
+    lines.push(f.launcher ? `${formatLauncher(f.launcher)} open` : 'Online');
+  } else {
+    lines.push('Status: offline / unknown');
+  }
+  if (f.last_seen) {
+    lines.push(`Last seen: ${formatRelativeTime(f.last_seen)}`);
+  }
+  if (f.uuid) {
+    lines.push(`UUID: ${f.uuid}`);
+  } else {
+    lines.push('UUID: not resolved (added pre-v0.3.53)');
+  }
+  if (f.added_at) {
+    const added = new Date(f.added_at * 1000);
+    lines.push(`Added: ${added.toLocaleDateString()}`);
+  }
+  return lines.join('\n');
 }
 
 function makeAvatar(username) {

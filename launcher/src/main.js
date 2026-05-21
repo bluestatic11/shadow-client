@@ -1296,6 +1296,15 @@ async function publishPresence(playing) {
   }
 }
 
+/**
+ * Per-UUID previous status snapshot so we can detect transitions
+ * (offline → playing especially) and flash the launcher status line.
+ * Initialized empty so the very first poll cycle doesn't fire a
+ * notification for every already-online friend.
+ */
+const previousFriendStatus = new Map();
+let presencePolledOnce = false;
+
 async function pollFriendPresence() {
   if (!cachedFriends.length) return;
   const uuids = cachedFriends.map(f => f.uuid).filter(Boolean);
@@ -1309,7 +1318,9 @@ async function pollFriendPresence() {
   }
   const byUuid = new Map(entries.map(e => [e.uuid.toLowerCase(), e]));
   let changed = false;
+  const transitions = [];   // collected here, flashed after the loop
   for (const f of cachedFriends) {
+    const prevStatus = previousFriendStatus.get(f.username.toLowerCase()) || null;
     const e = f.uuid ? byUuid.get(f.uuid.toLowerCase()) : null;
     if (e) {
       const beforeKey = `${f.status}|${f.server}|${f.launcher}|${f.version}`;
@@ -1328,8 +1339,39 @@ async function pollFriendPresence() {
       f.launcher = null;
       changed = true;
     }
+    // Notify on transitions to "playing" — that's the headline
+    // event ("X is on!"). Idle / offline transitions are noise.
+    if (presencePolledOnce
+        && f.status === 'playing'
+        && prevStatus !== 'playing') {
+      transitions.push(f);
+    }
+    previousFriendStatus.set(f.username.toLowerCase(), f.status || null);
+  }
+  presencePolledOnce = true;
+  if (transitions.length) {
+    flashFriendOnline(transitions);
   }
   if (changed) renderFriends(cachedFriends);
+}
+
+/**
+ * Flash a status line for friends who just transitioned to playing.
+ * Coalesces multiple simultaneous flips into a single message so a
+ * server starting up doesn't spam the user.
+ */
+function flashFriendOnline(friends) {
+  if (!friends.length) return;
+  const first = friends[0];
+  const where = first.server ? ` on ${first.server}` : '';
+  let msg;
+  if (friends.length === 1) {
+    msg = `${first.username} is now playing${where}`;
+  } else {
+    const others = friends.length - 1;
+    msg = `${first.username} +${others} more ${others === 1 ? 'friend' : 'friends'} just hopped on`;
+  }
+  setStatus(msg, 'ok');
 }
 
 setInterval(() => { publishPresence(mcRunning); }, 60_000);
@@ -1475,6 +1517,12 @@ async function pingBatch(targets, concurrency = 8) {
   await Promise.all(workers);
 }
 
+/** Have we completed at least one tracked-servers poll? Notifications
+ *  are suppressed on the first cycle (otherwise the launcher would
+ *  flash a "X is on" message for every friend already detected the
+ *  moment we open). */
+let serverPingPolledOnce = false;
+
 async function pollTrackedServers() {
   if (!cachedFriends.length) return;
   const targets = await getServerPingTargets();
@@ -1483,9 +1531,11 @@ async function pollTrackedServers() {
   // Merge into friends — only override status if we don't already have
   // a more-trustworthy presence-relay entry for them.
   let anyChanged = false;
+  const transitions = [];
   for (const f of cachedFriends) {
     const isRelayKnown = f.launcher === 'shadow-client';
     if (isRelayKnown) continue;  // relay data wins
+    const prevStatus = previousFriendStatus.get(f.username.toLowerCase()) || null;
     let foundOn = null;
     for (const [key, { names, label }] of trackedServerSamples) {
       if (names.has(f.username.toLowerCase())) {
@@ -1506,7 +1556,16 @@ async function pollTrackedServers() {
       f.launcher = null;
     }
     if (prev !== `${f.status}|${f.server}|${f.launcher}`) anyChanged = true;
+    // Flash on offline→playing for server-ping-detected friends too.
+    if (serverPingPolledOnce
+        && f.status === 'playing'
+        && prevStatus !== 'playing') {
+      transitions.push(f);
+    }
+    previousFriendStatus.set(f.username.toLowerCase(), f.status || null);
   }
+  serverPingPolledOnce = true;
+  if (transitions.length) flashFriendOnline(transitions);
   if (anyChanged) renderFriends(cachedFriends);
 }
 

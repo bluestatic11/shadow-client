@@ -486,6 +486,61 @@ pub struct CrashReport {
     /// culprit without forcing the user to scroll a 5000-line file.
     pub head: String,
     pub size_bytes: u64,
+    /// One-line probable cause derived from known crash signatures, or
+    /// None when we don't recognize the failure mode. Pattern matching
+    /// only — never overrides the user's own reading of the stack.
+    pub probable_cause: Option<String>,
+}
+
+/// Scan the head of a crash report for known signatures and return a
+/// human-readable one-liner the UI can surface above the raw stack.
+/// Returns None when nothing in our catalog matches.
+fn analyze_crash(head: &str) -> Option<String> {
+    // Order matters — more-specific patterns first so e.g. a Sodium
+    // crash isn't misreported as a generic NoSuchMethodError.
+    let patterns: &[(&str, &str)] = &[
+        // Memory / heap.
+        ("OutOfMemoryError",
+         "Out of memory — bump RAM allocation in Settings (4096 MB is a good start)."),
+        ("Java heap space",
+         "Java ran out of heap. Increase RAM allocation in Settings."),
+        // Renderer / native crashes.
+        ("EXCEPTION_ACCESS_VIOLATION",
+         "Native GPU crash — try updating your graphics driver, then disable any shader pack."),
+        ("# A fatal error has been detected by the Java Runtime",
+         "JVM segfault — usually a driver/native-library mismatch. Update GPU drivers."),
+        // Shader / render mods (Iris, Sodium, OptiFine).
+        ("net.coderbot.iris", "Iris (shaders) crash — disable shader pack and try again."),
+        ("Iris", "Iris (shaders) crash — disable shader pack and try again."),
+        ("OptiFine", "OptiFine incompatibility — Shadow Client ships Sodium+Iris instead. Remove OptiFine."),
+        ("me.jellysquid.mods.sodium", "Sodium renderer crash — try updating GPU drivers or removing other render mods."),
+        // Mod loading.
+        ("NoClassDefFoundError",
+         "Mod is missing a dependency. Check the mod's required-mods list and install what's missing."),
+        ("NoSuchMethodError",
+         "Mod conflict — two mods built against different versions are clashing. Update them."),
+        ("ModResolutionException", "Fabric couldn't resolve mod dependencies. See the stack for the culprit."),
+        ("Mixin apply failed", "A mod's Mixin failed to apply — usually a version mismatch with the MC version."),
+        // Network / chat-relay.
+        ("ConnectException", "Couldn't reach a server — check your internet connection."),
+        ("UnknownHostException", "DNS lookup failed — server address may be wrong or DNS is down."),
+        ("Connection reset",   "Network dropped mid-connection. Try again."),
+        // World / save corruption.
+        ("ReportedException: Loading entity",
+         "Corrupt entity in your save — try loading the world without the recently-added mod."),
+        ("Failed to read NBT", "Save data is corrupted. Restore from a backup if you have one."),
+        // Auth / session.
+        ("AuthenticationException",
+         "Microsoft session expired. Sign out and back in via the account widget."),
+        ("InvalidTokenException",
+         "Auth token rejected by Mojang. Re-sign-in via the account widget."),
+    ];
+    for (signature, hint) in patterns {
+        if head.contains(signature) {
+            return Some((*hint).to_string());
+        }
+    }
+    None
 }
 
 /// Find the most-recent crash-report file under the active profile and
@@ -530,10 +585,12 @@ fn read_latest_crash_report(version: Option<String>) -> Result<Option<CrashRepor
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    let probable_cause = analyze_crash(&head);
     Ok(Some(CrashReport {
         filename: path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(),
         path: path.display().to_string(),
         mtime_unix,
+        probable_cause,
         head,
         size_bytes: size,
     }))

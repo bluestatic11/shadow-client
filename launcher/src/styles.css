@@ -2767,6 +2767,23 @@ body.drag-active::after {
   color: var(--text);
 }
 
+/* Crash-report probable-cause hint: amber accent so it draws the eye
+   above the stack trace but doesn't compete with the red modal head. */
+.crash-cause {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: rgba(216, 199, 90, 0.12);  /* --amber-tinted */
+  border-left: 3px solid var(--amber);
+  border-radius: 0 6px 6px 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.crash-cause strong {
+  color: var(--amber);
+  margin-right: 4px;
+}
+
 /* Server browser dialog. Mirrors the packs dialog layout but with
    separate sections for curated vs local servers. */
 .server-section-title {

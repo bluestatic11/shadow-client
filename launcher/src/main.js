@@ -1719,6 +1719,7 @@ async function showLatestCrashReport() {
         </button>
       </div>
       <div class="dialog-body">
+        <div class="crash-cause" id="crash-cause" hidden></div>
         <p class="page-blurb" id="crash-filename"></p>
         <pre class="crash-content" id="crash-content"></pre>
       </div>
@@ -1740,6 +1741,24 @@ async function showLatestCrashReport() {
     modal.querySelector('#crash-open-folder')?.addEventListener('click', async () => {
       try { await invoke('open_folder'); } catch (_) {}
     });
+  }
+  // Render the probable-cause hint when the Rust analyzer matched a
+  // known signature. Hidden when probable_cause is null so we don't
+  // surface a misleading empty card.
+  const causeEl = modal.querySelector('#crash-cause');
+  if (causeEl) {
+    if (report.probable_cause) {
+      causeEl.hidden = false;
+      causeEl.innerHTML = '';
+      const label = document.createElement('strong');
+      label.textContent = 'Probable cause: ';
+      const text = document.createElement('span');
+      text.textContent = report.probable_cause;
+      causeEl.appendChild(label);
+      causeEl.appendChild(text);
+    } else {
+      causeEl.hidden = true;
+    }
   }
   modal.querySelector('#crash-filename').textContent =
     `${report.filename} · ${Math.round(report.size_bytes / 1024)} KB`;

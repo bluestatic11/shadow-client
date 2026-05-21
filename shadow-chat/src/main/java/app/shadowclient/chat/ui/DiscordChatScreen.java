@@ -120,6 +120,7 @@ public final class DiscordChatScreen extends Screen {
      *  exclusive with viewingVoiceRoom — opening one closes the other. */
     private boolean viewingSettings = false;
     private int settingsBtnX1, settingsBtnY1, settingsBtnX2, settingsBtnY2;
+    private int muteBtnX1, muteBtnY1, muteBtnX2, muteBtnY2;
     /** Inline "Join voice" button on the voice-room empty state. */
     private int emptyJoinBtnX1, emptyJoinBtnY1, emptyJoinBtnX2, emptyJoinBtnY2;
     /** One hit-rect per coords-share line in the current render. */
@@ -162,6 +163,7 @@ public final class DiscordChatScreen extends Screen {
         micBtnX2 = 0;
         voiceRoomBtnX2 = 0;
         settingsBtnX2 = 0;
+        muteBtnX2 = 0;
         settingsToggleHits.clear();
         emptyJoinBtnX2 = 0;
         coordsHits.clear();
@@ -395,26 +397,64 @@ public final class DiscordChatScreen extends Screen {
                 avX + avSize + 8, avY + 3 + this.font.lineHeight + 2,
                 auth.isUsable() ? GREEN : TEXT_DIM, false);
 
-        // Settings ⚙ button — far right of the user bar. Active state
-        // (panel currently open) gets the accent fill so it's clear
-        // the user is *in* settings.
+        // Right-edge buttons. Two buttons: mute + settings, stacked
+        // right-to-left from the right edge with a 6 px gap. Each is
+        // a 22 px square.
         int btnSize = 22;
-        int btnX2 = x + w - 10;
-        int btnX1 = btnX2 - btnSize;
-        int btnY1 = y + (h - btnSize) / 2;
-        int btnY2 = btnY1 + btnSize;
-        int bg = viewingSettings ? ACCENT : CHIP_HOVER;
-        gfx.fill(btnX1, btnY1, btnX2, btnY2, bg);
-        // Draw a stylized cog: ASCII fallback for fonts that don't
-        // ship the U+2699 glyph cleanly.
-        String glyph = "*";
-        int gw = this.font.width(glyph);
-        gfx.drawString(this.font, glyph,
-                btnX1 + (btnSize - gw) / 2,
-                btnY1 + (btnSize - this.font.lineHeight) / 2 + 1,
+        int rightEdge = x + w - 10;
+
+        // Settings ⚙ — rightmost. Active state (panel open) → accent
+        // fill so it's clear the user is *in* settings.
+        int sBtnX2 = rightEdge;
+        int sBtnX1 = sBtnX2 - btnSize;
+        int sBtnY1 = y + (h - btnSize) / 2;
+        int sBtnY2 = sBtnY1 + btnSize;
+        int sBg = viewingSettings ? ACCENT : CHIP_HOVER;
+        gfx.fill(sBtnX1, sBtnY1, sBtnX2, sBtnY2, sBg);
+        String sGlyph = "*";
+        int sw = this.font.width(sGlyph);
+        gfx.drawString(this.font, sGlyph,
+                sBtnX1 + (btnSize - sw) / 2,
+                sBtnY1 + (btnSize - this.font.lineHeight) / 2 + 1,
                 TEXT_BRIGHT, false);
-        settingsBtnX1 = btnX1; settingsBtnY1 = btnY1;
-        settingsBtnX2 = btnX2; settingsBtnY2 = btnY2;
+        settingsBtnX1 = sBtnX1; settingsBtnY1 = sBtnY1;
+        settingsBtnX2 = sBtnX2; settingsBtnY2 = sBtnY2;
+
+        // Mute (headphones) — second from right. Red when muted so
+        // the user notices they've silenced everyone before
+        // wondering "why is voice broken". MC font doesn't have a
+        // headphones glyph, so we use "H" + render a small slash
+        // overlay when muted.
+        boolean muted = sc.isVoiceMuted();
+        int mBtnX2 = sBtnX1 - 6;
+        int mBtnX1 = mBtnX2 - btnSize;
+        int mBtnY1 = sBtnY1;
+        int mBtnY2 = sBtnY2;
+        int mBg = muted ? RED_PILL : CHIP_HOVER;
+        gfx.fill(mBtnX1, mBtnY1, mBtnX2, mBtnY2, mBg);
+        String mGlyph = "H";
+        int mw = this.font.width(mGlyph);
+        gfx.drawString(this.font, mGlyph,
+                mBtnX1 + (btnSize - mw) / 2,
+                mBtnY1 + (btnSize - this.font.lineHeight) / 2 + 1,
+                TEXT_BRIGHT, false);
+        if (muted) {
+            // Diagonal slash through the H — accent-bright white so it
+            // contrasts the red pill. Three pixels wide for visibility.
+            for (int i = 0; i < 3; i++) {
+                gfx.fill(mBtnX1 + 2 + i, mBtnY1 + btnSize - 4,
+                         mBtnX1 + 3 + i, mBtnY1 + btnSize - 3, TEXT_BRIGHT);
+                gfx.fill(mBtnX2 - 4 - i, mBtnY1 + 2,
+                         mBtnX2 - 3 - i, mBtnY1 + 3, TEXT_BRIGHT);
+            }
+            // Connect the corners with a continuous line.
+            for (int j = 0; j < btnSize - 6; j++) {
+                gfx.fill(mBtnX1 + 3 + j, mBtnY1 + btnSize - 4 - j,
+                         mBtnX1 + 4 + j, mBtnY1 + btnSize - 3 - j, TEXT_BRIGHT);
+            }
+        }
+        muteBtnX1 = mBtnX1; muteBtnY1 = mBtnY1;
+        muteBtnX2 = mBtnX2; muteBtnY2 = mBtnY2;
     }
 
     /**
@@ -1117,6 +1157,15 @@ public final class DiscordChatScreen extends Screen {
                 && my >= settingsBtnY1 && my <= settingsBtnY2) {
             viewingSettings = !viewingSettings;
             if (viewingSettings) viewingVoiceRoom = false;
+            return true;
+        }
+
+        // Mute (headphones) button in the user bar — quick-access
+        // alias for the settings panel's "Mute incoming voice" row.
+        if (muteBtnX2 > 0
+                && mx >= muteBtnX1 && mx <= muteBtnX2
+                && my >= muteBtnY1 && my <= muteBtnY2) {
+            ShadowChatClient.get().toggleVoiceMuted();
             return true;
         }
 

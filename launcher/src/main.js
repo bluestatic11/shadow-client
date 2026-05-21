@@ -528,9 +528,13 @@ function renderAccount() {
     if (isMsa) {
       chatHint.classList.add('ready');
       chatHint.classList.remove('disabled', 'actionable');
-      chatHint.removeAttribute('role');
-      chatHint.removeAttribute('tabindex');
-      if (text) text.textContent = 'Shadow Chat: ready · ; chat · V talk';
+      // Keep it accessible — when signed in the pill IS clickable
+      // (launches MC) per v0.3.56. Without role=button keyboard /
+      // screen-reader users wouldn't know to interact with it.
+      chatHint.setAttribute('role', 'button');
+      chatHint.setAttribute('tabindex', '0');
+      if (text) text.textContent =
+        'Shadow Chat: ready · press ; in-game to open chat · click to launch';
     } else {
       chatHint.classList.add('disabled', 'actionable');
       chatHint.classList.remove('ready');

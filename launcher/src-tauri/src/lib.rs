@@ -1522,6 +1522,81 @@ fn chat_diagnostics() -> String {
     lines.join("\n")
 }
 
+/// Structured chat-health check for the home-screen pill. Returns a
+/// list of short, user-actionable blockers — empty list means chat is
+/// ready, otherwise the front-end surfaces the first blocker. Cheap
+/// (no network), safe to poll on every render.
+#[derive(Serialize, Clone)]
+pub struct ChatHealthCheck {
+    pub ready: bool,
+    pub blockers: Vec<String>,
+    /// Filename of the installed mod jar if any (e.g. "shadow-chat-0.1.27.jar")
+    /// — handy for the diagnostic banner.
+    pub mod_jar: Option<String>,
+}
+
+#[tauri::command]
+fn chat_health_check() -> ChatHealthCheck {
+    let root = project_root();
+    let game_dir = root.join("game_dir");
+    let account_file = game_dir.join("mc-client-account.json");
+    let state_file = root.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let last_profile = state.last_used.clone().unwrap_or_default();
+    let profile_dir = if last_profile.is_empty() {
+        game_dir.clone()
+    } else {
+        game_dir.join("profiles").join(&last_profile)
+    };
+    let mut blockers: Vec<String> = Vec::new();
+
+    // 1. Microsoft sign-in.
+    let signed_in = if let Ok(s) = std::fs::read_to_string(&account_file) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+            let user_type = v.get("user_type").and_then(|v| v.as_str()).unwrap_or("?");
+            let token = v.get("access_token").and_then(|v| v.as_str()).unwrap_or("");
+            user_type == "msa" && token.len() > 10
+        } else { false }
+    } else { false };
+    if !signed_in {
+        blockers.push("Sign in with Microsoft (top-right pill)".to_string());
+    }
+
+    // 2. MC version supported by the chat mod.
+    if !last_profile.is_empty()
+        && !shadow_chat::SUPPORTED_MC_VERSIONS.contains(&last_profile.as_str()) {
+        blockers.push(format!(
+            "Chat mod doesn't support MC {} — pick {} for chat",
+            last_profile,
+            shadow_chat::SUPPORTED_MC_VERSIONS.join(" or "),
+        ));
+    }
+
+    // 3. Mod jar actually installed.
+    let mods_dir = profile_dir.join("mods");
+    let mod_jar = std::fs::read_dir(&mods_dir).ok().and_then(|rd| {
+        rd.filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .find(|n| n.starts_with("shadow-chat") && n.ends_with(".jar"))
+    });
+    if mod_jar.is_none() && !last_profile.is_empty() {
+        blockers.push("Mod jar missing — click PLAY once to install it".to_string());
+    }
+
+    // 4. Auth-file presence (only meaningful if signed-in and a profile
+    //    exists — the launcher writes it on every launch).
+    let auth_file = profile_dir.join("shadow-chat-auth.json");
+    if signed_in && !auth_file.exists() && !last_profile.is_empty() {
+        blockers.push("Auth file missing — click PLAY once to write it".to_string());
+    }
+
+    ChatHealthCheck {
+        ready: blockers.is_empty(),
+        blockers,
+        mod_jar,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1542,6 +1617,7 @@ pub fn run() {
             check_python,
             diagnostics,
             chat_diagnostics,
+            chat_health_check,
             chat_test_token,
             read_latest_crash_report,
             list_recent_crash_reports,

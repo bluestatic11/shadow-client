@@ -535,6 +535,10 @@ function renderAccount() {
       chatHint.setAttribute('tabindex', '0');
       if (text) text.textContent =
         'Shadow Chat: ready · press ; in-game to open chat · click to launch';
+      // Fire-and-forget health check — if signing in alone wasn't
+      // enough to make chat work (mod jar missing, wrong MC version),
+      // this updates the pill text within a second.
+      runChatHealthCheck();
     } else {
       chatHint.classList.add('disabled', 'actionable');
       chatHint.classList.remove('ready');
@@ -614,6 +618,49 @@ if (chatHintPill) {
   // path). Cursor + role are set per-state in renderAccount(), but
   // we re-mark the signed-in path here so the hover state lands.
   chatHintPill.style.cursor = 'pointer';
+}
+
+/**
+ * Re-evaluate chat readiness and rewrite the pill text to surface the
+ * actual blocker (mod-jar missing, wrong MC version, auth file not
+ * written yet) instead of letting the user squint at a "ready" pill
+ * while ; does nothing in-game. Called after sign-in, after every
+ * mc-exited event, and once on home-screen load.
+ */
+async function runChatHealthCheck() {
+  const pill = document.getElementById('chat-hint');
+  if (!pill) return;
+  const text = pill.querySelector('.chat-hint-text');
+  if (!text) return;
+  let health;
+  try {
+    health = await invoke('chat_health_check');
+  } catch (e) {
+    console.warn('[shadow] chat_health_check failed:', e);
+    return;
+  }
+  if (!health) return;
+  if (health.ready) {
+    text.textContent = health.mod_jar
+      ? `Shadow Chat ready · ${health.mod_jar} · press ; to chat`
+      : 'Shadow Chat: ready · press ; in-game to open chat · click to launch';
+    pill.classList.add('ready');
+    pill.classList.remove('disabled', 'actionable');
+  } else {
+    // Surface the first blocker. If the user can fix it with the
+    // pill click (sign-in), set the pill to actionable. Otherwise
+    // it stays a status — they'll resolve it by clicking PLAY.
+    const first = health.blockers[0];
+    const isSignIn = /sign in/i.test(first);
+    text.textContent = `Shadow Chat blocked: ${first}`;
+    if (isSignIn) {
+      pill.classList.add('disabled', 'actionable');
+      pill.classList.remove('ready');
+    } else {
+      pill.classList.add('disabled');
+      pill.classList.remove('ready', 'actionable');
+    }
+  }
 }
 
 async function doSignIn() {
@@ -1921,6 +1968,10 @@ listen('mc-exited',  (event) => {
   mcRunning = false;
   renderFriends(cachedFriends);
   publishPresence(false);
+  // Refresh the chat-hint pill — the launch may have installed the
+  // mod jar / written shadow-chat-auth.json, which would clear an
+  // earlier "blocked" pill state.
+  runChatHealthCheck();
   // v0.3.39: on non-zero exit, surface the most-recent crash report so
   // the user doesn't have to dig into game_dir/profiles/X/crash-reports/
   // to figure out what blew up. Mod-loader crashes write nicely

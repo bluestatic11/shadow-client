@@ -631,6 +631,54 @@ public final class DiscordChatScreen extends Screen {
                 "Silences other people's voice locally. Decoding keeps running so you can un-mute instantly.",
                 "voice_muted", cfg.voiceMuted());
 
+        // ─── Client QoL toggles ───────────────────────────────────────
+        // Render a divider + sub-header so the three sections (Voice /
+        // QoL / Minigame) read as visually distinct groups.
+        gfx.fill(x + 24, rowY + 2, x + w - 24, rowY + 3, DIVIDER);
+        rowY += 12;
+        gfx.drawString(this.font, "Client QoL helpers", x + 24, rowY, TEXT_BRIGHT, false);
+        rowY += this.font.lineHeight + 8;
+
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Recipe preview tooltip",
+                "Hover any craftable item — its ingredients + arrangement get added to the tooltip.",
+                "qol_recipe", app.shadowclient.chat.qol.Qol.recipePreviewEnabled);
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Coords HUD (top-right)",
+                "Small XYZ + cardinal-facing overlay. Less noisy than F3 when you just want to read your position.",
+                "qol_coords", app.shadowclient.chat.qol.Qol.coordsHudEnabled);
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Held-item HUD",
+                "Selected hotbar item floats above the bar for ~2 s when you switch slots, then fades.",
+                "qol_helditem", app.shadowclient.chat.qol.Qol.heldItemHudEnabled);
+
+        // ─── Minigame helpers ─────────────────────────────────────────
+        gfx.fill(x + 24, rowY + 2, x + w - 24, rowY + 3, DIVIDER);
+        rowY += 12;
+        gfx.drawString(this.font, "Minigame helpers", x + 24, rowY, TEXT_BRIGHT, false);
+        rowY += this.font.lineHeight + 8;
+
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Speed HUD",
+                "Bottom-left HUD showing current speed (blocks/sec), session peak, and post-landing jump distance + height.",
+                "mg_speed", app.shadowclient.chat.minigame.Minigames.speedHudEnabled);
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Lap timer (ice-boat racing)",
+                "Anchors a start line at the toggle position; cross it to begin lap, cross again to time it. PB tracked.",
+                "mg_lap", app.shadowclient.chat.minigame.Minigames.lapTimerEnabled);
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Ice block highlight",
+                "Color-coded outlines on nearby ice: green=blue ice (fastest), yellow=packed, cyan=regular.",
+                "mg_ice", app.shadowclient.chat.minigame.Minigames.iceHighlightEnabled);
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Auto sprint",
+                "Always sprint when holding W; backs off in vehicles, during sneak/item-use, or with hunger ≤ 6.",
+                "mg_sprint", app.shadowclient.chat.minigame.Minigames.autoSprintEnabled);
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Auto respawn",
+                "Fires the respawn packet on the death screen with a 20-tick cooldown to avoid bug-loops.",
+                "mg_respawn", app.shadowclient.chat.minigame.Minigames.autoRespawnEnabled);
+
         // Hint at the bottom — keyboard shortcuts users might miss.
         int hintY = y + h - 22;
         gfx.drawString(this.font,
@@ -1215,6 +1263,23 @@ public final class DiscordChatScreen extends Screen {
                     // picks the change up live instead of waiting for the
                     // next restart.
                     case "voice_muted" -> sc.toggleVoiceMuted();
+                    // QoL toggles — flip the session-scoped static booleans
+                    // owned by the qol / minigame packages.
+                    case "qol_recipe"   -> app.shadowclient.chat.qol.Qol.recipePreviewEnabled = !app.shadowclient.chat.qol.Qol.recipePreviewEnabled;
+                    case "qol_coords"   -> app.shadowclient.chat.qol.Qol.coordsHudEnabled    = !app.shadowclient.chat.qol.Qol.coordsHudEnabled;
+                    case "qol_helditem" -> app.shadowclient.chat.qol.Qol.heldItemHudEnabled  = !app.shadowclient.chat.qol.Qol.heldItemHudEnabled;
+                    case "mg_speed"     -> app.shadowclient.chat.minigame.Minigames.speedHudEnabled       = !app.shadowclient.chat.minigame.Minigames.speedHudEnabled;
+                    case "mg_lap"       -> {
+                        boolean now = !app.shadowclient.chat.minigame.Minigames.lapTimerEnabled;
+                        app.shadowclient.chat.minigame.Minigames.lapTimerEnabled = now;
+                        // Mirror the slash-command behavior: anchor on
+                        // enable, clear everything on disable.
+                        if (now) app.shadowclient.chat.minigame.LapTimer.anchorStartLineHere();
+                        else     app.shadowclient.chat.minigame.LapTimer.clearAll();
+                    }
+                    case "mg_ice"       -> app.shadowclient.chat.minigame.Minigames.iceHighlightEnabled   = !app.shadowclient.chat.minigame.Minigames.iceHighlightEnabled;
+                    case "mg_sprint"    -> app.shadowclient.chat.minigame.Minigames.autoSprintEnabled     = !app.shadowclient.chat.minigame.Minigames.autoSprintEnabled;
+                    case "mg_respawn"   -> app.shadowclient.chat.minigame.Minigames.autoRespawnEnabled    = !app.shadowclient.chat.minigame.Minigames.autoRespawnEnabled;
                     default -> {}
                 }
                 return true;

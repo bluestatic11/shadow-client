@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.83</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.84</span>
     </h1>
 
     <div class="topbar-actions">
@@ -141,6 +141,18 @@
           Small / private servers return their full player list, so detection
           is reliable.
         </p>
+        <hr class="friends-trackers-sep">
+        <p class="friends-trackers-blurb">
+          Launching MC through a different launcher (Prism / Lunar / vanilla)?
+          Click this every so often to refresh your Shadow Chat auth so the
+          mod can connect — happens automatically every 30 min while this
+          launcher is open.
+        </p>
+        <button type="button" id="refresh-chat-auth-btn" class="primary-btn"
+                style="width:auto;padding:6px 14px;">
+          Refresh chat auth now
+        </button>
+        <p class="friends-trackers-note" id="refresh-chat-auth-status"></p>
       </details>
       <p class="friends-note">
         Shadow Client users show up live via our presence service. For other

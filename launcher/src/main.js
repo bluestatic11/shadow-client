@@ -539,6 +539,10 @@ function renderAccount() {
       // enough to make chat work (mod jar missing, wrong MC version),
       // this updates the pill text within a second.
       runChatHealthCheck();
+      // Refresh chat-auth on every account-state change. Catches the
+      // "just signed in" case and the "token-stale-from-yesterday's-
+      // launcher-session" case in a single call.
+      backgroundRefreshChatAuth();
     } else {
       chatHint.classList.add('disabled', 'actionable');
       chatHint.classList.remove('ready');
@@ -618,6 +622,31 @@ if (chatHintPill) {
   // path). Cursor + role are set per-state in renderAccount(), but
   // we re-mark the signed-in path here so the hover state lands.
   chatHintPill.style.cursor = 'pointer';
+}
+
+/**
+ * Refresh shadow-chat-auth.json + the Microsoft access token if
+ * stale. Designed for users who launch MC via Prism / Lunar /
+ * vanilla — keeping the launcher open in the background as a tray
+ * app keeps their chat auth fresh without ever clicking PLAY.
+ *
+ * Silent on success (no status flash for every tick), warns on
+ * failure since the user might be wondering why chat broke.
+ */
+async function backgroundRefreshChatAuth() {
+  if (!signedIn) return;
+  try {
+    await invoke('refresh_chat_auth', { version: getPickedVersion(), force: false });
+  } catch (e) {
+    // Don't spam the status — flash once per unique error message.
+    const err = String(e);
+    if (window.__lastAuthRefreshError === err) return;
+    window.__lastAuthRefreshError = err;
+    console.warn('[shadow] chat-auth refresh failed:', err);
+  }
+  // Refresh the chat-hint pill so the user sees the freshly-written
+  // auth file reflected (e.g. "blocked: Auth file missing" → "ready").
+  runChatHealthCheck();
 }
 
 /**
@@ -1436,6 +1465,11 @@ function flashFriendOnline(friends) {
 
 setInterval(() => { publishPresence(mcRunning); }, 60_000);
 setInterval(pollFriendPresence, 30_000);
+// Background refresh of shadow-chat-auth.json + Microsoft token —
+// every 30 min keeps it well inside the 24 h MSA lifetime. Critical
+// for users who launch MC via Prism / Lunar / vanilla; they never
+// hit the PLAY-flow path that normally writes this file.
+setInterval(backgroundRefreshChatAuth, 30 * 60_000);
 // Kick once on startup so the user doesn't wait 30 s for friends to
 // fill in.
 setTimeout(() => {
@@ -2280,6 +2314,31 @@ trackedAddForm?.addEventListener('submit', (e) => {
 
 // Initial render so the list reflects whatever's stored.
 renderTrackedServers();
+
+// Manual "Refresh chat auth now" button — for users who launch MC
+// through a different launcher and want to top up before clicking
+// PLAY in that other launcher.
+const refreshChatAuthBtn = $('refresh-chat-auth-btn');
+const refreshChatAuthStatus = $('refresh-chat-auth-status');
+refreshChatAuthBtn?.addEventListener('click', async () => {
+  refreshChatAuthBtn.disabled = true;
+  const old = refreshChatAuthBtn.textContent;
+  refreshChatAuthBtn.textContent = 'Refreshing…';
+  if (refreshChatAuthStatus) refreshChatAuthStatus.textContent = '';
+  try {
+    const msg = await invoke('refresh_chat_auth', {
+      version: getPickedVersion(),
+      force: true,
+    });
+    if (refreshChatAuthStatus) refreshChatAuthStatus.textContent = `✓ ${msg}`;
+    runChatHealthCheck();  // pill reflects fresh state
+  } catch (e) {
+    if (refreshChatAuthStatus) refreshChatAuthStatus.textContent = `✗ ${e}`;
+  } finally {
+    refreshChatAuthBtn.disabled = false;
+    refreshChatAuthBtn.textContent = old;
+  }
+});
 
 // ───── Quick action tiles ───────────────────────────────────────
 document.getElementById('action-mods')?.addEventListener('click', () => {

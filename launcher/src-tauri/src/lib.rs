@@ -1535,6 +1535,53 @@ pub struct ChatHealthCheck {
     pub mod_jar: Option<String>,
 }
 
+/// Refresh the Microsoft access token (if it's older than 12h or the
+/// caller passes force=true) and rewrite shadow-chat-auth.json into
+/// the active profile. Designed for users who launch MC via a
+/// different launcher (Prism / Lunar / vanilla) — they can keep
+/// Shadow Client open in the background to keep auth fresh without
+/// ever clicking PLAY.
+///
+/// Returns a short human-readable status string. Best-effort — a
+/// network blip won't crash the launcher; the front-end retries on
+/// the next tick.
+#[tauri::command]
+async fn refresh_chat_auth(version: Option<String>, force: Option<bool>) -> Result<String, String> {
+    let here = project_root();
+    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let mut acct = auth::Account::load(&account_file)
+        .ok_or_else(|| "not signed in — sign in with Microsoft first".to_string())?;
+    if acct.user_type != "msa" {
+        return Err("offline mode — sign in with Microsoft to enable chat".into());
+    }
+    // Refresh the token when it's getting stale, or when the caller
+    // explicitly requested it.
+    let needs = force.unwrap_or(false) || auth::needs_refresh(&acct);
+    if needs {
+        let progress = |_: String| {}; // silent — the result string is enough
+        match auth::refresh_account(&acct, progress).await {
+            Ok(fresh) => {
+                let _ = fresh.save(&account_file);
+                acct = fresh;
+            }
+            Err(e) => return Err(format!("token refresh failed: {e}")),
+        }
+    }
+    // Write the chat auth file into the active profile.
+    let state_file = here.join("installed.json");
+    let state = setup::load_state(&state_file);
+    let profile = version.or(state.last_used)
+        .ok_or_else(|| "no MC profile installed — set one up via the launcher first".to_string())?;
+    let (profile_dir, _) = setup::resolve_dirs(&here, Some(&profile));
+    shadow_chat::write_auth_file(&profile_dir, &acct)
+        .map_err(|e| format!("couldn't write shadow-chat-auth.json: {e}"))?;
+    Ok(if needs {
+        format!("Token refreshed + chat-auth written to profile '{profile}'")
+    } else {
+        format!("Token still fresh; chat-auth written to profile '{profile}'")
+    })
+}
+
 #[tauri::command]
 fn chat_health_check() -> ChatHealthCheck {
     let root = project_root();
@@ -1618,6 +1665,7 @@ pub fn run() {
             diagnostics,
             chat_diagnostics,
             chat_health_check,
+            refresh_chat_auth,
             chat_test_token,
             read_latest_crash_report,
             list_recent_crash_reports,

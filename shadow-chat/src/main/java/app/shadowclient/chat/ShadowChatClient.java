@@ -3,6 +3,8 @@ package app.shadowclient.chat;
 import app.shadowclient.chat.config.AuthConfig;
 import app.shadowclient.chat.config.ModConfig;
 import app.shadowclient.chat.ipc.CommandFile;
+import app.shadowclient.chat.minigame.MinigameCommands;
+import app.shadowclient.chat.minigame.Minigames;
 import app.shadowclient.chat.relay.Messages;
 import app.shadowclient.chat.relay.RelayClient;
 import app.shadowclient.chat.ui.ChatOverlay;
@@ -94,6 +96,12 @@ public final class ShadowChatClient implements ClientModInitializer {
         this.overlay.register();
 
         Keybinds.register();
+
+        // Minigame QoL pack — speed HUD, lap timer, ice highlighter,
+        // auto-sprint, auto-respawn. All session-scoped toggles driven
+        // by slash commands typed in the chat overlay; the mod stays
+        // dormant until the user enables one.
+        Minigames.register();
 
         // IPC drop-file watcher — lets the launcher signal us to (e.g.)
         // open the chat screen automatically on world load. See
@@ -569,6 +577,14 @@ public final class ShadowChatClient implements ClientModInitializer {
     private void handleSlashCommand(String line) {
         String[] parts = line.split("\\s+");
         if (parts.length == 0) return;
+        // Minigame helpers (speed HUD, lap timer, ice highlighter,
+        // auto-sprint, auto-respawn) all live behind their own slash
+        // commands — let the dispatcher claim them before falling
+        // through to the chat-mod's own commands.
+        if (MinigameCommands.dispatch(parts, dl ->
+                uiState.append(uiState.activeChannel(), dl))) {
+            return;
+        }
         String cmd = parts[0].toLowerCase(Locale.ROOT);
         switch (cmd) {
             case "/help" -> printHelp();
@@ -609,7 +625,7 @@ public final class ShadowChatClient implements ClientModInitializer {
         String voiceStateDesc = inVoice ? "joined" : "not joined";
         String autoJoinDesc = modConfig.autoJoinVoice() ? "ON" : "off";
 
-        String[] lines = {
+        String[] header = {
                 "Shadow Chat — current state and commands:",
                 "Active channel:      " + activeChannelDesc,
                 "Voice opt-in:        " + voiceStateDesc + " (auto-rejoin " + autoJoinDesc + ")",
@@ -627,12 +643,18 @@ public final class ShadowChatClient implements ClientModInitializer {
                 "/whoami               — show your UUID and display name",
                 "/help                 — show this list",
                 "",
-                "(Mute incoming voice currently: " + voiceMutedDesc
-                        + " — toggle from the settings * in the user bar.)",
+                "Minigame helpers (session-scoped toggles):",
         };
-        for (String l : lines) {
+        for (String l : header) {
             uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(l));
         }
+        for (String l : MinigameCommands.helpLines()) {
+            uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(l));
+        }
+        uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(""));
+        uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(
+                "(Mute incoming voice currently: " + voiceMutedDesc
+                        + " — toggle from the settings * in the user bar.)"));
     }
 
     private void handleAutoOpenChatCommand(String[] parts) {

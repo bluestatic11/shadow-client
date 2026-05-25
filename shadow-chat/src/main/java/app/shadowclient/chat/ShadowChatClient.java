@@ -5,6 +5,8 @@ import app.shadowclient.chat.config.ModConfig;
 import app.shadowclient.chat.ipc.CommandFile;
 import app.shadowclient.chat.minigame.MinigameCommands;
 import app.shadowclient.chat.minigame.Minigames;
+import app.shadowclient.chat.qol.Qol;
+import app.shadowclient.chat.qol.QolCommands;
 import app.shadowclient.chat.relay.Messages;
 import app.shadowclient.chat.relay.RelayClient;
 import app.shadowclient.chat.ui.ChatOverlay;
@@ -102,6 +104,10 @@ public final class ShadowChatClient implements ClientModInitializer {
         // by slash commands typed in the chat overlay; the mod stays
         // dormant until the user enables one.
         Minigames.register();
+
+        // General QoL pack — recipe-preview tooltip, coords HUD,
+        // held-item HUD. Same opt-in shape as the minigame pack.
+        Qol.register();
 
         // IPC drop-file watcher — lets the launcher signal us to (e.g.)
         // open the chat screen automatically on world load. See
@@ -585,6 +591,11 @@ public final class ShadowChatClient implements ClientModInitializer {
                 uiState.append(uiState.activeChannel(), dl))) {
             return;
         }
+        // QoL helpers — recipe preview, coords HUD, held-item HUD.
+        if (QolCommands.dispatch(parts, dl ->
+                uiState.append(uiState.activeChannel(), dl))) {
+            return;
+        }
         String cmd = parts[0].toLowerCase(Locale.ROOT);
         switch (cmd) {
             case "/help" -> printHelp();
@@ -649,6 +660,12 @@ public final class ShadowChatClient implements ClientModInitializer {
             uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(l));
         }
         for (String l : MinigameCommands.helpLines()) {
+            uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(l));
+        }
+        uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(""));
+        uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(
+                "Client QoL helpers:"));
+        for (String l : QolCommands.helpLines()) {
             uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(l));
         }
         uiState.append(uiState.activeChannel(), InputState.DisplayLine.system(""));

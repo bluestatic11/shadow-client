@@ -2595,9 +2595,92 @@ async function refreshProfiles() {
     for (const p of profiles) {
       list.appendChild(buildProfileRow(p));
     }
+    // v0.3.86: kick off the disk walk for each profile and fill in
+    // the size sub-line lazily. Don't block on it — the rest of the
+    // settings dialog should be interactive immediately.
+    void backfillProfileSizes();
   } catch (e) {
     list.innerHTML = `<li class="empty">Error: ${e.message || e}</li>`;
   }
+  // Kick off the shared-dirs breakdown in parallel — it's a separate
+  // command so the slow assets walk doesn't gate the profile sizes.
+  void refreshDiskBreakdown();
+}
+
+async function backfillProfileSizes() {
+  let sizes;
+  try {
+    sizes = await invoke('profile_sizes');
+  } catch (e) {
+    console.warn('[shadow] profile_sizes failed:', e);
+    return;
+  }
+  if (!Array.isArray(sizes)) return;
+  for (const s of sizes) {
+    const row = document.querySelector(`.profile-row[data-profile="${cssEscape(s.name)}"]`);
+    if (!row) continue;
+    const sizeEl = row.querySelector('.profile-size');
+    if (sizeEl) sizeEl.textContent = ` · ${formatBytes(s.size_bytes)}`;
+  }
+}
+
+async function refreshDiskBreakdown() {
+  const list = $('disk-breakdown-list');
+  if (!list) return;
+  list.innerHTML = '<li class="empty">Measuring…</li>';
+  let bd;
+  try {
+    bd = await invoke('disk_breakdown');
+  } catch (e) {
+    list.innerHTML = `<li class="empty">Couldn't measure disk: ${e.message || e}</li>`;
+    return;
+  }
+  if (!bd) return;
+  const rows = [
+    ['Profiles (mods, worlds, screenshots)', bd.profiles_total_bytes],
+    ['Libraries (shared)',                   bd.libraries_bytes],
+    ['Versions (shared)',                    bd.versions_bytes],
+    ['Assets (shared)',                      bd.assets_bytes],
+    ['Java runtime',                         bd.runtime_bytes],
+  ].filter(([, b]) => b > 0);
+  const total = bd.total_bytes;
+  if (!rows.length || total === 0) {
+    list.innerHTML = '<li class="empty">Nothing installed yet.</li>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const [label, bytes] of rows) {
+    const pct = total > 0 ? Math.round((bytes / total) * 100) : 0;
+    const li = document.createElement('li');
+    li.className = 'disk-row';
+    li.innerHTML = `
+      <div class="disk-row-head">
+        <span class="disk-row-label">${escapeHtml(label)}</span>
+        <span class="disk-row-size">${formatBytes(bytes)}</span>
+      </div>
+      <div class="disk-row-bar"><span style="width:${pct}%"></span></div>
+    `;
+    list.appendChild(li);
+  }
+  const totalLi = document.createElement('li');
+  totalLi.className = 'disk-row total';
+  totalLi.innerHTML = `
+    <div class="disk-row-head">
+      <span class="disk-row-label"><strong>Total</strong></span>
+      <span class="disk-row-size"><strong>${formatBytes(total)}</strong></span>
+    </div>
+  `;
+  list.appendChild(totalLi);
+}
+
+// Minimal CSS.escape polyfill — CSS.escape exists in modern browsers
+// but the Tauri webview is fine; this is just defensive for older
+// embedded WebView2 versions.
+function cssEscape(s) {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(s);
+  }
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, c => `\\${c}`);
 }
 
 function buildProfileRow(p) {
@@ -2612,7 +2695,7 @@ function buildProfileRow(p) {
     : '';
   meta.innerHTML = `
     <div class="profile-name">${activeDot}${escapeHtml(p.name)}${p.is_last_used ? ' <span class="profile-active-tag">ACTIVE</span>' : ''}</div>
-    <div class="profile-sub">MC ${escapeHtml(p.mc_version || '?')} · Fabric ${escapeHtml(p.fabric_loader || '?')} · ${p.mods_installed} mods</div>
+    <div class="profile-sub">MC ${escapeHtml(p.mc_version || '?')} · Fabric ${escapeHtml(p.fabric_loader || '?')} · ${p.mods_installed} mods<span class="profile-size" aria-live="polite"> · …</span></div>
   `;
 
   const actions = document.createElement('div');

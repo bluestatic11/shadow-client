@@ -1880,10 +1880,75 @@ body {
   color: var(--text-mute);
   margin-top: 2px;
 }
+.profile-size {
+  /* The trailing " · …" / " · 1.4 GB" sub-text — same colour as the
+     rest of .profile-sub, but kept as a span so the lazy disk-walk
+     can swap just this text without touching the rest. */
+  opacity: 0.85;
+}
 .profile-actions {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* ───── Disk usage breakdown (v0.3.86) ────────────────────── */
+.disk-breakdown {
+  list-style: none;
+  margin: 8px 0 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.disk-breakdown .empty {
+  font-size: 12px;
+  color: var(--text-mute);
+  padding: 4px 0;
+}
+.disk-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.disk-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.disk-row-label {
+  color: var(--text);
+}
+.disk-row-size {
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+.disk-row-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.disk-row-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--accent-glow), 0.85),
+    rgba(var(--accent-glow), 0.55)
+  );
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.disk-row.total {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.disk-row.total .disk-row-size {
+  color: var(--text);
 }
 
 /* ───── Generic small buttons ─────────────────────────────── */

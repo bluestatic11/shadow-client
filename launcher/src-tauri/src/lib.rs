@@ -1170,6 +1170,74 @@ fn folder_size_bytes(path: &Path) -> u64 {
     total
 }
 
+#[derive(Serialize, Clone)]
+pub struct ProfileSize {
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+/// Walk each installed profile dir and return its size. Backs the
+/// "Installed profiles" list in Settings → General — the list itself
+/// renders instantly with sizes appearing lazily once this returns.
+/// Each profile is walked on a separate blocking task so a single
+/// huge world doesn't block the others.
+#[tauri::command]
+async fn profile_sizes() -> Result<Vec<ProfileSize>, String> {
+    tokio::task::spawn_blocking(|| {
+        let here = project_root();
+        let state_file = here.join("installed.json");
+        let state = setup::load_state(&state_file);
+        let profiles_root = here.join("game_dir").join("profiles");
+        let mut out: Vec<ProfileSize> = Vec::with_capacity(state.profiles.len());
+        for name in state.profiles.keys() {
+            let dir = profiles_root.join(name);
+            let size_bytes = folder_size_bytes(&dir);
+            out.push(ProfileSize { name: name.clone(), size_bytes });
+        }
+        out
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Clone)]
+pub struct DiskBreakdown {
+    pub total_bytes: u64,
+    pub libraries_bytes: u64,
+    pub assets_bytes: u64,
+    pub versions_bytes: u64,
+    pub runtime_bytes: u64,
+    pub profiles_total_bytes: u64,
+}
+
+/// Sum the big shared subdirs of game_dir so the user can see why
+/// deleting a profile doesn't always recover much disk: libraries +
+/// assets + versions are *shared* across all profiles. Walks each
+/// subtree once, on a blocking thread.
+#[tauri::command]
+async fn disk_breakdown() -> Result<DiskBreakdown, String> {
+    tokio::task::spawn_blocking(|| {
+        let here = project_root();
+        let game_dir = here.join("game_dir");
+        let libraries_bytes = folder_size_bytes(&game_dir.join("libraries"));
+        let assets_bytes = folder_size_bytes(&game_dir.join("assets"));
+        let versions_bytes = folder_size_bytes(&game_dir.join("versions"));
+        let runtime_bytes = folder_size_bytes(&game_dir.join("runtime"));
+        let profiles_total_bytes = folder_size_bytes(&game_dir.join("profiles"));
+        DiskBreakdown {
+            total_bytes: libraries_bytes + assets_bytes + versions_bytes
+                       + runtime_bytes + profiles_total_bytes,
+            libraries_bytes,
+            assets_bytes,
+            versions_bytes,
+            runtime_bytes,
+            profiles_total_bytes,
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// Open the game_dir in the OS's default file explorer (Explorer on Windows,
 /// Finder on macOS, the user's preferred file manager on Linux via xdg-open).
 /// Backs the "📂 Open folder" home-screen quick action tile.
@@ -1714,6 +1782,8 @@ pub fn run() {
             install_update,
             sweep_update_temp,
             disk_usage_mb,
+            profile_sizes,
+            disk_breakdown,
             open_folder,
             estimate_fps,
             friends_list,

@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.85</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.86</span>
     </h1>
 
     <div class="topbar-actions">
@@ -450,6 +450,22 @@
             <div class="setting-hint">
               Each profile has its own mods, worlds, and screenshots.
               Switching makes that profile the default for PLAY.
+            </div>
+          </div>
+
+          <!-- v0.3.86: shared-dirs disk breakdown so users can see why
+               "delete profile" doesn't always reclaim much space.
+               Libraries + assets + versions are shared across all
+               profiles and only get cleaned up via full reinstall. -->
+          <div class="setting full" id="disk-breakdown-block">
+            <label>Disk usage</label>
+            <ul class="disk-breakdown" id="disk-breakdown-list" aria-live="polite">
+              <li class="empty">Measuring…</li>
+            </ul>
+            <div class="setting-hint">
+              Libraries / assets / versions are shared across every
+              profile. Deleting a profile only frees its own mods,
+              worlds, and screenshots.
             </div>
           </div>
         </div>

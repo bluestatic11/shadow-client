@@ -656,6 +656,61 @@ async function backgroundRefreshChatAuth() {
  * while ; does nothing in-game. Called after sign-in, after every
  * mc-exited event, and once on home-screen load.
  */
+/**
+ * Format a duration in seconds as "Ns" / "Nm" / "Nh" / "Nd". Used by
+ * the chat-auth status block — short enough to fit inline alongside
+ * the refresh button. Returns null for null/undefined input so callers
+ * can decide whether to omit the line entirely.
+ */
+function formatAgeShort(secs) {
+  if (secs == null) return null;
+  const s = Number(secs);
+  if (!Number.isFinite(s) || s < 0) return null;
+  if (s < 60) return `${Math.max(1, Math.round(s))}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
+}
+
+/**
+ * MS access tokens nominally live ~24h from refresh. Given the token
+ * age in seconds, return seconds until expiry (may be negative).
+ */
+function tokenExpiresInSecs(tokenAgeSecs) {
+  if (tokenAgeSecs == null) return null;
+  return 24 * 3600 - Number(tokenAgeSecs);
+}
+
+/**
+ * Build the persistent status line that lives under the manual
+ * "Refresh chat auth now" button — e.g.
+ *   "Profile 1.21.11 · token refreshed 12m ago (expires in ~23h) · auth file 12m old"
+ * Returns "" if there's nothing useful to show (no profile / not signed in).
+ */
+function formatChatAuthStatusLine(health) {
+  if (!health) return '';
+  const parts = [];
+  if (health.profile) parts.push(`Profile ${health.profile}`);
+  const tokAge = formatAgeShort(health.token_age_secs);
+  const tokExp = tokenExpiresInSecs(health.token_age_secs);
+  if (tokAge != null) {
+    if (tokExp != null && tokExp <= 0) {
+      parts.push(`token expired (refreshed ${tokAge} ago) — click Refresh`);
+    } else if (tokExp != null) {
+      parts.push(`token refreshed ${tokAge} ago (expires in ~${formatAgeShort(tokExp)})`);
+    } else {
+      parts.push(`token refreshed ${tokAge} ago`);
+    }
+  }
+  const fileAge = formatAgeShort(health.auth_file_age_secs);
+  if (fileAge != null) parts.push(`auth file ${fileAge} old`);
+  return parts.join(' · ');
+}
+
+// Tracks the last-rendered health response so the refresh-auth status
+// line can update on a 30s tick without re-invoking on every render.
+let _lastHealth = null;
+
 async function runChatHealthCheck() {
   const pill = document.getElementById('chat-hint');
   if (!pill) return;
@@ -669,12 +724,31 @@ async function runChatHealthCheck() {
     return;
   }
   if (!health) return;
+  _lastHealth = health;
+  const tokExp = tokenExpiresInSecs(health.token_age_secs);
+  const aging = tokExp != null && tokExp < 4 * 3600 && tokExp > 0;
   if (health.ready) {
-    text.textContent = health.mod_jar
-      ? `Shadow Chat ready · ${health.mod_jar} · press ; to chat`
-      : 'Shadow Chat: ready · press ; in-game to open chat · click to launch';
-    pill.classList.add('ready');
-    pill.classList.remove('disabled', 'actionable');
+    let pillText;
+    if (tokExp != null && tokExp <= 0) {
+      pillText = 'Shadow Chat: token expired — click Refresh chat auth now';
+    } else if (aging) {
+      pillText = health.mod_jar
+        ? `Shadow Chat ready · ${health.mod_jar} · token expires in ~${formatAgeShort(tokExp)}`
+        : `Shadow Chat ready · token expires in ~${formatAgeShort(tokExp)}`;
+    } else {
+      pillText = health.mod_jar
+        ? `Shadow Chat ready · ${health.mod_jar} · press ; to chat`
+        : 'Shadow Chat: ready · press ; in-game to open chat · click to launch';
+    }
+    text.textContent = pillText;
+    if (tokExp != null && tokExp <= 0) {
+      // Token's expired — treat like a soft blocker so the user notices.
+      pill.classList.add('disabled', 'actionable');
+      pill.classList.remove('ready');
+    } else {
+      pill.classList.add('ready');
+      pill.classList.remove('disabled', 'actionable');
+    }
   } else {
     // Surface the first blocker. If the user can fix it with the
     // pill click (sign-in), set the pill to actionable. Otherwise
@@ -689,6 +763,11 @@ async function runChatHealthCheck() {
       pill.classList.add('disabled');
       pill.classList.remove('ready', 'actionable');
     }
+  }
+  // Update the persistent auth-status line under the Refresh button.
+  const statusEl = document.getElementById('refresh-chat-auth-status');
+  if (statusEl && !statusEl.dataset.transient) {
+    statusEl.textContent = formatChatAuthStatusLine(health);
   }
 }
 
@@ -2324,7 +2403,13 @@ refreshChatAuthBtn?.addEventListener('click', async () => {
   refreshChatAuthBtn.disabled = true;
   const old = refreshChatAuthBtn.textContent;
   refreshChatAuthBtn.textContent = 'Refreshing…';
-  if (refreshChatAuthStatus) refreshChatAuthStatus.textContent = '';
+  if (refreshChatAuthStatus) {
+    // Mark this status node as transient so runChatHealthCheck() doesn't
+    // clobber the success/error flash in the brief window before the
+    // setTimeout below clears it.
+    refreshChatAuthStatus.dataset.transient = '1';
+    refreshChatAuthStatus.textContent = '';
+  }
   try {
     const msg = await invoke('refresh_chat_auth', {
       version: getPickedVersion(),
@@ -2332,13 +2417,31 @@ refreshChatAuthBtn?.addEventListener('click', async () => {
     });
     if (refreshChatAuthStatus) refreshChatAuthStatus.textContent = `✓ ${msg}`;
     runChatHealthCheck();  // pill reflects fresh state
+    // After 4s, hand control back to the persistent status line.
+    setTimeout(() => {
+      if (refreshChatAuthStatus) {
+        delete refreshChatAuthStatus.dataset.transient;
+        refreshChatAuthStatus.textContent = formatChatAuthStatusLine(_lastHealth);
+      }
+    }, 4000);
   } catch (e) {
     if (refreshChatAuthStatus) refreshChatAuthStatus.textContent = `✗ ${e}`;
+    // Error stays visible for 8s before reverting to persistent status.
+    setTimeout(() => {
+      if (refreshChatAuthStatus) {
+        delete refreshChatAuthStatus.dataset.transient;
+        refreshChatAuthStatus.textContent = formatChatAuthStatusLine(_lastHealth);
+      }
+    }, 8000);
   } finally {
     refreshChatAuthBtn.disabled = false;
     refreshChatAuthBtn.textContent = old;
   }
 });
+
+// Re-run the health check every 30s so the auth-status line stays
+// current ("12m ago" → "13m ago"). Cheap (no network, just stat()).
+setInterval(runChatHealthCheck, 30_000);
 
 // ───── Quick action tiles ───────────────────────────────────────
 document.getElementById('action-mods')?.addEventListener('click', () => {

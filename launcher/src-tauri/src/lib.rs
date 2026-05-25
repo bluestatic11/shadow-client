@@ -1533,6 +1533,18 @@ pub struct ChatHealthCheck {
     /// Filename of the installed mod jar if any (e.g. "shadow-chat-0.1.27.jar")
     /// — handy for the diagnostic banner.
     pub mod_jar: Option<String>,
+    /// Seconds since the MSA token was last refreshed; None if not signed in.
+    /// Microsoft tokens nominally live ~24h from refresh, so the front-end
+    /// can derive "expires in" from this.
+    pub token_age_secs: Option<u64>,
+    /// Seconds since `shadow-chat-auth.json` was last written; None when
+    /// the file is missing. Useful to confirm a recent refresh wrote
+    /// through to disk.
+    pub auth_file_age_secs: Option<u64>,
+    /// MC profile the health check resolved against ("1.21.11" etc.),
+    /// or empty if no profile is set up yet. The auth-status UI uses
+    /// this to spell out *which* profile is fresh.
+    pub profile: String,
 }
 
 /// Refresh the Microsoft access token (if it's older than 12h or the
@@ -1597,12 +1609,26 @@ fn chat_health_check() -> ChatHealthCheck {
     };
     let mut blockers: Vec<String> = Vec::new();
 
-    // 1. Microsoft sign-in.
+    // 1. Microsoft sign-in. While we're parsing the account JSON, pull
+    //    refresh_updated_at so the front-end can show token age.
+    let mut token_age_secs: Option<u64> = None;
     let signed_in = if let Ok(s) = std::fs::read_to_string(&account_file) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
             let user_type = v.get("user_type").and_then(|v| v.as_str()).unwrap_or("?");
             let token = v.get("access_token").and_then(|v| v.as_str()).unwrap_or("");
-            user_type == "msa" && token.len() > 10
+            let ok = user_type == "msa" && token.len() > 10;
+            if ok {
+                let refreshed = v.get("refresh_updated_at").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                if refreshed > 0.0 {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs_f64())
+                        .unwrap_or(0.0);
+                    let age = (now - refreshed).max(0.0);
+                    token_age_secs = Some(age as u64);
+                }
+            }
+            ok
         } else { false }
     } else { false };
     if !signed_in {
@@ -1633,6 +1659,16 @@ fn chat_health_check() -> ChatHealthCheck {
     // 4. Auth-file presence (only meaningful if signed-in and a profile
     //    exists — the launcher writes it on every launch).
     let auth_file = profile_dir.join("shadow-chat-auth.json");
+    let mut auth_file_age_secs: Option<u64> = None;
+    if auth_file.exists() {
+        if let Ok(meta) = std::fs::metadata(&auth_file) {
+            if let Ok(modified) = meta.modified() {
+                if let Ok(d) = std::time::SystemTime::now().duration_since(modified) {
+                    auth_file_age_secs = Some(d.as_secs());
+                }
+            }
+        }
+    }
     if signed_in && !auth_file.exists() && !last_profile.is_empty() {
         blockers.push("Auth file missing — click PLAY once to write it".to_string());
     }
@@ -1641,6 +1677,9 @@ fn chat_health_check() -> ChatHealthCheck {
         ready: blockers.is_empty(),
         blockers,
         mod_jar,
+        token_age_secs,
+        auth_file_age_secs,
+        profile: last_profile,
     }
 }
 

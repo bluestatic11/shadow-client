@@ -79,16 +79,16 @@ public final class HeldItemHud {
             if (alpha == 0) return;
 
             int textW = mc.font.width(text);
-            int screenW = gfx.guiWidth();
-            int screenH = gfx.guiHeight();
-            int x = (screenW - textW) / 2;
-            // 59 px above the bottom — clears the hotbar (22 px) +
-            // hunger/health rows (~30 px) with a small gap.
-            int y = screenH - 59;
+            // v0.1.32: pinned to top-LEFT corner (was center-above-hotbar)
+            // so it doesn't block the player's view when scrolling
+            // hotbar slots. Sits at y=4 — well clear of the LapTimer
+            // panel which starts at y=60.
+            int x = 4;
+            int y = 4;
 
             int bgAlpha = (alpha * 0xA0) / 255;
             int textColor = (alpha << 24) | 0xFFFFFF;
-            gfx.fill(x - 4, y - 2, x + textW + 4, y + 10, bgAlpha << 24);
+            gfx.fill(x - 2, y - 2, x + textW + 4, y + 10, bgAlpha << 24);
             gfx.drawString(mc.font, Component.literal(text), x, y, textColor);
         });
     }

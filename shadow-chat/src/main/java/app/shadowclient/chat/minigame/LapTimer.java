@@ -94,9 +94,12 @@ public final class LapTimer {
 
             if (!inLap && dist < 3.0 && (now - armedAtMs) > 1500) {
                 // Crossing the start line after arming → begin lap.
+                // The HUD panel already shows "Lap: 0.00s" once `inLap`
+                // flips, so we skip an action-bar pop-up — it would
+                // sit in the middle-bottom of the screen and block
+                // view at exactly the moment the racer needs it clear.
                 inLap = true;
                 lapStartMs = now;
-                p.displayClientMessage(Component.literal("§b[Lap] §aStart!"), true);
             } else if (inLap && dist < 3.0 && (now - lapStartMs) > 5000) {
                 // Crossing the line again after ≥5 s → close lap.
                 lastLapMs = now - lapStartMs;

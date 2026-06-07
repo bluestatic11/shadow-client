@@ -498,6 +498,44 @@ def _promote_staged_mods(mods_dir: Path) -> None:
             print(f"[launch] can't replace {target.name} (still locked?) — skipping")
 
 
+def _write_shadow_chat_auth(profile_dir: Path, acct) -> None:
+    """Write ``shadow-chat-auth.json`` into the profile dir so the in-game
+    Shadow Chat mod can authenticate against the relay.
+
+    The mod reads ``<gameDir>/shadow-chat-auth.json`` once at startup, and
+    here gameDir == profile_dir. We rewrite it on EVERY launch with the
+    just-refreshed Microsoft access token. The relay verifies that token
+    and returns 401 the moment it expires (~24 h), so a stale file makes
+    chat silently fail to connect ("send doesn't work"). Offline accounts
+    get ``token: null`` so the mod stays dormant instead of hammering the
+    relay with bogus credentials.
+
+    Mirrors the Tauri launcher's ``shadow_chat::write_auth_file``. Schema
+    is locked by the mod's ``AuthConfig`` — do not rename fields. Best
+    effort: a failure here must never block the launch.
+    """
+    relay_url = (os.environ.get("SHADOW_CHAT_RELAY") or "").strip() \
+        or "wss://shadow-chat-relay.edisongushf.workers.dev"
+    is_msa = getattr(acct, "user_type", "") == "msa"
+    token = acct.access_token if (is_msa and acct.access_token) else None
+    payload = {
+        "relay_url": relay_url,
+        "token": token,
+        "uuid": acct.uuid,
+        "name": acct.username,
+    }
+    try:
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        dest = profile_dir / "shadow-chat-auth.json"
+        tmp = dest.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp.replace(dest)
+        print(f"[chat] shadow-chat-auth.json refreshed → "
+              f"{'enabled' if token else 'dormant (offline mode)'}")
+    except Exception as e:
+        print(f"[chat] could not write shadow-chat-auth.json: {e}")
+
+
 def cmd_launch(args: argparse.Namespace) -> int:
     state = _state_load()
     profile = _resolve_profile(state, getattr(args, "profile", None))
@@ -563,6 +601,15 @@ def cmd_launch(args: argparse.Namespace) -> int:
         except Exception as e:
             print(f"[auth] could not refresh token: {e}")
             print("[auth] run `client.py login` to re-authenticate")
+
+    # Write the Shadow Chat auth file so the in-game chat mod can reach the
+    # relay. The mod reads <gameDir>/shadow-chat-auth.json at startup, and
+    # gameDir == profile_dir here. We rewrite it on EVERY launch with the
+    # freshly-refreshed access token: the relay verifies the Microsoft token
+    # and 401s once it expires (~24h), so a stale file silently breaks chat
+    # ("send doesn't work"). The Tauri launcher does this in its PLAY flow;
+    # run.bat / client.py users need the same treatment.
+    _write_shadow_chat_auth(profile_dir, acct_obj)
 
     # JVM flags — we pass library.path/classpath via the vanilla arg substitution.
     jvm_extra = jvm.flags(args.heap, gc=args.gc)

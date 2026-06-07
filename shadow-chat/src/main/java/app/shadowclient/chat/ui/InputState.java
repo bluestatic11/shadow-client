@@ -53,8 +53,8 @@ public final class InputState {
     /** Backing buffer keyed by channel string. LinkedHashMap so iteration order is stable. */
     private final Map<String, Deque<DisplayLine>> linesByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
     private final Map<String, List<ServerEvent.User>> presenceByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
-    /** UUIDs of users opted-in to voice, keyed by channel. Populated by voice:roster pushes. */
-    private final Map<String, List<String>> voiceRosterByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
+    /** Members (uuid + name) opted-in to voice, keyed by channel. Populated by voice:roster pushes. */
+    private final Map<String, List<ServerEvent.User>> voiceRosterByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
     /**
      * Unread chat-message count per channel. Incremented by
      * {@link #incrementUnread} when a real message lands on a non-active
@@ -116,13 +116,13 @@ public final class InputState {
     }
 
     /** Snapshot of who's opted in to voice on the given channel. */
-    public List<String> voiceRosterFor(String channel) {
-        List<String> r = voiceRosterByChannel.get(channel);
+    public List<ServerEvent.User> voiceRosterFor(String channel) {
+        List<ServerEvent.User> r = voiceRosterByChannel.get(channel);
         return r == null ? List.of() : new ArrayList<>(r);
     }
 
-    public void setVoiceRoster(String channel, List<String> uuids) {
-        voiceRosterByChannel.put(channel, uuids);
+    public void setVoiceRoster(String channel, List<ServerEvent.User> members) {
+        voiceRosterByChannel.put(channel, members);
     }
 
     /** Clear all history for a channel — used when leaving a group. */

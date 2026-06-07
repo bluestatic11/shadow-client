@@ -58,8 +58,8 @@ public final class Messages {
         record ChatMessage(String fromUuid, String name, String text, long ts) implements ServerEvent {}
         record Presence(List<User> users) implements ServerEvent {}
         record ErrorMsg(String message) implements ServerEvent {}
-        /** List of UUIDs currently opted-in to voice on this channel. */
-        record VoiceRoster(List<String> uuids) implements ServerEvent {}
+        /** Members currently opted-in to voice on this channel (uuid + display name). */
+        record VoiceRoster(List<User> members) implements ServerEvent {}
         final class Unknown implements ServerEvent { Unknown() {} }
 
         record User(String uuid, String name) {}
@@ -118,30 +118,38 @@ public final class Messages {
     }
 
     private static ServerEvent decodeVoiceRoster(JsonObject obj) {
-        List<String> uuids = new ArrayList<>();
+        List<ServerEvent.User> members = new ArrayList<>();
         // The live relay sends { op:"voice:roster", members:[{uuid,name},…] }.
-        // Parse that shape first — pull the uuid out of each member object.
+        // Capture both fields so the Voice Room can show display names
+        // straight from the roster, with no separate presence lookup.
         if (obj.has("members") && obj.get("members").isJsonArray()) {
             JsonArray arr = obj.getAsJsonArray("members");
             for (JsonElement el : arr) {
                 if (el.isJsonObject()) {
-                    String uuid = stringOr(el.getAsJsonObject(), "uuid", "");
-                    if (!uuid.isEmpty()) uuids.add(uuid);
+                    JsonObject m = el.getAsJsonObject();
+                    String uuid = stringOr(m, "uuid", "");
+                    if (uuid.isEmpty()) continue;
+                    // Blank name (missing on the wire) → let the UI fall
+                    // back to its presence-derived name.
+                    members.add(new ServerEvent.User(uuid, stringOr(m, "name", "")));
                 } else if (el.isJsonPrimitive()) {
-                    // Tolerate a bare-string member entry too.
-                    uuids.add(el.getAsString());
+                    // Tolerate a bare-string member entry (uuid only, no name).
+                    String uuid = el.getAsString();
+                    if (!uuid.isEmpty()) members.add(new ServerEvent.User(uuid, ""));
                 }
             }
         }
         // Back-compat: an older/alternate relay shape { uuids:[…] } of
         // plain strings. Only consulted if the members[] form was absent.
-        if (uuids.isEmpty() && obj.has("uuids") && obj.get("uuids").isJsonArray()) {
+        if (members.isEmpty() && obj.has("uuids") && obj.get("uuids").isJsonArray()) {
             JsonArray arr = obj.getAsJsonArray("uuids");
             for (JsonElement el : arr) {
-                if (el.isJsonPrimitive()) uuids.add(el.getAsString());
+                if (el.isJsonPrimitive() && !el.getAsString().isEmpty()) {
+                    members.add(new ServerEvent.User(el.getAsString(), ""));
+                }
             }
         }
-        return new ServerEvent.VoiceRoster(Collections.unmodifiableList(uuids));
+        return new ServerEvent.VoiceRoster(Collections.unmodifiableList(members));
     }
 
     private static String stringOr(JsonObject obj, String key, String fallback) {

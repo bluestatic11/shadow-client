@@ -738,12 +738,12 @@ public final class DiscordChatScreen extends Screen {
     private void drawVoiceRoom(GuiGraphics gfx, int x, int y, int w, int h,
                                InputState st, String activeChannel) {
         ShadowChatClient sc = ShadowChatClient.get();
-        List<String> rosterUuids = st.voiceRosterFor(activeChannel);
+        List<ServerEvent.User> roster = st.voiceRosterFor(activeChannel);
         VoiceController vc = sc.voice();
         java.util.Set<UUID> currentSpeakers = new java.util.HashSet<>(
                 vc != null ? vc.playback().currentSpeakers() : List.of());
 
-        if (rosterUuids.isEmpty()) {
+        if (roster.isEmpty()) {
             // Empty-state card — push the user toward Join Voice with
             // an inline button so they don't have to find the sidebar
             // one separately.
@@ -791,9 +791,14 @@ public final class DiscordChatScreen extends Screen {
         int drawY = y + 4;
         int drawX = gridLeft;
         int colIdx = 0;
-        for (String uuidStr : rosterUuids) {
-            UUID uuid = parseUuid(uuidStr);
-            String name = sc.displayNameForUuid(uuid);
+        for (ServerEvent.User member : roster) {
+            UUID uuid = parseUuid(member.uuid());
+            // Prefer the display name the relay sent with the roster; fall
+            // back to the presence-derived name only when the roster entry
+            // carried none (bare-uuid or back-compat wire shapes).
+            String name = member.name() != null && !member.name().isBlank()
+                    ? member.name()
+                    : sc.displayNameForUuid(uuid);
             boolean speaking = uuid != null && currentSpeakers.contains(uuid);
             drawVoiceTile(gfx, drawX, drawY, TILE_W, TILE_H, uuid, name, speaking);
             colIdx++;

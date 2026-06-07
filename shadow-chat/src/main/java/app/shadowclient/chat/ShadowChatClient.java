@@ -589,7 +589,7 @@ public final class ShadowChatClient implements ClientModInitializer {
                         uiState.append(activeChannelKey,
                                 InputState.DisplayLine.error(em.message()));
                     } else if (event instanceof Messages.ServerEvent.VoiceRoster vr) {
-                        uiState.setVoiceRoster(activeChannelKey, vr.uuids());
+                        uiState.setVoiceRoster(activeChannelKey, vr.members());
                     }
                     // Unknown events: silently dropped (forward-compat).
                 });

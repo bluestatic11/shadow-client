@@ -119,7 +119,23 @@ public final class Messages {
 
     private static ServerEvent decodeVoiceRoster(JsonObject obj) {
         List<String> uuids = new ArrayList<>();
-        if (obj.has("uuids") && obj.get("uuids").isJsonArray()) {
+        // The live relay sends { op:"voice:roster", members:[{uuid,name},…] }.
+        // Parse that shape first — pull the uuid out of each member object.
+        if (obj.has("members") && obj.get("members").isJsonArray()) {
+            JsonArray arr = obj.getAsJsonArray("members");
+            for (JsonElement el : arr) {
+                if (el.isJsonObject()) {
+                    String uuid = stringOr(el.getAsJsonObject(), "uuid", "");
+                    if (!uuid.isEmpty()) uuids.add(uuid);
+                } else if (el.isJsonPrimitive()) {
+                    // Tolerate a bare-string member entry too.
+                    uuids.add(el.getAsString());
+                }
+            }
+        }
+        // Back-compat: an older/alternate relay shape { uuids:[…] } of
+        // plain strings. Only consulted if the members[] form was absent.
+        if (uuids.isEmpty() && obj.has("uuids") && obj.get("uuids").isJsonArray()) {
             JsonArray arr = obj.getAsJsonArray("uuids");
             for (JsonElement el : arr) {
                 if (el.isJsonPrimitive()) uuids.add(el.getAsString());

@@ -22,6 +22,8 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 # Windows default console is cp1252 — coerce to UTF-8 so progress prints don't crash.
@@ -536,6 +538,47 @@ def _write_shadow_chat_auth(profile_dir: Path, acct) -> None:
         print(f"[chat] could not write shadow-chat-auth.json: {e}")
 
 
+def _auth_refresh_loop(proc: subprocess.Popen, profile_dir: Path,
+                       account_file: Path, prism_path: Path | None) -> None:
+    """Keep ``shadow-chat-auth.json`` fresh for the WHOLE play session.
+
+    The Microsoft access token the relay verifies lives only ~24 h. Without
+    this, an all-day grind or an AFK farm would lose chat the moment the
+    socket dropped and tried to reconnect with a dead token. Writing it once
+    at launch isn't enough — so while MC is alive we re-refresh the token and
+    rewrite the auth file every ~20 min. The in-game mod re-reads the file
+    and hot-swaps the token at runtime, so playtime length stops mattering.
+
+    Daemon thread: it polls ``proc`` and returns the instant MC exits, and
+    dies with the launcher regardless. All failures are swallowed + logged —
+    a refresh hiccup must never take down the launcher or the game.
+    """
+    interval_s = 20 * 60
+    while True:
+        # Sleep in 1 s slices so we notice MC closing within a second
+        # instead of holding the process open for up to 20 min.
+        for _ in range(interval_s):
+            if proc.poll() is not None:
+                return
+            time.sleep(1)
+        if proc.poll() is not None:
+            return
+        try:
+            acct = auth.Account.load(account_file)
+            if acct is None:
+                continue
+            if acct.user_type == "msa":
+                try:
+                    use_prism = prism_path if (prism_path and prism_path.exists()) else None
+                    if acct.refresh_if_needed(account_file, prism_path=use_prism):
+                        print(f"[chat] background-refreshed access token for {acct.username}")
+                except Exception as e:
+                    print(f"[chat] background token refresh failed: {e}")
+            _write_shadow_chat_auth(profile_dir, acct)
+        except Exception as e:
+            print(f"[chat] background auth refresh error: {e}")
+
+
 def cmd_launch(args: argparse.Namespace) -> int:
     state = _state_load()
     profile = _resolve_profile(state, getattr(args, "profile", None))
@@ -695,6 +738,17 @@ def cmd_launch(args: argparse.Namespace) -> int:
             creationflags=creationflags,
         )
         assert proc.stdout is not None
+        # Keep chat auth alive for the whole session — re-refreshes the
+        # token + rewrites shadow-chat-auth.json every ~20 min so sessions
+        # longer than the ~24 h token lifetime (AFK farms, all-day grinds)
+        # don't silently lose chat. Daemon thread, dies when MC exits.
+        if acct_obj.user_type == "msa":
+            prism_path = Path.home() / "AppData/Roaming/PrismLauncher/accounts.json"
+            threading.Thread(
+                target=_auth_refresh_loop,
+                args=(proc, profile_dir, ACCOUNT_FILE, prism_path),
+                daemon=True,
+            ).start()
         for line in proc.stdout:
             sys.stdout.write(line)
             sys.stdout.flush()

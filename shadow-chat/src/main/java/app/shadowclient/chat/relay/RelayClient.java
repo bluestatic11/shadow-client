@@ -55,7 +55,13 @@ public final class RelayClient {
     private static final int MAX_BINARY_FRAME_BYTES = 2048;
 
     private final HttpClient http;
-    private final AuthConfig auth;
+    /**
+     * Auth used for every connect/handshake. Volatile + swappable so the
+     * mod can hot-replace an about-to-expire Microsoft token mid-session
+     * (see {@link #setAuth}); the next {@link #connect} then rides the
+     * fresh token without restarting the game.
+     */
+    private volatile AuthConfig auth;
 
     /**
      * Single in-flight socket. Holding {@code null} means we're idle.
@@ -86,6 +92,16 @@ public final class RelayClient {
     public String currentChannel() {
         Session s = current.get();
         return s == null ? null : s.channel;
+    }
+
+    /**
+     * Swap in a fresh {@link AuthConfig} (e.g. after the launcher rewrote
+     * shadow-chat-auth.json with a rotated Microsoft token). Takes effect
+     * on the next {@link #connect} — callers that want the live socket to
+     * ride the new token should follow this with a reconnect. Ignores null.
+     */
+    public void setAuth(AuthConfig fresh) {
+        if (fresh != null) this.auth = fresh;
     }
 
     /**

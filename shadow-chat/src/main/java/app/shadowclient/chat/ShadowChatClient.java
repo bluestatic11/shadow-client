@@ -188,6 +188,7 @@ public final class ShadowChatClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             tickAutoOpenChat(client);
             tickReconnectCountdown();
+            tickAuthReload();
             while (Keybinds.TOGGLE_CHAT.consumeClick()) {
                 handleToggleHotkey(client);
             }
@@ -656,6 +657,55 @@ public final class ShadowChatClient implements ClientModInitializer {
         if (client == null || client.player == null || client.screen != null) return;
         uiState.setOverlayVisible(true);
         client.setScreen(new app.shadowclient.chat.ui.DiscordChatScreen(overlay));
+    }
+
+    /** Ticks until the next auth-file re-read. ~5 min at 20 TPS. */
+    private int authReloadTicks = 20 * 60 * 5;
+
+    /**
+     * Periodically re-read shadow-chat-auth.json so a rotated Microsoft
+     * token gets picked up WITHOUT restarting the game. The relay verifies
+     * the token and 401s once it expires (~24h), so an all-day grind or an
+     * AFK farm would otherwise lose chat the moment the socket dropped and
+     * retried with a dead token. The launcher (run.bat / Tauri) rewrites
+     * the file with a fresh token every ~20-30 min; this is the runtime
+     * half that makes that refresh actually reach the live mod.
+     */
+    private void tickAuthReload() {
+        if (--authReloadTicks > 0) return;
+        authReloadTicks = 20 * 60 * 5; // re-arm: 5 minutes
+        maybeReloadAuth();
+    }
+
+    /**
+     * Re-read the auth file and hot-swap the token if it changed. Cheap
+     * (~1 KB read every 5 min) and only acts when the token actually
+     * rotated (≈ once a day). Reconnects a live socket so it rides the
+     * fresh token — and so the very next reconnect-after-a-drop uses a
+     * valid one. Best-effort: a missing / half-written / offline file
+     * leaves the current auth untouched.
+     */
+    private void maybeReloadAuth() {
+        AuthConfig fresh;
+        try {
+            fresh = AuthConfig.load();
+        } catch (Exception e) {
+            return; // file mid-write or IO blip — try again next cycle
+        }
+        if (fresh == null || !fresh.isUsable()) return;
+        String oldToken = (auth == null) ? null : auth.token();
+        if (fresh.token() != null && fresh.token().equals(oldToken)) return; // unchanged
+
+        LOG.info("Shadow Chat: auth token rotated on disk — hot-swapping (no restart needed)");
+        this.auth = fresh;
+        relay.setAuth(fresh);
+        statusLine = "Signed in as " + fresh.name();
+        // If we hold a live channel, reconnect so the relay re-verifies
+        // against the fresh token immediately. connectTo() no-ops safely
+        // in singleplayer / when there's no meaningful channel.
+        if (relay.currentChannel() != null) {
+            connectTo(uiState.activeChannel());
+        }
     }
 
     // ---------------------------------------------------------------- slash commands

@@ -350,13 +350,97 @@ public final class ShadowChatClient implements ClientModInitializer {
             return;
         }
 
-        // Plain chat — forward to relay if connected, else echo a system error.
+        // Plain chat — forward to relay if connected, else explain *why*
+        // the message can't be sent so the user can actually fix it.
         if (relay.currentChannel() == null) {
             uiState.append(uiState.activeChannel(),
-                    InputState.DisplayLine.error("Not connected — message not sent"));
+                    InputState.DisplayLine.error(notConnectedReason()));
             return;
         }
+
+        // Optimistic local echo: show our own message immediately so the
+        // send feels instant and is visibly working even if the relay's
+        // echo-back is slow, dropped, or the deployed relay is an older
+        // build that doesn't fan back to the sender. The relay normally
+        // broadcasts to every member including us; when that echo
+        // arrives we dedup it against this record (see consumeSelfEcho)
+        // so the line never shows twice.
+        String selfName = auth.isUsable() ? auth.name() : "me";
+        long now = System.currentTimeMillis();
+        uiState.append(uiState.activeChannel(),
+                InputState.DisplayLine.chat(selfName, text, now));
+        noteSelfEcho(text);
+
         relay.sendMessage(text);
+    }
+
+    /**
+     * Human-readable explanation for why a chat send failed with no
+     * open connection. The two common cases are singleplayer (the
+     * SERVER channel needs a real multiplayer server) and a relay
+     * that hasn't finished connecting yet.
+     */
+    private String notConnectedReason() {
+        if (!auth.isUsable()) {
+            return "Not connected — sign in with Microsoft to enable chat.";
+        }
+        Minecraft mc = Minecraft.getInstance();
+        boolean singleplayer = mc != null && (mc.hasSingleplayerServer() || mc.isLocalServer());
+        boolean onServerChannel = ModConfig.CHANNEL_SERVER.equals(uiState.activeChannel());
+        if (onServerChannel && singleplayer) {
+            return "Not connected — server chat needs a multiplayer server. "
+                 + "Type /group create <name> to chat anywhere (even singleplayer).";
+        }
+        return "Not connected — still reaching the relay. Give it a moment, "
+             + "or check your internet, then try again.";
+    }
+
+    /**
+     * Recent self-sent message texts awaiting their relay echo, with
+     * the wall-clock time we optimistically showed them. Used to dedup
+     * the relay's echo-back so our own messages don't render twice.
+     * Bounded in size + age by {@link #noteSelfEcho}.
+     */
+    private final java.util.ArrayDeque<long[]> selfEchoTimes = new java.util.ArrayDeque<>();
+    private final java.util.ArrayDeque<String> selfEchoTexts = new java.util.ArrayDeque<>();
+
+    private void noteSelfEcho(String text) {
+        synchronized (selfEchoTexts) {
+            long now = System.currentTimeMillis();
+            selfEchoTexts.addLast(text);
+            selfEchoTimes.addLast(new long[]{ now });
+            // Drop entries older than 10s or beyond a small cap so a
+            // never-arriving echo doesn't leak the queue forever.
+            long cutoff = now - 10_000L;
+            while (!selfEchoTimes.isEmpty()
+                    && (selfEchoTimes.peekFirst()[0] < cutoff || selfEchoTexts.size() > 32)) {
+                selfEchoTimes.removeFirst();
+                selfEchoTexts.removeFirst();
+            }
+        }
+    }
+
+    /**
+     * True (and consumes the matching record) if {@code text} matches a
+     * message we just sent ourselves and optimistically displayed —
+     * meaning this is the relay echoing it back and we should drop the
+     * duplicate.
+     */
+    private boolean consumeSelfEcho(String text) {
+        synchronized (selfEchoTexts) {
+            java.util.Iterator<String> ti = selfEchoTexts.iterator();
+            java.util.Iterator<long[]> si = selfEchoTimes.iterator();
+            while (ti.hasNext()) {
+                String t = ti.next();
+                si.next();
+                if (t.equals(text)) {
+                    ti.remove();
+                    si.remove();
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // ---------------------------------------------------------------- internals
@@ -482,14 +566,22 @@ public final class ShadowChatClient implements ClientModInitializer {
             public void onEvent(Messages.ServerEvent event) {
                 runOnClient(() -> {
                     if (event instanceof Messages.ServerEvent.ChatMessage cm) {
+                        boolean isSelf = auth.isUsable()
+                                && cm.fromUuid() != null
+                                && cm.fromUuid().equalsIgnoreCase(auth.uuid());
+                        // If this is the relay echoing back a message we
+                        // already showed optimistically on send, drop the
+                        // duplicate. consumeSelfEcho only matches messages
+                        // we actually sent ourselves (gated on isSelf), so
+                        // someone else sending identical text still shows.
+                        if (isSelf && consumeSelfEcho(cm.text())) {
+                            return;
+                        }
                         uiState.append(activeChannelKey,
                                 InputState.DisplayLine.chat(cm.name(), cm.text(), cm.ts()));
                         // Bump unread count if this channel isn't currently
                         // active. Skip our own echoed messages so the badge
                         // doesn't light up immediately after we sent something.
-                        boolean isSelf = auth.isUsable()
-                                && cm.fromUuid() != null
-                                && cm.fromUuid().equalsIgnoreCase(auth.uuid());
                         if (!isSelf) uiState.incrementUnread(activeChannelKey);
                     } else if (event instanceof Messages.ServerEvent.Presence p) {
                         uiState.setPresence(activeChannelKey, p.users());

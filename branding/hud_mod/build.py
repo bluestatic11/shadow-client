@@ -116,11 +116,19 @@ def ensure_fabric_nested_jars() -> tuple[Path, Path]:
     """Extract fabric-rendering-v1 and fabric-api-base from whichever fabric-api
     jar is currently installed. Re-extract every build so version bumps work."""
     DEPS.mkdir(parents=True, exist_ok=True)
-    mods = GAME / "mods"
-    api_jars = sorted(mods.glob("fabric-api-*.jar"))
+    # Mods moved from the legacy game_dir/mods into per-version profile dirs
+    # (game_dir/profiles/<ver>/mods) — search both so the build keeps working
+    # on either layout. Newest jar wins across all locations.
+    search_dirs = [GAME / "mods", *sorted((GAME / "profiles").glob("*/mods"))]
+    api_jars: list[Path] = []
+    for d in search_dirs:
+        if d.is_dir():
+            api_jars.extend(d.glob("fabric-api-*.jar"))
     if not api_jars:
-        raise SystemExit(f"no fabric-api jar in {mods} — run `setup` first")
-    api = api_jars[-1]
+        raise SystemExit(
+            f"no fabric-api jar in any of: {', '.join(str(d) for d in search_dirs)}"
+            " — run `setup` first")
+    api = max(api_jars, key=lambda p: p.stat().st_mtime)
 
     rendering_out = DEPS / "fabric-rendering-v1.jar"
     base_out      = DEPS / "fabric-api-base.jar"
@@ -176,6 +184,10 @@ def main() -> None:
     # Build to a sibling .jar.new first, then atomically replace — so if MC is
     # still running and holds a handle on the old jar, we stage the new one and
     # cmd_launch's _promote_staged_mods swaps it in before the next start.
+    # The legacy game_dir/mods dir may not exist on per-profile installs —
+    # client.py's _sync_hud_into_profile mirrors from here into the active
+    # profile on every launch, so this stays the canonical output location.
+    OUT_JAR.parent.mkdir(parents=True, exist_ok=True)
     staged = OUT_JAR.with_suffix(".jar.new")
     if staged.exists():
         staged.unlink()

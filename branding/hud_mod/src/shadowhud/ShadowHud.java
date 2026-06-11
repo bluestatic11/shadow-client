@@ -483,8 +483,11 @@ public final class ShadowHud implements ClientModInitializer {
      *    TL TC TR
      *    ML MC MR
      *    BL BC BR
-     *  Default 4 = mid-center (slight upward bias as historically). */
-    private static int     cfgHudAnchor    = 4;
+     *  Default 0 = top-left. The old default (4 = center) parked every
+     *  freshly-enabled module pill mid-screen, right over the crosshair —
+     *  players had to discover the drag editor just to see where they were
+     *  aiming. Top-left matches every other client's default HUD corner. */
+    private static int     cfgHudAnchor    = 0;
     /** HUD card-stack scale as a percentage (50..200). 100 = native size. */
     private static int     cfgHudScale     = 100;
     /** HUD card opacity as a percentage (10..100). 100 = fully opaque. */
@@ -13419,7 +13422,7 @@ public final class ShadowHud implements ClientModInitializer {
                 cfgCompassMode = 0;
                 break;
             case "HudLayout":
-                cfgHudAnchor   = 4;
+                cfgHudAnchor   = 0;
                 cfgHudScale    = 100;
                 cfgHudOpacity  = 88;
                 cfgHudOffsetX  = 0;
@@ -13534,7 +13537,7 @@ public final class ShadowHud implements ClientModInitializer {
         roundedRect(dc, rstL, rowY, rstR, rowY + 14, rstHover ? 0xFF2A1A22 : 0xFF1A1218);
         draw(dc, font, "§7↺", rstL + 5, rowY + 3, 0xFFFFFFFF);
         if (rstHover && clickEdge) {
-            cfgHudAnchor = 4; saveConfig();
+            cfgHudAnchor = 0; saveConfig();
             leftClickEdge = false;
         }
         // Current label
@@ -15945,8 +15948,17 @@ public final class ShadowHud implements ClientModInitializer {
             cfgTimeSeconds  = parseBool(s, "Time_secs",     cfgTimeSeconds);
             cfgCompassDegs  = parseBool(s, "Compass_degs",  cfgCompassDegs);
             cfgCompassMode  = parseInt(s,  "Compass_mode",  cfgCompassMode);
+            // HUD anchor — key rotated "HUD_anchor" → "HUD_anchor2" when the
+            // default moved from 4 (center) to 0 (top-left). Old configs all
+            // persisted the center default, so just changing the field default
+            // would never reach existing installs. Migration rule: a legacy
+            // non-center value was a deliberate user pick — carry it over;
+            // legacy 4 (or no legacy key) takes the new top-left default.
+            int legacyAnchor = parseInt(s, "HUD_anchor", -1);
+            int migratedAnchor = (legacyAnchor >= 0 && legacyAnchor <= 8 && legacyAnchor != 4)
+                    ? legacyAnchor : cfgHudAnchor;
             cfgHudAnchor    = Math.max(0, Math.min(8,
-                                  parseInt(s, "HUD_anchor",  cfgHudAnchor)));
+                                  parseInt(s, "HUD_anchor2", migratedAnchor)));
             cfgHudScale     = Math.max(50, Math.min(200,
                                   parseInt(s, "HUD_scale",   cfgHudScale)));
             cfgHudOpacity   = Math.max(10, Math.min(100,
@@ -16202,7 +16214,7 @@ public final class ShadowHud implements ClientModInitializer {
             s.append("  \"Time_secs\": ").append(cfgTimeSeconds).append(",\n");
             s.append("  \"Compass_degs\": ").append(cfgCompassDegs).append(",\n");
             s.append("  \"Compass_mode\": ").append(cfgCompassMode).append(",\n");
-            s.append("  \"HUD_anchor\":   ").append(cfgHudAnchor).append(",\n");
+            s.append("  \"HUD_anchor2\":  ").append(cfgHudAnchor).append(",\n");
             s.append("  \"HUD_scale\":    ").append(cfgHudScale).append(",\n");
             s.append("  \"HUD_opacity\":  ").append(cfgHudOpacity).append(",\n");
             s.append("  \"HUD_offsetX\":  ").append(cfgHudOffsetX).append(",\n");

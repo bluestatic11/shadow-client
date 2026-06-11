@@ -92,7 +92,21 @@ export class PresenceHub {
 
     // Opportunistic eviction — keep the map small so cold-start
     // reads stay fast.
-    if (this.entries.size > 4096) this.evictStale(now);
+    if (this.entries.size > 4096) {
+      this.evictStale(now);
+      // evictStale only removes entries past their TTL. If the map is
+      // still over the cap (thousands of FRESH uuids — i.e. someone
+      // spraying heartbeats from fabricated ids), drop oldest-seen
+      // first so memory stays bounded instead of growing until the DO
+      // OOMs. Legit users re-establish on their next 60s heartbeat.
+      if (this.entries.size > 8192) {
+        const oldestFirst = [...this.entries.entries()]
+          .sort((a, b2) => a[1].lastSeenAt - b2[1].lastSeenAt);
+        for (let i = 0; i < oldestFirst.length - 4096; i++) {
+          this.entries.delete(oldestFirst[i][0]);
+        }
+      }
+    }
 
     return jsonOk({ accepted: true });
   }

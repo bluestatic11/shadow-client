@@ -28,7 +28,22 @@ interface Member {
    * silently dropped (no DO ops burned on people who aren't in VC).
    */
   inVoice: boolean;
+  /**
+   * When this socket connected (ms epoch). Tokens are verified only at
+   * the upgrade handshake; past MAX_SESSION_MS we close the socket so
+   * the client reconnects and re-verifies with a fresh token (the mod
+   * hot-swaps rotated tokens at runtime, so this is a seamless blip).
+   */
+  connectedAtMs: number;
 }
+
+/**
+ * Max socket lifetime before a forced re-auth reconnect. Microsoft
+ * tokens live ~24h; without this, a session opened with a valid token
+ * could outlive its credentials indefinitely. 12h keeps every live
+ * socket inside its token's validity window.
+ */
+const MAX_SESSION_MS = 12 * 60 * 60 * 1000;
 
 /** Cap each message at this many chars after trim. Stops "wall of text"
  *  spam from one user crowding everyone else's chat. */
@@ -78,7 +93,17 @@ export class ChatRoom implements DurableObject {
       this.members.delete(uuid);
     }
 
-    const member: Member = { uuid, name, socket: serverSide, recentMsgs: [], inVoice: false };
+    // Clip the display name defensively — Mojang caps usernames at 16
+    // chars, but we broadcast this string verbatim to every member, so
+    // don't trust upstream to enforce that forever.
+    const member: Member = {
+      uuid,
+      name: name.slice(0, 32),
+      socket: serverSide,
+      recentMsgs: [],
+      inVoice: false,
+      connectedAtMs: Date.now(),
+    };
     this.members.set(uuid, member);
 
     serverSide.addEventListener('message', (event) => {
@@ -129,7 +154,10 @@ export class ChatRoom implements DurableObject {
    *   Downlink:  [0x01][sender_uuid 16 bytes][opus_bytes …]
    */
   private handleBinary(from: Member, raw: ArrayBuffer) {
-    if (raw.byteLength === 0 || raw.byteLength > 2048) return;
+    if (this.sessionExpired(from)) return;
+    // < 2 bytes = marker with no payload — nothing to forward; relaying
+    // it would just fan 17-byte runt frames to every voice member.
+    if (raw.byteLength < 2 || raw.byteLength > 2048) return;
     const view = new Uint8Array(raw);
     const marker = view[0];
     if (marker !== 0x01) return;  // unknown frame type — silently drop
@@ -168,7 +196,20 @@ export class ChatRoom implements DurableObject {
     }
   }
 
+  /**
+   * Lazy session-age check, run on every inbound frame. True (and the
+   * socket is closing) when the connection has outlived MAX_SESSION_MS.
+   * Close code 4001 tells the mod this is a re-auth cycle, not an error;
+   * its auto-reconnect picks up the freshest token from disk.
+   */
+  private sessionExpired(from: Member): boolean {
+    if (Date.now() - from.connectedAtMs <= MAX_SESSION_MS) return false;
+    try { from.socket.close(4001, 're-auth required — reconnect'); } catch (_) {}
+    return true;
+  }
+
   private handleClientMessage(from: Member, raw: string) {
+    if (this.sessionExpired(from)) return;
     let msg: ClientMessage;
     try {
       const parsed = JSON.parse(raw);

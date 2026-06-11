@@ -90,6 +90,62 @@ def _pick_version(slug: str, mc_version: str, loader: str = "fabric") -> dict[st
     return None
 
 
+# ─── Direct-URL mods (not on Modrinth) ──────────────────────────────────
+# Shadow Chat is published on GitHub Releases by CI (release-shadow-chat.yml
+# fires on every chat-mod-v* tag). Keep VERSION in sync with the Tauri
+# launcher's MOD_JAR_URL in launcher/src-tauri/src/shadow_chat.rs — both
+# sides are bumped together in the release convention. Without this entry,
+# run.bat users never received the chat mod (or its updates) from
+# setup / update-mods; only the Tauri launcher's installer carried it.
+SHADOW_CHAT_VERSION = "0.1.39"
+SHADOW_CHAT_URL = (
+    "https://github.com/bluestatic11/shadow-client/releases/download/"
+    f"chat-mod-v{SHADOW_CHAT_VERSION}/shadow-chat-{SHADOW_CHAT_VERSION}.jar"
+)
+SHADOW_CHAT_MC_VERSIONS = ("1.21.10", "1.21.11", "26.1.2")
+
+
+def _install_shadow_chat(mods_dir: Path, mc_version: str) -> bool:
+    """Fetch-then-sweep install of the Shadow Chat jar.
+
+    Download the new version FIRST, and only then delete older
+    shadow-chat-*.jar files — if the release isn't published yet (launcher
+    version bumped ahead of the tag) the old jar stays as a working
+    fallback. Two jars with the same mod id crash Fabric on duplicate-mod,
+    so the sweep is mandatory once the new one is on disk. Non-fatal on
+    failure; the next setup / update-mods retries.
+    """
+    if mc_version not in SHADOW_CHAT_MC_VERSIONS:
+        print(f"[mods]   skip shadow-chat — not built for MC {mc_version}")
+        return False
+    filename = f"shadow-chat-{SHADOW_CHAT_VERSION}.jar"
+    dest = mods_dir / filename
+    if dest.exists():
+        return True  # current version already installed
+    print(f"[mods] shadow-chat       -> {filename}  (in-game chat overlay)")
+    try:
+        _download(SHADOW_CHAT_URL, dest, None)
+    except Exception as e:
+        print(f"[mods]   shadow-chat download failed ({e}) — keeping any existing jar")
+        return False
+    for stale in mods_dir.glob("shadow-chat-*.jar"):
+        if stale.name != filename:
+            try:
+                stale.unlink()
+                print(f"[mods]   removed stale {stale.name}")
+            except OSError:
+                # Locked (MC running) — Fabric would see a duplicate next
+                # launch, so park the new jar as .new for _promote_staged_mods
+                # and put the old one back in charge.
+                try:
+                    dest.rename(dest.with_suffix(".jar.new"))
+                    print(f"[mods]   {stale.name} is locked — staged {filename}.new for next launch")
+                except OSError:
+                    pass
+                return False
+    return True
+
+
 def install_mods(mods_dir: Path, mc_version: str) -> tuple[list[str], list[str]]:
     mods_dir.mkdir(parents=True, exist_ok=True)
     installed: list[str] = []
@@ -108,4 +164,10 @@ def install_mods(mods_dir: Path, mc_version: str) -> tuple[list[str], list[str]]
         print(f"[mods] {slug:18} → {file['filename']}  ({desc})")
         _download(file["url"], dest, file.get("hashes", {}).get("sha1"))
         installed.append(slug)
+
+    # Direct-URL mods (GitHub Releases, not Modrinth).
+    if _install_shadow_chat(mods_dir, mc_version):
+        installed.append("shadow-chat")
+    else:
+        skipped.append("shadow-chat")
     return installed, skipped

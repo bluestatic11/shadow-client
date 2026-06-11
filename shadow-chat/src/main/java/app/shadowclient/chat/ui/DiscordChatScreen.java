@@ -119,6 +119,18 @@ public final class DiscordChatScreen extends Screen {
     /** When true the main area renders the settings panel. Mutually
      *  exclusive with viewingVoiceRoom — opening one closes the other. */
     private boolean viewingSettings = false;
+    /** Pixels the settings panel is scrolled down. 0 = top. The panel
+     *  outgrew one screen once the QoL + minigame toggle sections landed
+     *  (11 rows), so it scrolls like the message log does. */
+    private int settingsScrollOffset = 0;
+    /** Content height measured during the last settings render — used to
+     *  clamp {@link #settingsScrollOffset} (self-correcting one frame
+     *  after a resize). */
+    private int settingsContentHeight = 0;
+    /** Visible band of the settings scroll viewport in the last render;
+     *  drawToggleRow only registers hit-rects for chips inside it so
+     *  scrolled-away toggles aren't invisibly clickable. */
+    private int settingsViewTop = 0, settingsViewBottom = 0;
     private int settingsBtnX1, settingsBtnY1, settingsBtnX2, settingsBtnY2;
     private int muteBtnX1, muteBtnY1, muteBtnX2, muteBtnY2;
     /** Inline "Join voice" button on the voice-room empty state. */
@@ -613,11 +625,25 @@ public final class DiscordChatScreen extends Screen {
         ShadowChatClient sc = ShadowChatClient.get();
         ModConfig cfg = sc.modConfig();
 
-        // Title
+        // Title (fixed — only the rows below scroll)
         gfx.drawString(this.font, "Settings", x + 24, y + 16, TEXT_BRIGHT, false);
         gfx.fill(x + 24, y + 32, x + w - 24, y + 33, DIVIDER);
 
-        int rowY = y + 48;
+        // Scroll viewport: between the title divider and the bottom hint.
+        // The toggle list outgrew one screen when the QoL + minigame
+        // sections landed, so it scrolls; clamp against the content
+        // height measured on the previous frame (self-corrects within
+        // one frame after a resize).
+        settingsViewTop = y + 36;
+        settingsViewBottom = y + h - 30;
+        int viewH = settingsViewBottom - settingsViewTop;
+        int maxScroll = Math.max(0, settingsContentHeight - viewH);
+        if (settingsScrollOffset > maxScroll) settingsScrollOffset = maxScroll;
+        if (settingsScrollOffset < 0) settingsScrollOffset = 0;
+
+        gfx.enableScissor(x, settingsViewTop, x + w, settingsViewBottom);
+        int contentTop = settingsViewTop + 12 - settingsScrollOffset;
+        int rowY = contentTop;
         rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
                 "Auto-open chat on world join",
                 "When on, the chat screen pops open ~1 s after you join any multiplayer world.",
@@ -679,10 +705,25 @@ public final class DiscordChatScreen extends Screen {
                 "Fires the respawn packet on the death screen with a 20-tick cooldown to avoid bug-loops.",
                 "mg_respawn", app.shadowclient.chat.minigame.Minigames.autoRespawnEnabled);
 
+        gfx.disableScissor();
+        // Measure what we just drew so the clamp above is right next frame.
+        settingsContentHeight = (rowY - contentTop) + 12;
+
+        // Slim scrollbar on the right edge when the content overflows.
+        if (maxScroll > 0) {
+            int trackX = x + w - 6;
+            int trackH = viewH;
+            int barH = Math.max(24, (int) ((long) trackH * viewH / settingsContentHeight));
+            int barY = settingsViewTop
+                    + (int) ((long) (trackH - barH) * settingsScrollOffset / maxScroll);
+            gfx.fill(trackX, settingsViewTop, trackX + 3, settingsViewBottom, 0x30FFFFFF);
+            gfx.fill(trackX, barY, trackX + 3, barY + barH, 0x90FFFFFF);
+        }
+
         // Hint at the bottom — keyboard shortcuts users might miss.
         int hintY = y + h - 22;
         gfx.drawString(this.font,
-                "Click the gear icon again to close. Press ; anywhere to reopen chat.",
+                "Scroll for more settings. Click the gear again to close; ; reopens chat.",
                 x + 24, hintY, TEXT_DIM, false);
     }
 
@@ -720,7 +761,11 @@ public final class DiscordChatScreen extends Screen {
         gfx.drawString(this.font, subLabel, x, y + 6 + this.font.lineHeight + 4,
                 TEXT_DIM, false);
 
-        settingsToggleHits.add(new ToggleHit(chipX1, chipY1, chipX2, chipY2, key));
+        // Only chips actually inside the scroll viewport are clickable —
+        // rows scissored away must not be invisibly hit-testable.
+        if (chipY2 >= settingsViewTop && chipY1 <= settingsViewBottom) {
+            settingsToggleHits.add(new ToggleHit(chipX1, chipY1, chipX2, chipY2, key));
+        }
         return y + rowH + 8;
     }
 
@@ -1143,6 +1188,15 @@ public final class DiscordChatScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        // Settings panel open → the wheel scrolls the toggle list, not
+        // the chat history behind it. 24 px per notch ≈ half a row.
+        if (viewingSettings) {
+            settingsScrollOffset -= (int) (Math.signum(scrollY) * 24);
+            // Upper clamp happens in drawSettings against the measured
+            // content height; just floor here.
+            if (settingsScrollOffset < 0) settingsScrollOffset = 0;
+            return true;
+        }
         // Three lines per notch — feels about right vs Discord's smoother
         // pixel scrolling.
         int delta = (int) Math.signum(scrollY) * 3;
@@ -1229,6 +1283,7 @@ public final class DiscordChatScreen extends Screen {
                 && my >= settingsBtnY1 && my <= settingsBtnY2) {
             viewingSettings = !viewingSettings;
             if (viewingSettings) viewingVoiceRoom = false;
+            settingsScrollOffset = 0; // always reopen at the top
             return true;
         }
 

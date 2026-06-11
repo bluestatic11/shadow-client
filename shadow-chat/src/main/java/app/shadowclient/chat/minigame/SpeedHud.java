@@ -24,6 +24,11 @@ public final class SpeedHud {
     private static double currentSpeed = 0.0;
     private static double peakSpeed = 0.0;
 
+    /** Identity of the level the last sample came from — see the
+     *  world-change reset in the tick handler. Weak so we never pin a
+     *  left world in memory. */
+    private static java.lang.ref.WeakReference<Object> lastLevel = new java.lang.ref.WeakReference<>(null);
+
     // Jump tracking
     private static boolean inJump = false;
     private static double jumpStartX, jumpStartZ, jumpStartY, jumpPeakY;
@@ -60,6 +65,18 @@ public final class SpeedHud {
             if (client.player == null) return;
             LocalPlayer p = client.player;
 
+            // World/dimension change → old sample coordinates belong to a
+            // different coordinate space. Re-seed instead of recording a
+            // multi-thousand-block "move".
+            if (lastLevel.get() != client.level) {
+                lastLevel = new java.lang.ref.WeakReference<>(client.level);
+                lastX = Double.NaN;
+                lastZ = Double.NaN;
+                inJump = false;
+                currentSpeed = 0.0;
+                return;
+            }
+
             // Sample the vehicle when the player is riding one —
             // gives the actual boat speed instead of the player's
             // lerped client position which can lag behind on ice.
@@ -69,6 +86,16 @@ public final class SpeedHud {
             if (Double.isNaN(lastX)) { lastX = x; lastZ = z; }
             double dx = x - lastX, dz = z - lastZ;
             double dist = Math.sqrt(dx * dx + dz * dz);
+            // Teleport guard: nothing legitimate moves >30 blocks in one
+            // tick (600 b/s — elytra+firework peaks ~6 b/t). /tp, pearls
+            // across the map, or server-side warps would otherwise spike
+            // the session peak to absurd values and poison the jump PB.
+            if (dist > 30.0) {
+                lastX = x; lastZ = z;
+                inJump = false;
+                currentSpeed = 0.0;
+                return;
+            }
             currentSpeed = dist * 20.0; // ticks → seconds
             if (currentSpeed > peakSpeed) peakSpeed = currentSpeed;
             lastX = x; lastZ = z;

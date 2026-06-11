@@ -397,26 +397,25 @@ public final class ShadowChatClient implements ClientModInitializer {
     }
 
     /**
-     * Recent self-sent message texts awaiting their relay echo, with
-     * the wall-clock time we optimistically showed them. Used to dedup
-     * the relay's echo-back so our own messages don't render twice.
-     * Bounded in size + age by {@link #noteSelfEcho}.
+     * Recent self-sent messages awaiting their relay echo, with the
+     * wall-clock time we optimistically showed them. Used to dedup the
+     * relay's echo-back so our own messages don't render twice.
+     * Bounded in size + age by {@link #noteSelfEcho}. Single deque of
+     * records (not parallel collections) so the pairing can't desync.
      */
-    private final java.util.ArrayDeque<long[]> selfEchoTimes = new java.util.ArrayDeque<>();
-    private final java.util.ArrayDeque<String> selfEchoTexts = new java.util.ArrayDeque<>();
+    private record SelfEcho(String text, long atMs) {}
+    private final java.util.ArrayDeque<SelfEcho> selfEchoes = new java.util.ArrayDeque<>();
 
     private void noteSelfEcho(String text) {
-        synchronized (selfEchoTexts) {
+        synchronized (selfEchoes) {
             long now = System.currentTimeMillis();
-            selfEchoTexts.addLast(text);
-            selfEchoTimes.addLast(new long[]{ now });
+            selfEchoes.addLast(new SelfEcho(text, now));
             // Drop entries older than 10s or beyond a small cap so a
             // never-arriving echo doesn't leak the queue forever.
             long cutoff = now - 10_000L;
-            while (!selfEchoTimes.isEmpty()
-                    && (selfEchoTimes.peekFirst()[0] < cutoff || selfEchoTexts.size() > 32)) {
-                selfEchoTimes.removeFirst();
-                selfEchoTexts.removeFirst();
+            while (!selfEchoes.isEmpty()
+                    && (selfEchoes.peekFirst().atMs() < cutoff || selfEchoes.size() > 32)) {
+                selfEchoes.removeFirst();
             }
         }
     }
@@ -428,15 +427,11 @@ public final class ShadowChatClient implements ClientModInitializer {
      * duplicate.
      */
     private boolean consumeSelfEcho(String text) {
-        synchronized (selfEchoTexts) {
-            java.util.Iterator<String> ti = selfEchoTexts.iterator();
-            java.util.Iterator<long[]> si = selfEchoTimes.iterator();
-            while (ti.hasNext()) {
-                String t = ti.next();
-                si.next();
-                if (t.equals(text)) {
-                    ti.remove();
-                    si.remove();
+        synchronized (selfEchoes) {
+            java.util.Iterator<SelfEcho> it = selfEchoes.iterator();
+            while (it.hasNext()) {
+                if (it.next().text().equals(text)) {
+                    it.remove();
                     return true;
                 }
             }

@@ -74,15 +74,37 @@ public final class RecipePreview {
     /** Count of fallback annotations. Real recipes come live from the recipe book. */
     public static int knownRecipeCount() { return FALLBACK.size(); }
 
+    /**
+     * Single-slot tooltip cache. ItemTooltipCallback fires every FRAME
+     * the tooltip is visible, and the dynamic path walks the entire
+     * client recipe book — hundreds of entries vanilla, thousands on
+     * modded servers. Hovering is by nature one-item-at-a-time, so one
+     * cached block keyed by item identity removes ~59 of every 60
+     * walks. 5s expiry catches mid-session recipe-book additions.
+     */
+    private static Item cacheItem;
+    private static long cacheBuiltMs;
+    private static List<Component> cacheBlock = List.of();
+
     static void register() {
         ItemTooltipCallback.EVENT.register((stack, ctx, tooltipType, lines) -> {
             if (!Qol.recipePreviewEnabled) return;
             if (stack == null || stack.isEmpty()) return;
 
-            int rendered = tryAppendDynamicRecipes(stack, lines);
-            if (rendered == 0) {
-                tryAppendFallback(stack, lines);
+            long now = System.currentTimeMillis();
+            if (stack.getItem() == cacheItem && now - cacheBuiltMs < 5000) {
+                lines.addAll(cacheBlock);
+                return;
             }
+            List<Component> block = new ArrayList<>();
+            int rendered = tryAppendDynamicRecipes(stack, block);
+            if (rendered == 0) {
+                tryAppendFallback(stack, block);
+            }
+            cacheItem = stack.getItem();
+            cacheBuiltMs = now;
+            cacheBlock = block;
+            lines.addAll(block);
         });
     }
 

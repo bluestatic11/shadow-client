@@ -39,6 +39,16 @@ public final class LapTimer {
     private static long bestLapMs = 0L;
     private static int lapCount = 0;
 
+    /**
+     * Identity of the level the start line was anchored in. Weak so we
+     * never pin a left world in memory. When the current level stops
+     * matching (dimension hop, server switch, disconnect→rejoin), the
+     * anchor coordinates are meaningless in the new world — without
+     * this check the timer wedged "in lap" forever because the old
+     * start line could never be re-crossed.
+     */
+    private static java.lang.ref.WeakReference<Object> anchorLevel = new java.lang.ref.WeakReference<>(null);
+
     private LapTimer() {}
 
     public static boolean hasStartLine() { return !Double.isNaN(startX); }
@@ -53,6 +63,7 @@ public final class LapTimer {
         startX = ref.getX();
         startZ = ref.getZ();
         startY = ref.getY();
+        anchorLevel = new java.lang.ref.WeakReference<>(mc.level);
         armedAtMs = System.currentTimeMillis();
         inLap = false;
         lapStartMs = 0L;
@@ -84,6 +95,18 @@ public final class LapTimer {
             if (!Minigames.lapTimerEnabled) return;
             if (client.player == null) return;
             if (Double.isNaN(startX)) return;
+
+            // World/dimension changed since the anchor was set → the start
+            // line's coordinates are meaningless here (and the timer would
+            // wedge "in lap" forever, unable to re-cross a line that's in
+            // another world). Drop everything; the user re-anchors at the
+            // new track.
+            if (anchorLevel.get() != client.level) {
+                clearAll();
+                client.player.displayClientMessage(Component.literal(
+                        "§b[Lap] §7Start line cleared (world changed) — toggle to re-anchor."), false);
+                return;
+            }
 
             LocalPlayer p = client.player;
             Entity ref = p.getVehicle() != null ? p.getVehicle() : p;

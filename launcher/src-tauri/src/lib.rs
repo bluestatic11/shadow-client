@@ -184,7 +184,8 @@ async fn launch_game(
 
         let code = tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all().build().unwrap();
+                .enable_all().build()
+                .map_err(|e| anyhow::anyhow!("couldn't start launch runtime: {e}"))?;
             rt.block_on(setup::launch(
                 here, state_file, profile, heap_mb, gc, username, progress, on_line,
             ))
@@ -433,7 +434,14 @@ fn list_profiles() -> Result<Vec<ProfileInfo>, String> {
 /// Refuses to delete the last_used profile unless `force=true` — the
 /// launcher would otherwise have no default to launch.
 #[tauri::command]
-fn delete_profile(name: String, force: bool) -> Result<(), String> {
+fn delete_profile(busy: State<'_, AppState>, name: String, force: bool) -> Result<(), String> {
+    // Refuse while setup/launch is in flight — both mutate installed.json,
+    // and a stale read here would clobber whatever the running task wrote
+    // (e.g. delete an old profile and silently drop the freshly-installed
+    // one from state in the same write).
+    if *busy.busy.lock().unwrap() {
+        return Err("busy — wait for the current setup/launch to finish".into());
+    }
     let here = project_root();
     let state_file = here.join("installed.json");
     let mut state = setup::load_state(&state_file);
@@ -464,7 +472,11 @@ fn delete_profile(name: String, force: bool) -> Result<(), String> {
 /// Switch the active profile. Updates last_used in installed.json so
 /// the next PLAY click runs this profile by default.
 #[tauri::command]
-fn switch_profile(name: String) -> Result<(), String> {
+fn switch_profile(busy: State<'_, AppState>, name: String) -> Result<(), String> {
+    // Same installed.json write-race guard as delete_profile.
+    if *busy.busy.lock().unwrap() {
+        return Err("busy — wait for the current setup/launch to finish".into());
+    }
     let here = project_root();
     let state_file = here.join("installed.json");
     let mut state = setup::load_state(&state_file);
@@ -1646,6 +1658,13 @@ async fn refresh_chat_auth(version: Option<String>, force: Option<bool>) -> Resu
             }
             Err(e) => return Err(format!("token refresh failed: {e}")),
         }
+    }
+    // Refuse to write a junk token: an msa account whose access_token is
+    // empty/corrupt (and which needs_refresh declined to refresh because
+    // the refresh_token is also missing) would otherwise produce an auth
+    // file the mod can't use — and the relay would 401 it.
+    if acct.access_token.len() < 10 {
+        return Err("account token missing or corrupt — sign in with Microsoft again".into());
     }
     // Write the chat auth file into the active profile.
     let state_file = here.join("installed.json");

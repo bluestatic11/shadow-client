@@ -50,11 +50,13 @@ public final class QolCommands {
         switch (sub) {
             case "on", "true", "enable" -> {
                 Qol.recipePreviewEnabled = true;
+                persist("recipe_preview", true);
                 echo.accept(InputState.DisplayLine.system(
                         "Recipe preview enabled. Hover an item in any inventory to see its recipe."));
             }
             case "off", "false", "disable" -> {
                 Qol.recipePreviewEnabled = false;
+                persist("recipe_preview", false);
                 echo.accept(InputState.DisplayLine.system("Recipe preview disabled."));
             }
             default -> echo.accept(InputState.DisplayLine.error("Unknown subcommand: " + sub));
@@ -70,10 +72,12 @@ public final class QolCommands {
         switch (sub) {
             case "on", "true", "enable" -> {
                 Qol.coordsHudEnabled = true;
+                persist("coords_hud", true);
                 echo.accept(InputState.DisplayLine.system("Coords HUD enabled (top-right)."));
             }
             case "off", "false", "disable" -> {
                 Qol.coordsHudEnabled = false;
+                persist("coords_hud", false);
                 echo.accept(InputState.DisplayLine.system("Coords HUD disabled."));
             }
             default -> echo.accept(InputState.DisplayLine.error("Unknown subcommand: " + sub));
@@ -89,11 +93,13 @@ public final class QolCommands {
         switch (sub) {
             case "on", "true", "enable" -> {
                 Qol.heldItemHudEnabled = true;
+                persist("held_item_hud", true);
                 echo.accept(InputState.DisplayLine.system(
                         "Held-item HUD enabled. Switch hotbar slots to see the item name pop up."));
             }
             case "off", "false", "disable" -> {
                 Qol.heldItemHudEnabled = false;
+                persist("held_item_hud", false);
                 echo.accept(InputState.DisplayLine.system("Held-item HUD disabled."));
             }
             default -> echo.accept(InputState.DisplayLine.error("Unknown subcommand: " + sub));
@@ -107,6 +113,16 @@ public final class QolCommands {
         echo.accept(InputState.DisplayLine.system("  Coords HUD:      " + onOff(Qol.coordsHudEnabled)));
         echo.accept(InputState.DisplayLine.system("  Held-item HUD:   " + onOff(Qol.heldItemHudEnabled)));
         echo.accept(InputState.DisplayLine.system("Toggle with /<name> on|off."));
+    }
+
+
+    /** Mirror a toggle flip into the persisted config (survives restarts). */
+    private static void persist(String key, boolean v) {
+        try {
+            app.shadowclient.chat.ShadowChatClient.get().modConfig().setHelperToggle(key, v);
+        } catch (IllegalStateException ignored) {
+            // Mod still initializing — startup restore covers this window.
+        }
     }
 
     private static String sub(String[] parts) {

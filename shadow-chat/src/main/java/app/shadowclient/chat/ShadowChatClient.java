@@ -109,6 +109,17 @@ public final class ShadowChatClient implements ClientModInitializer {
         // held-item HUD. Same opt-in shape as the minigame pack.
         Qol.register();
 
+        // Restore persisted helper toggles so /coordshud etc. survive a
+        // restart instead of needing re-enabling every session. The lap
+        // timer is intentionally absent — its start line is per-track.
+        Minigames.speedHudEnabled     = modConfig.helperToggle("speed_hud");
+        Minigames.iceHighlightEnabled = modConfig.helperToggle("ice_highlight");
+        Minigames.autoSprintEnabled   = modConfig.helperToggle("auto_sprint");
+        Minigames.autoRespawnEnabled  = modConfig.helperToggle("auto_respawn");
+        Qol.recipePreviewEnabled      = modConfig.helperToggle("recipe_preview");
+        Qol.coordsHudEnabled          = modConfig.helperToggle("coords_hud");
+        Qol.heldItemHudEnabled        = modConfig.helperToggle("held_item_hud");
+
         // IPC drop-file watcher — lets the launcher signal us to (e.g.)
         // open the chat screen automatically on world load. See
         // CommandFile for the JSON schema.
@@ -368,9 +379,10 @@ public final class ShadowChatClient implements ClientModInitializer {
         // so the line never shows twice.
         String selfName = auth.isUsable() ? auth.name() : "me";
         long now = System.currentTimeMillis();
-        uiState.append(uiState.activeChannel(),
+        String echoChannel = uiState.activeChannel();
+        uiState.append(echoChannel,
                 InputState.DisplayLine.chat(selfName, text, now));
-        noteSelfEcho(text);
+        noteSelfEcho(echoChannel, text);
 
         relay.sendMessage(text);
     }
@@ -398,18 +410,22 @@ public final class ShadowChatClient implements ClientModInitializer {
 
     /**
      * Recent self-sent messages awaiting their relay echo, with the
-     * wall-clock time we optimistically showed them. Used to dedup the
-     * relay's echo-back so our own messages don't render twice.
+     * channel the optimistic line was shown in and the wall-clock time.
+     * Used to dedup the relay's echo-back so our own messages don't
+     * render twice. Channel-aware: if the user switches channels
+     * between send and echo, the echo lands in a different channel
+     * than the optimistic line — consuming it there would EAT a
+     * message that was never displayed, so we only match same-channel.
      * Bounded in size + age by {@link #noteSelfEcho}. Single deque of
      * records (not parallel collections) so the pairing can't desync.
      */
-    private record SelfEcho(String text, long atMs) {}
+    private record SelfEcho(String channel, String text, long atMs) {}
     private final java.util.ArrayDeque<SelfEcho> selfEchoes = new java.util.ArrayDeque<>();
 
-    private void noteSelfEcho(String text) {
+    private void noteSelfEcho(String channel, String text) {
         synchronized (selfEchoes) {
             long now = System.currentTimeMillis();
-            selfEchoes.addLast(new SelfEcho(text, now));
+            selfEchoes.addLast(new SelfEcho(channel, text, now));
             // Drop entries older than 10s or beyond a small cap so a
             // never-arriving echo doesn't leak the queue forever.
             long cutoff = now - 10_000L;
@@ -422,15 +438,17 @@ public final class ShadowChatClient implements ClientModInitializer {
 
     /**
      * True (and consumes the matching record) if {@code text} matches a
-     * message we just sent ourselves and optimistically displayed —
-     * meaning this is the relay echoing it back and we should drop the
-     * duplicate.
+     * message we just sent ourselves and optimistically displayed in
+     * the SAME channel — meaning this is the relay echoing it back and
+     * we should drop the duplicate.
      */
-    private boolean consumeSelfEcho(String text) {
+    private boolean consumeSelfEcho(String channel, String text) {
         synchronized (selfEchoes) {
             java.util.Iterator<SelfEcho> it = selfEchoes.iterator();
             while (it.hasNext()) {
-                if (it.next().text().equals(text)) {
+                SelfEcho e = it.next();
+                if (e.text().equals(text)
+                        && java.util.Objects.equals(e.channel(), channel)) {
                     it.remove();
                     return true;
                 }
@@ -570,7 +588,7 @@ public final class ShadowChatClient implements ClientModInitializer {
                         // duplicate. consumeSelfEcho only matches messages
                         // we actually sent ourselves (gated on isSelf), so
                         // someone else sending identical text still shows.
-                        if (isSelf && consumeSelfEcho(cm.text())) {
+                        if (isSelf && consumeSelfEcho(activeChannelKey, cm.text())) {
                             return;
                         }
                         uiState.append(activeChannelKey,

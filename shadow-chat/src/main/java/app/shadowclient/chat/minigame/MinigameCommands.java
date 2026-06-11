@@ -65,11 +65,13 @@ public final class MinigameCommands {
         switch (sub) {
             case "on", "true", "enable" -> {
                 Minigames.speedHudEnabled = true;
+                persist("speed_hud", true);
                 SpeedHud.resetSession();
                 echo.accept(InputState.DisplayLine.system("Speed HUD enabled."));
             }
             case "off", "false", "disable" -> {
                 Minigames.speedHudEnabled = false;
+                persist("speed_hud", false);
                 echo.accept(InputState.DisplayLine.system("Speed HUD disabled."));
             }
             case "reset" -> {
@@ -129,11 +131,13 @@ public final class MinigameCommands {
         switch (sub) {
             case "on", "true", "enable" -> {
                 Minigames.iceHighlightEnabled = true;
+                persist("ice_highlight", true);
                 echo.accept(InputState.DisplayLine.system(
                         "Ice highlight enabled — green outline = blue ice (fastest), yellow = packed, cyan = regular."));
             }
             case "off", "false", "disable" -> {
                 Minigames.iceHighlightEnabled = false;
+                persist("ice_highlight", false);
                 echo.accept(InputState.DisplayLine.system("Ice highlight disabled."));
             }
             default -> echo.accept(InputState.DisplayLine.error("Unknown subcommand: " + sub));
@@ -149,10 +153,12 @@ public final class MinigameCommands {
         switch (sub) {
             case "on", "true", "enable" -> {
                 Minigames.autoSprintEnabled = true;
+                persist("auto_sprint", true);
                 echo.accept(InputState.DisplayLine.system("Auto sprint enabled."));
             }
             case "off", "false", "disable" -> {
                 Minigames.autoSprintEnabled = false;
+                persist("auto_sprint", false);
                 echo.accept(InputState.DisplayLine.system("Auto sprint disabled."));
             }
             default -> echo.accept(InputState.DisplayLine.error("Unknown subcommand: " + sub));
@@ -168,10 +174,12 @@ public final class MinigameCommands {
         switch (sub) {
             case "on", "true", "enable" -> {
                 Minigames.autoRespawnEnabled = true;
+                persist("auto_respawn", true);
                 echo.accept(InputState.DisplayLine.system("Auto respawn enabled."));
             }
             case "off", "false", "disable" -> {
                 Minigames.autoRespawnEnabled = false;
+                persist("auto_respawn", false);
                 echo.accept(InputState.DisplayLine.system("Auto respawn disabled."));
             }
             default -> echo.accept(InputState.DisplayLine.error("Unknown subcommand: " + sub));
@@ -189,6 +197,16 @@ public final class MinigameCommands {
         echo.accept(InputState.DisplayLine.system("  Auto sprint:    " + onOff(Minigames.autoSprintEnabled)));
         echo.accept(InputState.DisplayLine.system("  Auto respawn:   " + onOff(Minigames.autoRespawnEnabled)));
         echo.accept(InputState.DisplayLine.system("Toggle with /<name> on|off, /<name> status, or /<name> reset."));
+    }
+
+
+    /** Mirror a toggle flip into the persisted config (survives restarts). */
+    private static void persist(String key, boolean v) {
+        try {
+            app.shadowclient.chat.ShadowChatClient.get().modConfig().setHelperToggle(key, v);
+        } catch (IllegalStateException ignored) {
+            // Mod still initializing — startup restore covers this window.
+        }
     }
 
     // ─── helpers ─────────────────────────────────────────────────────

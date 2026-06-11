@@ -75,6 +75,15 @@ public final class ModConfig {
      * sessions so a "I want quiet" toggle survives restarts.
      */
     private boolean voiceMuted = false;
+    /**
+     * Persisted on/off state for the QoL + minigame helpers (speed HUD,
+     * coords HUD, auto-sprint, …) keyed by short snake_case names. Kept
+     * generic so adding a helper doesn't mean another field + getter +
+     * setter + load + save five-some. The lap timer is deliberately NOT
+     * persisted — its start line is per-track, so auto-restoring it
+     * would just render an empty panel every session.
+     */
+    private final java.util.Map<String, Boolean> helperToggles = new java.util.HashMap<>();
 
     private ModConfig() {}
 
@@ -101,6 +110,16 @@ public final class ModConfig {
 
     public void setVoiceMuted(boolean v) {
         this.voiceMuted = v;
+        save();
+    }
+
+    /** Persisted helper-toggle state; false when never set. */
+    public boolean helperToggle(String key) {
+        return Boolean.TRUE.equals(helperToggles.get(key));
+    }
+
+    public void setHelperToggle(String key, boolean v) {
+        helperToggles.put(key, v);
         save();
     }
 
@@ -160,6 +179,16 @@ public final class ModConfig {
             if (obj.has("voice_muted") && !obj.get("voice_muted").isJsonNull()) {
                 cfg.voiceMuted = obj.get("voice_muted").getAsBoolean();
             }
+            if (obj.has("helper_toggles") && obj.get("helper_toggles").isJsonObject()) {
+                JsonObject ht = obj.getAsJsonObject("helper_toggles");
+                for (var e : ht.entrySet()) {
+                    if (e.getValue().isJsonPrimitive()) {
+                        try {
+                            cfg.helperToggles.put(e.getKey(), e.getValue().getAsBoolean());
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
             if (obj.has("joined_groups") && obj.get("joined_groups").isJsonArray()) {
                 JsonArray arr = obj.getAsJsonArray("joined_groups");
                 for (var el : arr) {
@@ -190,6 +219,11 @@ public final class ModConfig {
             root.addProperty("auto_join_voice", autoJoinVoice);
             root.addProperty("auto_open_chat_on_join", autoOpenChatOnJoin);
             root.addProperty("voice_muted", voiceMuted);
+            JsonObject ht = new JsonObject();
+            for (var e : helperToggles.entrySet()) {
+                ht.addProperty(e.getKey(), e.getValue());
+            }
+            root.add("helper_toggles", ht);
             JsonArray arr = new JsonArray();
             for (Group g : joinedGroups) {
                 JsonObject o = new JsonObject();

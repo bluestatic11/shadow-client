@@ -1268,12 +1268,30 @@ public final class DiscordChatScreen extends Screen {
                     // picks the change up live instead of waiting for the
                     // next restart.
                     case "voice_muted" -> sc.toggleVoiceMuted();
-                    // QoL toggles — flip the session-scoped static booleans
-                    // owned by the qol / minigame packages.
-                    case "qol_recipe"   -> app.shadowclient.chat.qol.Qol.recipePreviewEnabled = !app.shadowclient.chat.qol.Qol.recipePreviewEnabled;
-                    case "qol_coords"   -> app.shadowclient.chat.qol.Qol.coordsHudEnabled    = !app.shadowclient.chat.qol.Qol.coordsHudEnabled;
-                    case "qol_helditem" -> app.shadowclient.chat.qol.Qol.heldItemHudEnabled  = !app.shadowclient.chat.qol.Qol.heldItemHudEnabled;
-                    case "mg_speed"     -> app.shadowclient.chat.minigame.Minigames.speedHudEnabled       = !app.shadowclient.chat.minigame.Minigames.speedHudEnabled;
+                    // QoL toggles — flip the static booleans owned by the
+                    // qol / minigame packages, mirroring each flip into the
+                    // persisted config so it survives restarts (lap timer
+                    // excepted — its start line is per-track).
+                    case "qol_recipe"   -> {
+                        boolean v = !app.shadowclient.chat.qol.Qol.recipePreviewEnabled;
+                        app.shadowclient.chat.qol.Qol.recipePreviewEnabled = v;
+                        cfg.setHelperToggle("recipe_preview", v);
+                    }
+                    case "qol_coords"   -> {
+                        boolean v = !app.shadowclient.chat.qol.Qol.coordsHudEnabled;
+                        app.shadowclient.chat.qol.Qol.coordsHudEnabled = v;
+                        cfg.setHelperToggle("coords_hud", v);
+                    }
+                    case "qol_helditem" -> {
+                        boolean v = !app.shadowclient.chat.qol.Qol.heldItemHudEnabled;
+                        app.shadowclient.chat.qol.Qol.heldItemHudEnabled = v;
+                        cfg.setHelperToggle("held_item_hud", v);
+                    }
+                    case "mg_speed"     -> {
+                        boolean v = !app.shadowclient.chat.minigame.Minigames.speedHudEnabled;
+                        app.shadowclient.chat.minigame.Minigames.speedHudEnabled = v;
+                        cfg.setHelperToggle("speed_hud", v);
+                    }
                     case "mg_lap"       -> {
                         boolean now = !app.shadowclient.chat.minigame.Minigames.lapTimerEnabled;
                         app.shadowclient.chat.minigame.Minigames.lapTimerEnabled = now;
@@ -1282,9 +1300,21 @@ public final class DiscordChatScreen extends Screen {
                         if (now) app.shadowclient.chat.minigame.LapTimer.anchorStartLineHere();
                         else     app.shadowclient.chat.minigame.LapTimer.clearAll();
                     }
-                    case "mg_ice"       -> app.shadowclient.chat.minigame.Minigames.iceHighlightEnabled   = !app.shadowclient.chat.minigame.Minigames.iceHighlightEnabled;
-                    case "mg_sprint"    -> app.shadowclient.chat.minigame.Minigames.autoSprintEnabled     = !app.shadowclient.chat.minigame.Minigames.autoSprintEnabled;
-                    case "mg_respawn"   -> app.shadowclient.chat.minigame.Minigames.autoRespawnEnabled    = !app.shadowclient.chat.minigame.Minigames.autoRespawnEnabled;
+                    case "mg_ice"       -> {
+                        boolean v = !app.shadowclient.chat.minigame.Minigames.iceHighlightEnabled;
+                        app.shadowclient.chat.minigame.Minigames.iceHighlightEnabled = v;
+                        cfg.setHelperToggle("ice_highlight", v);
+                    }
+                    case "mg_sprint"    -> {
+                        boolean v = !app.shadowclient.chat.minigame.Minigames.autoSprintEnabled;
+                        app.shadowclient.chat.minigame.Minigames.autoSprintEnabled = v;
+                        cfg.setHelperToggle("auto_sprint", v);
+                    }
+                    case "mg_respawn"   -> {
+                        boolean v = !app.shadowclient.chat.minigame.Minigames.autoRespawnEnabled;
+                        app.shadowclient.chat.minigame.Minigames.autoRespawnEnabled = v;
+                        cfg.setHelperToggle("auto_respawn", v);
+                    }
                     default -> {}
                 }
                 return true;

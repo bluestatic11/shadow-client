@@ -39,6 +39,9 @@ public final class LapTimer {
     private static long bestLapMs = 0L;
     private static int lapCount = 0;
 
+    /** Last 5 closed laps as {lapNumber, lapMs}, newest first. */
+    private static final java.util.ArrayDeque<long[]> lapHistory = new java.util.ArrayDeque<>();
+
     /**
      * Identity of the level the start line was anchored in. Weak so we
      * never pin a left world in memory. When the current level stops
@@ -81,6 +84,7 @@ public final class LapTimer {
         lastLapMs = 0L;
         bestLapMs = 0L;
         lapCount = 0;
+        lapHistory.clear();
         armedAtMs = System.currentTimeMillis(); // re-arm so we don't trigger off the player still on the line
     }
 
@@ -113,9 +117,12 @@ public final class LapTimer {
             double dx = ref.getX() - startX;
             double dz = ref.getZ() - startZ;
             double dist = Math.sqrt(dx * dx + dz * dz);
+            // Y guard: multi-level tracks can route a bridge directly above
+            // the start line — XZ distance alone would false-trigger there.
+            double dy = ref.getY() - startY;
             long now = System.currentTimeMillis();
 
-            if (!inLap && dist < 3.0 && (now - armedAtMs) > 1500) {
+            if (!inLap && dist < 3.0 && Math.abs(dy) < 5.0 && (now - armedAtMs) > 1500) {
                 // Crossing the start line after arming → begin lap.
                 // The HUD panel already shows "Lap: 0.00s" once `inLap`
                 // flips, so we skip an action-bar pop-up — it would
@@ -123,15 +130,26 @@ public final class LapTimer {
                 // view at exactly the moment the racer needs it clear.
                 inLap = true;
                 lapStartMs = now;
-            } else if (inLap && dist < 3.0 && (now - lapStartMs) > 5000) {
+            } else if (inLap && dist < 3.0 && Math.abs(dy) < 5.0 && (now - lapStartMs) > 5000) {
                 // Crossing the line again after ≥5 s → close lap.
                 lastLapMs = now - lapStartMs;
                 lapCount++;
-                boolean pb = (bestLapMs == 0L || lastLapMs < bestLapMs);
+                long prevBest = bestLapMs;
+                boolean pb = (prevBest == 0L || lastLapMs < prevBest);
                 if (pb) bestLapMs = lastLapMs;
+                // Delta vs the best that stood BEFORE this lap.
+                String delta = "";
+                if (prevBest != 0L) {
+                    long d = lastLapMs - prevBest;
+                    delta = d < 0
+                            ? " §a(-" + formatLap(-d) + ")"
+                            : " §c(+" + formatLap(d) + ")";
+                }
+                lapHistory.addFirst(new long[]{lapCount, lastLapMs});
+                while (lapHistory.size() > 5) lapHistory.removeLast();
                 p.displayClientMessage(Component.literal(
-                        String.format("§b[Lap %d] §f%s%s",
-                                lapCount, formatLap(lastLapMs),
+                        String.format("§b[Lap %d] §f%s%s%s",
+                                lapCount, formatLap(lastLapMs), delta,
                                 pb ? " §a§l[PB!]" : "")), false);
                 // Circuit mode: the next lap starts immediately so
                 // continuous timing works without re-arming.
@@ -152,7 +170,7 @@ public final class LapTimer {
 
             int rows = 2;
             if (inLap) rows++;
-            if (lapCount > 0) rows += 2;
+            if (lapCount > 0) rows += 2 + lapHistory.size();
 
             gfx.fill(x - 2, y - 2, x + w, y + rows * lineH + 1, 0x80000000);
             int sy = y;
@@ -171,7 +189,12 @@ public final class LapTimer {
                 gfx.drawString(mc.font, Component.literal("§7Last: §f" + formatLap(lastLapMs)),
                         x, sy, 0xFFFFFF); sy += lineH;
                 gfx.drawString(mc.font, Component.literal("§6Best: §f" + formatLap(bestLapMs)),
-                        x, sy, 0xFFFFFF);
+                        x, sy, 0xFFFFFF); sy += lineH;
+                // Last 5 closed laps, newest first.
+                for (long[] lap : lapHistory) {
+                    gfx.drawString(mc.font, Component.literal("§8L" + lap[0] + "  " + formatLap(lap[1])),
+                            x, sy, 0xFFFFFF); sy += lineH;
+                }
             }
         });
     }

@@ -918,7 +918,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         else:
             jar = jars[0]
             ver = jar.stem[len("shadow-chat-"):]
-            if ver != mods.SHADOW_CHAT_VERSION:
+            # A .jar.new sibling means the new version is already staged
+            # and self-promotes at the next launch — "run update-mods"
+            # would be misleading advice (it can't replace a locked jar
+            # either; the stage-and-promote dance exists for exactly
+            # this window while MC holds the old file open).
+            staged = sorted(mods_dir.glob("shadow-chat-*.jar.new"))
+            if ver != mods.SHADOW_CHAT_VERSION and staged:
+                staged_ver = staged[0].name[len("shadow-chat-"):-len(".jar.new")]
+                report("PASS", "shadow-chat jar",
+                       f"{staged_ver} staged - promotes at next launch "
+                       f"({jar.name} active until then)")
+            elif ver != mods.SHADOW_CHAT_VERSION:
                 report("WARN", "shadow-chat jar",
                        f"{jar.name} is stale - launcher ships "
                        f"{mods.SHADOW_CHAT_VERSION} (fix: run update-mods)")

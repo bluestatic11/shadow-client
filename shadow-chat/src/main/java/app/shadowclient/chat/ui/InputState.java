@@ -69,8 +69,21 @@ public final class InputState {
     private volatile boolean overlayVisible = false;
     private volatile String activeChannel = "server";
 
+    /**
+     * Local wall-clock time of the most recent {@link #append} on the
+     * ACTIVE channel. Drives the HUD overlay's activity window: the
+     * passive bottom-left panel only shows for a few seconds after
+     * something new arrived, instead of squatting on the screen for
+     * the rest of the session. Local receive time, not the line's own
+     * ts — relay clocks can be skewed.
+     */
+    private volatile long lastActiveAppendAtMs = 0L;
+
     public boolean isOverlayVisible() { return overlayVisible; }
     public void setOverlayVisible(boolean v) { this.overlayVisible = v; }
+
+    /** ms epoch of the last append to the active channel; 0 = never. */
+    public long lastActiveAppendAtMs() { return lastActiveAppendAtMs; }
 
     public String activeChannel() { return activeChannel; }
     public void setActiveChannel(String c) {
@@ -124,6 +137,11 @@ public final class InputState {
                 k -> new ConcurrentLinkedDeque<>());
         q.add(line);
         while (q.size() > MAX_LINES_PER_CHANNEL) q.pollFirst();
+        // Wake the HUD overlay's activity window — only for the channel
+        // the user would actually see in the passive panel.
+        if (channel != null && channel.equals(activeChannel)) {
+            lastActiveAppendAtMs = System.currentTimeMillis();
+        }
     }
 
     public void setPresence(String channel, List<ServerEvent.User> users) {

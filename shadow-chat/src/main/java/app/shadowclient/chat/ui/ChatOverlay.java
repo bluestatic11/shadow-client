@@ -93,6 +93,16 @@ public final class ChatOverlay {
         HudRenderCallback.EVENT.register(this::onRender);
     }
 
+    /**
+     * How long the passive HUD panel stays up after the last new line
+     * on the active channel. Past this it disappears entirely — the
+     * old behavior (visible for the whole session once the user opened
+     * chat once) parked a 40%-width translucent panel over the bottom-
+     * left of the game forever, which is exactly the screen-blockage
+     * players hate. Press ; any time for the full chat screen.
+     */
+    private static final long ACTIVITY_WINDOW_MS = 8_000;
+
     private void onRender(GuiGraphics gfx, DeltaTracker dt) {
         // Suppress rendering when any Screen is open — the fullscreen
         // DiscordChatScreen paints its own message log and the HUD
@@ -102,7 +112,18 @@ public final class ChatOverlay {
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen != null) return;
 
-        if (!state.isOverlayVisible()) return;
+        // Activity-gated: show only while something is actually
+        // happening — a fresh line on the active channel, or live voice
+        // (so you can glance at who's talking). Otherwise stay out of
+        // the player's view entirely.
+        boolean recentActivity = System.currentTimeMillis()
+                - state.lastActiveAppendAtMs() < ACTIVITY_WINDOW_MS;
+        boolean speaking = false;
+        VoiceController vc = ShadowChatClient.get().voice();
+        if (vc != null && !vc.playback().currentSpeakers().isEmpty()) {
+            speaking = true;
+        }
+        if (!recentActivity && !speaking) return;
 
         render(gfx, mc, /* showInputField= */ false, "");
     }

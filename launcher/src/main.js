@@ -769,6 +769,39 @@ async function runChatHealthCheck() {
   if (statusEl && !statusEl.dataset.transient) {
     statusEl.textContent = formatChatAuthStatusLine(health);
   }
+  // Keep the Settings → Chat status card on the same tick.
+  renderChatSettingsCard(health);
+}
+
+/**
+ * Settings → Chat status card. Same chat_health_check payload as the
+ * home-screen pill, broken out into label/value lines so the user can
+ * see WHICH leg is broken (mod jar vs profile vs token) instead of
+ * squinting at one squeezed pill sentence. Called from
+ * runChatHealthCheck so the card rides the existing 30s tick — no
+ * extra IPC of its own.
+ */
+function renderChatSettingsCard(health) {
+  const dot   = document.getElementById('chat-settings-dot');
+  const state = document.getElementById('chat-settings-state');
+  if (!dot || !state || !health) return;
+  dot.classList.remove('checking');
+  dot.classList.toggle('ready', !!health.ready);
+  dot.classList.toggle('blocked', !health.ready);
+  state.textContent = health.ready
+    ? 'Ready — press ; in game'
+    : (health.blockers && health.blockers[0]) || 'Not ready';
+  const jar  = document.getElementById('chat-settings-jar');
+  const prof = document.getElementById('chat-settings-profile');
+  if (jar)  jar.textContent  = health.mod_jar || 'not installed';
+  if (prof) prof.textContent = health.profile || '—';
+  // Token-freshness line. Doubles as the flash target for the card's
+  // Refresh button, so honor the same dataset.transient guard the
+  // friends-panel status note uses.
+  const line = document.getElementById('chat-settings-auth-line');
+  if (line && !line.dataset.transient) {
+    line.textContent = formatChatAuthStatusLine(health);
+  }
 }
 
 async function doSignIn() {
@@ -2394,49 +2427,88 @@ trackedAddForm?.addEventListener('submit', (e) => {
 // Initial render so the list reflects whatever's stored.
 renderTrackedServers();
 
-// Manual "Refresh chat auth now" button — for users who launch MC
-// through a different launcher and want to top up before clicking
-// PLAY in that other launcher.
-const refreshChatAuthBtn = $('refresh-chat-auth-btn');
-const refreshChatAuthStatus = $('refresh-chat-auth-status');
-refreshChatAuthBtn?.addEventListener('click', async () => {
-  refreshChatAuthBtn.disabled = true;
-  const old = refreshChatAuthBtn.textContent;
-  refreshChatAuthBtn.textContent = 'Refreshing…';
-  if (refreshChatAuthStatus) {
-    // Mark this status node as transient so runChatHealthCheck() doesn't
-    // clobber the success/error flash in the brief window before the
-    // setTimeout below clears it.
-    refreshChatAuthStatus.dataset.transient = '1';
-    refreshChatAuthStatus.textContent = '';
-  }
+// Manual "Refresh chat auth now" buttons — one in the friends panel
+// (cross-launcher users top up before clicking PLAY elsewhere) and one
+// on the Settings → Chat page. Shared wiring: disable the button while
+// the refresh runs, flash ✓/✗ into statusEl, then hand the node back
+// to the persistent formatChatAuthStatusLine text that
+// runChatHealthCheck maintains.
+function wireChatAuthRefreshButton(btn, statusEl) {
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const old = btn.textContent;
+    btn.textContent = 'Refreshing…';
+    if (statusEl) {
+      // Mark this status node as transient so runChatHealthCheck() doesn't
+      // clobber the success/error flash in the brief window before the
+      // revert timeout below clears it.
+      statusEl.dataset.transient = '1';
+      statusEl.textContent = '';
+    }
+    // Revert the flash to the persistent status line after `ms`.
+    const revert = (ms) => setTimeout(() => {
+      if (statusEl) {
+        delete statusEl.dataset.transient;
+        statusEl.textContent = formatChatAuthStatusLine(_lastHealth);
+      }
+    }, ms);
+    try {
+      const msg = await invoke('refresh_chat_auth', {
+        version: getPickedVersion(),
+        force: true,
+      });
+      if (statusEl) statusEl.textContent = `✓ ${msg}`;
+      runChatHealthCheck();  // pill + settings card reflect fresh state
+      // After 4s, hand control back to the persistent status line.
+      revert(4000);
+    } catch (e) {
+      if (statusEl) statusEl.textContent = `✗ ${e}`;
+      // Error stays visible for 8s before reverting to persistent status.
+      revert(8000);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  });
+}
+
+wireChatAuthRefreshButton($('refresh-chat-auth-btn'), $('refresh-chat-auth-status'));
+// Settings → Chat: the status card's token-freshness line doubles as
+// the flash target, mirroring the friends-panel note's behavior.
+wireChatAuthRefreshButton($('chat-settings-refresh-btn'), $('chat-settings-auth-line'));
+
+// Settings → Chat "Test connection" — answers "will chat actually
+// connect?" without launching the game. Two legs, cheapest first:
+// (1) chat_test_token mints/loads the relay token (proves sign-in and
+// the token plumbing), (2) GET /health on the relay (proves the server
+// is up and reachable from this network). The deeper WebSocket
+// round-trip test stays in Diagnostics → "Test chat (round-trip)".
+const chatSettingsTestBtn = $('chat-settings-test-btn');
+chatSettingsTestBtn?.addEventListener('click', async () => {
+  const out = $('chat-settings-test-result');
+  const orig = chatSettingsTestBtn.textContent;
+  chatSettingsTestBtn.disabled = true;
+  chatSettingsTestBtn.textContent = 'Testing…';
+  if (out) out.textContent = '';
+  let line;
   try {
-    const msg = await invoke('refresh_chat_auth', {
-      version: getPickedVersion(),
-      force: true,
-    });
-    if (refreshChatAuthStatus) refreshChatAuthStatus.textContent = `✓ ${msg}`;
-    runChatHealthCheck();  // pill reflects fresh state
-    // After 4s, hand control back to the persistent status line.
-    setTimeout(() => {
-      if (refreshChatAuthStatus) {
-        delete refreshChatAuthStatus.dataset.transient;
-        refreshChatAuthStatus.textContent = formatChatAuthStatusLine(_lastHealth);
-      }
-    }, 4000);
+    await invoke('chat_test_token');
+    try {
+      const r = await fetch('https://shadow-chat-relay.edisongushf.workers.dev/health');
+      const body = (await r.text()).trim();
+      line = r.ok
+        ? '✓ Relay reachable · token OK'
+        : `✗ Relay error ${r.status}${body ? ` (${body})` : ''} — token OK`;
+    } catch (e) {
+      line = `✗ Relay unreachable: ${e.message || e}`;
+    }
   } catch (e) {
-    if (refreshChatAuthStatus) refreshChatAuthStatus.textContent = `✗ ${e}`;
-    // Error stays visible for 8s before reverting to persistent status.
-    setTimeout(() => {
-      if (refreshChatAuthStatus) {
-        delete refreshChatAuthStatus.dataset.transient;
-        refreshChatAuthStatus.textContent = formatChatAuthStatusLine(_lastHealth);
-      }
-    }, 8000);
-  } finally {
-    refreshChatAuthBtn.disabled = false;
-    refreshChatAuthBtn.textContent = old;
+    line = `✗ Token check failed: ${e}`;
   }
+  if (out) out.textContent = line;
+  chatSettingsTestBtn.textContent = orig;
+  chatSettingsTestBtn.disabled = false;
 });
 
 // Re-run the health check every 30s so the auth-status line stays
@@ -2526,6 +2598,9 @@ function activateDialogTab(tab) {
     p.hidden = !active;
   });
   if (tab.dataset.tab === 'mods') refreshMods();
+  // Re-pull chat health on tab open so the card is current, not up to
+  // 30s stale from the background tick.
+  if (tab.dataset.tab === 'chat') runChatHealthCheck();
 }
 
 dialogTabs.forEach(tab => {

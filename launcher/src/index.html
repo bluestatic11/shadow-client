@@ -390,6 +390,11 @@
               aria-selected="false" aria-controls="dpage-mods" tabindex="-1">
         Mods
       </button>
+      <button class="dlg-tab" data-tab="chat"
+              role="tab" id="dtab-chat"
+              aria-selected="false" aria-controls="dpage-chat" tabindex="-1">
+        Chat
+      </button>
       <button class="dlg-tab" data-tab="logs"
               role="tab" id="dtab-logs"
               aria-selected="false" aria-controls="dpage-logs" tabindex="-1">
@@ -504,6 +509,61 @@
         <ul class="mod-list" id="mod-list" aria-label="Installed mods">
           <li class="empty">No mods scanned yet</li>
         </ul>
+      </section>
+
+      <!-- Chat — Shadow Chat's proper home. Readiness card + the
+           auth-refresh and connection-test controls that previously
+           only lived buried in the friends panel / Diagnostics tab.
+           The status card mirrors the home-screen chat-hint pill but
+           spells out each leg (mod jar, profile, token freshness) so
+           "why doesn't ; work in-game" is answerable at a glance.
+           Populated by renderChatSettingsCard() in main.js on the
+           same 30s chat_health_check tick as the pill. -->
+      <section class="dlg-page" id="dpage-chat"
+               role="tabpanel" aria-labelledby="dtab-chat" tabindex="0" hidden>
+        <p class="page-blurb">
+          Shadow Chat is the in-game overlay — press <kbd>;</kbd> while
+          playing to message friends across servers. It needs a Microsoft
+          sign-in, the chat mod in your active profile, and a fresh auth
+          token. This page shows all three.
+        </p>
+        <div class="settings-grid">
+          <div class="setting full">
+            <label>Status</label>
+            <div class="chat-status-row">
+              <span class="chat-status-dot checking" id="chat-settings-dot"
+                    aria-hidden="true"></span>
+              <span id="chat-settings-state" role="status">Checking…</span>
+            </div>
+            <dl class="chat-status-meta">
+              <dt>Mod jar</dt><dd id="chat-settings-jar">—</dd>
+              <dt>Profile</dt><dd id="chat-settings-profile">—</dd>
+            </dl>
+            <!-- Token-freshness line. Doubles as the ✓/✗ flash target
+                 for the Refresh button below — same transient-flash
+                 mechanism as the friends-panel status note. -->
+            <p class="friends-trackers-note" id="chat-settings-auth-line"></p>
+          </div>
+          <div class="setting full">
+            <label>Actions</label>
+            <div class="page-actions">
+              <button class="btn-sm primary" id="chat-settings-refresh-btn"
+                      type="button">Refresh auth now</button>
+              <button class="btn-sm" id="chat-settings-test-btn"
+                      type="button">Test connection</button>
+            </div>
+            <p class="friends-trackers-note" id="chat-settings-test-result"
+               role="status"></p>
+            <div class="setting-hint">
+              Refresh rewrites the auth file the chat mod reads — handy if
+              you launch Minecraft through Prism / Lunar / vanilla (it also
+              happens automatically every 30 min while this launcher is
+              open). Test connection checks your chat token and the relay
+              server without launching the game; the deeper WebSocket
+              round-trip test lives in Diagnostics.
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Logs -->

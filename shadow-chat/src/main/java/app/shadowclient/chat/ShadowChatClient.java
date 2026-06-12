@@ -200,6 +200,7 @@ public final class ShadowChatClient implements ClientModInitializer {
             tickAutoOpenChat(client);
             tickReconnectCountdown();
             tickAuthReload();
+            tickPendingLeft();
             while (Keybinds.TOGGLE_CHAT.consumeClick()) {
                 handleToggleHotkey(client);
             }
@@ -552,16 +553,30 @@ public final class ShadowChatClient implements ClientModInitializer {
             public void onConnected(String ch) {
                 runOnClient(() -> {
                     statusLine = "Connected: " + ch;
-                    uiState.append(activeChannelKey,
-                            InputState.DisplayLine.system("Joined " + ch));
-                    // Auto-rejoin voice if the user previously opted in.
-                    // Done after we've appended the "Joined" line so the
-                    // ordering reads sensibly.
-                    if (modConfig.autoJoinVoice()) {
+                    // Blip suppression: if this connect closes a disconnect
+                    // gap shorter than PENDING_LEFT_FLUSH_MS, say nothing —
+                    // idle-timeout drops + instant reconnects used to spam
+                    // "Left server… / Joined server…" pairs at the player.
+                    boolean wasBlip = pendingLeftAtMs > 0
+                            && System.currentTimeMillis() - pendingLeftAtMs < PENDING_LEFT_FLUSH_MS;
+                    pendingLeftAtMs = 0;
+                    pendingLeftText = null;
+                    if (!wasBlip) {
+                        uiState.append(activeChannelKey,
+                                InputState.DisplayLine.system("Joined " + ch));
+                    }
+                    // Re-establish voice opt-in on EVERY (re)connect that
+                    // should have it — the relay forgets opt-in when the
+                    // socket closes, so a silent blip reconnect would
+                    // otherwise leave the mic dead while inVoice still
+                    // reads true.
+                    if (modConfig.autoJoinVoice() || inVoice) {
                         relay.joinVoice();
                         inVoice = true;
-                        uiState.append(activeChannelKey,
-                                InputState.DisplayLine.system("Auto-rejoined voice"));
+                        if (!wasBlip && modConfig.autoJoinVoice()) {
+                            uiState.append(activeChannelKey,
+                                    InputState.DisplayLine.system("Auto-rejoined voice"));
+                        }
                     }
                 });
             }
@@ -570,9 +585,18 @@ public final class ShadowChatClient implements ClientModInitializer {
             public void onDisconnected(String ch, String reason) {
                 runOnClient(() -> {
                     statusLine = "Disconnected: " + (reason == null ? "" : reason);
-                    uiState.append(activeChannelKey,
-                            InputState.DisplayLine.system("Left " + ch
-                                    + (reason == null || reason.isBlank() ? "" : " (" + reason + ")")));
+                    // Don't append "Left …" yet — park it. If the auto-
+                    // reconnect lands within PENDING_LEFT_FLUSH_MS this was
+                    // a transient blip and the line is dropped entirely;
+                    // tickPendingLeft() flushes it once if the outage is
+                    // real. Repeated failures just refresh the SAME pending
+                    // line instead of appending one per retry.
+                    pendingLeftText = "Left " + ch
+                            + (reason == null || reason.isBlank() ? "" : " (" + reason + ")");
+                    pendingLeftChannelKey = activeChannelKey;
+                    if (pendingLeftAtMs == 0) {
+                        pendingLeftAtMs = System.currentTimeMillis();
+                    }
                 });
             }
 
@@ -639,6 +663,33 @@ public final class ShadowChatClient implements ClientModInitializer {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) { r.run(); return; }
         mc.execute(r);
+    }
+
+    /** How long a disconnect must persist before the "Left …" line is
+     *  shown. Reconnects inside this window are silent blips. */
+    private static final long PENDING_LEFT_FLUSH_MS = 5_000;
+    /** Parked "Left …" line awaiting flush-or-drop. 0 = none pending. */
+    private volatile long pendingLeftAtMs = 0;
+    private volatile String pendingLeftText = null;
+    private volatile String pendingLeftChannelKey = null;
+
+    /**
+     * Flush a parked "Left …" line once the disconnect has outlived the
+     * blip window. Runs on the client tick, so the append happens on
+     * the right thread. One line per outage no matter how many retry
+     * failures refresh the text.
+     */
+    private void tickPendingLeft() {
+        if (pendingLeftAtMs == 0) return;
+        if (System.currentTimeMillis() - pendingLeftAtMs < PENDING_LEFT_FLUSH_MS) return;
+        String text = pendingLeftText;
+        String ch = pendingLeftChannelKey;
+        pendingLeftAtMs = 0;
+        pendingLeftText = null;
+        pendingLeftChannelKey = null;
+        if (text != null && ch != null) {
+            uiState.append(ch, InputState.DisplayLine.system(text));
+        }
     }
 
     /** Tick countdown to auto-open chat on world load. -1 = inactive. */

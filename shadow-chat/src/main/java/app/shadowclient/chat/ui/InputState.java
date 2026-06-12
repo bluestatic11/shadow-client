@@ -137,9 +137,11 @@ public final class InputState {
                 k -> new ConcurrentLinkedDeque<>());
         q.add(line);
         while (q.size() > MAX_LINES_PER_CHANNEL) q.pollFirst();
-        // Wake the HUD overlay's activity window — only for the channel
-        // the user would actually see in the passive panel.
-        if (channel != null && channel.equals(activeChannel)) {
+        // Wake the HUD overlay's activity window — only for real chat
+        // messages on the channel the user would actually see. System /
+        // error lines (Joined, Left, reconnect chatter) must NOT pop the
+        // panel: a flaky connection would otherwise flash it on loop.
+        if (channel != null && channel.equals(activeChannel) && !line.system()) {
             lastActiveAppendAtMs = System.currentTimeMillis();
         }
     }

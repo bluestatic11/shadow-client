@@ -86,6 +86,28 @@ public final class RelayClient {
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+        // Keepalive: Cloudflare's edge drops WebSockets that go quiet
+        // for a minute or two, and an idle chat (nobody typing, no
+        // presence churn) sends NOTHING. Every drop triggered the
+        // auto-reconnect cycle — users saw periodic "Left server …"
+        // spam while standing still. A protocol-level ping every 30s
+        // keeps the connection non-idle; the edge answers the pong
+        // itself, so the worker never even sees it.
+        java.util.concurrent.ScheduledExecutorService keepalive =
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                    Thread t = new Thread(r, "shadow-chat-keepalive");
+                    t.setDaemon(true);
+                    return t;
+                });
+        keepalive.scheduleAtFixedRate(() -> {
+            Session s = current.get();
+            if (s == null || s.socket == null) return;
+            try {
+                s.socket.sendPing(ByteBuffer.allocate(0));
+            } catch (Exception ignored) {
+                // Dead socket — the listener's onClose/onError owns recovery.
+            }
+        }, 30, 30, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     /** Current channel string, or null if disconnected. */

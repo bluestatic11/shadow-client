@@ -19,7 +19,8 @@ echo   2. Launch Minecraft
 echo   3. Import account from PrismLauncher (for online play)
 echo   4. Update performance mods
 echo   5. Rebuild Shadow HUD (FPS/coords/biome overlay)
-echo   6. Exit
+echo   6. Doctor (diagnose chat / launch problems)
+echo   7. Exit
 echo.
 set /p choice="Pick: "
 if "%choice%"=="1" "%PY%" client.py setup
@@ -27,7 +28,8 @@ if "%choice%"=="2" "%PY%" client.py launch
 if "%choice%"=="3" "%PY%" client.py login
 if "%choice%"=="4" "%PY%" client.py update-mods
 if "%choice%"=="5" "%PY%" client.py build-hud
-if "%choice%"=="6" goto :eof
+if "%choice%"=="6" "%PY%" client.py doctor
+if "%choice%"=="7" goto :eof
 echo.
 pause
 goto menu

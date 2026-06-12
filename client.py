@@ -6,6 +6,7 @@ Commands:
   login
   launch [--heap MB] [--gc g1|zgc] [--username NAME]
   update-mods
+  doctor [--profile NAME]
 
 The first `setup` run downloads vanilla, installs Fabric, and pulls the
 performance mod stack. `launch` re-uses the installed state. Login is only
@@ -15,6 +16,7 @@ mode works out-of-the-box for singleplayer + offline-mode LAN servers.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import platform
@@ -24,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 # Windows default console is cp1252 — coerce to UTF-8 so progress prints don't crash.
@@ -760,6 +763,231 @@ def cmd_launch(args: argparse.Namespace) -> int:
     return rc
 
 
+# ---- doctor -------------------------------------------------------------------
+
+# HTTP health endpoint of the same worker the mod connects to over wss://
+# (see _write_shadow_chat_auth's default relay_url).
+RELAY_HEALTH_URL = "https://shadow-chat-relay.edisongushf.workers.dev/health"
+
+
+def _jwt_hours_left(token: str) -> float | None:
+    """Hours until the JWT's `exp` claim; negative if already past.
+
+    Returns None when the token isn't a parseable JWT. Same decode as
+    auth._jwt_expired - kept separate because doctor wants the margin
+    ("23.4h left"), not just the boolean verdict.
+    """
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        exp = float(json.loads(base64.urlsafe_b64decode(payload)).get("exp", 0))
+        return (exp - time.time()) / 3600.0
+    except Exception:
+        return None
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """One-shot self-diagnosis for the "chat doesn't work" class of problems.
+
+    Walks the dependency chain a working in-game chat needs - Java, profile +
+    mods, the shadow-chat jar, the account, the per-profile
+    shadow-chat-auth.json token, and the relay - printing one labeled
+    PASS/FAIL/WARN line per finding with a concrete fix.
+
+    Read-only by design: unlike resolve_dirs() it never mkdirs, never writes
+    state, and every probe is wrapped so a half-installed (or never-installed)
+    tree degrades to clean FAIL/WARN lines instead of a traceback. Output is
+    strictly ASCII - doctor output is exactly the thing that gets pasted from
+    broken cp1252 consoles.
+    """
+    labels: list[str] = []
+
+    def report(label: str, name: str, detail: str) -> None:
+        labels.append(label)
+        print(f"[{label}] {name}: {detail}")
+
+    print("Shadow Client doctor - checking the chat/launch dependency chain")
+    print("-" * 60)
+
+    # 1. Java ------------------------------------------------------------
+    try:
+        java = find_java()
+        major = java_major_version(java)
+        if major >= 21:
+            report("PASS", "java", f"{java} (Java {major})")
+        else:
+            report("FAIL", "java",
+                   f"{java} is Java {major}, MC needs 21+ (fix: install a "
+                   "JDK 21+ or point JAVA_HOME at one; `launch` can also "
+                   "auto-download a bundled JDK)")
+    except SystemExit as e:
+        report("FAIL", "java", str(e))
+    except Exception as e:
+        report("FAIL", "java", f"probe failed: {e}")
+
+    # 2. Profile ----------------------------------------------------------
+    try:
+        state = _state_load()
+    except Exception as e:
+        state = {"profiles": {}, "last_used": None}
+        report("WARN", "state", f"{STATE_FILE.name} unreadable ({e}) - "
+               "treating as empty (fix: re-run setup)")
+    profile = _resolve_profile(state, getattr(args, "profile", None))
+    profile_dir: Path | None = None
+    mods_dir: Path | None = None
+    if not profile:
+        report("FAIL", "profile",
+               f"no --profile given and no last_used in {STATE_FILE.name} "
+               "(fix: run setup once, or pass --profile NAME)")
+    elif profile not in state.get("profiles", {}):
+        known = ", ".join(sorted(state.get("profiles", {}))) or "none"
+        report("FAIL", "profile",
+               f"'{profile}' not in {STATE_FILE.name} (known: {known}) "
+               "(fix: run setup)")
+    else:
+        # resolve_dirs() mkdirs as a side effect; doctor stays read-only,
+        # so build the same paths by hand.
+        profile_dir = PROFILES_DIR / profile
+        mods_dir = profile_dir / "mods"
+        if not profile_dir.is_dir():
+            report("FAIL", "profile",
+                   f"'{profile}' is in state but its dir is missing: "
+                   f"{profile_dir} (fix: run setup)")
+        elif not mods_dir.is_dir():
+            report("FAIL", "profile",
+                   f"'{profile}' has no mods dir: {mods_dir} "
+                   "(fix: run setup or update-mods)")
+        else:
+            jar_count = len(list(mods_dir.glob("*.jar")))
+            report("PASS", "profile",
+                   f"'{profile}' -> {profile_dir} ({jar_count} mod jar(s))")
+            if not list(mods_dir.glob("fabric-api-*.jar")):
+                report("WARN", "profile",
+                       "no fabric-api-*.jar in mods - shadow-chat (and most "
+                       "mods) won't load without it (fix: run update-mods)")
+
+    # 3. Shadow Chat jar ----------------------------------------------------
+    if mods_dir is None:
+        report("WARN", "shadow-chat jar",
+               "skipped - no usable profile (fix the profile check first)")
+    else:
+        jars = sorted(mods_dir.glob("shadow-chat-*.jar")) if mods_dir.is_dir() else []
+        if not jars:
+            report("FAIL", "shadow-chat jar",
+                   f"no shadow-chat-*.jar in {mods_dir} (fix: run update-mods)")
+        elif len(jars) > 1:
+            names = ", ".join(j.name for j in jars)
+            report("FAIL", "shadow-chat jar",
+                   f"{len(jars)} copies on disk ({names}) - duplicate mod id "
+                   "crashes Fabric at boot (fix: run update-mods, it sweeps "
+                   "stale jars)")
+        else:
+            jar = jars[0]
+            ver = jar.stem[len("shadow-chat-"):]
+            if ver != mods.SHADOW_CHAT_VERSION:
+                report("WARN", "shadow-chat jar",
+                       f"{jar.name} is stale - launcher ships "
+                       f"{mods.SHADOW_CHAT_VERSION} (fix: run update-mods)")
+            else:
+                report("PASS", "shadow-chat jar", f"{jar.name} (current)")
+
+    # 4. Account ------------------------------------------------------------
+    try:
+        acct = auth.Account.load(ACCOUNT_FILE)
+    except Exception as e:
+        acct = None
+        report("FAIL", "account",
+               f"{ACCOUNT_FILE.name} unreadable ({e}) "
+               "(fix: run `client.py login`)")
+    else:
+        if acct is None:
+            report("FAIL", "account",
+                   f"{ACCOUNT_FILE} missing - next launch falls back to "
+                   "offline mode (fix: run `client.py login` for online "
+                   "play + chat)")
+        elif acct.user_type == "msa":
+            report("PASS", "account", f"Microsoft account '{acct.username}' (msa)")
+        else:
+            report("WARN", "account",
+                   f"offline account '{acct.username}' ({acct.user_type}) - "
+                   "chat disabled - run `client.py login`")
+
+    # 5. Chat auth file -------------------------------------------------------
+    if profile_dir is None:
+        report("WARN", "chat auth",
+               "skipped - no usable profile (fix the profile check first)")
+    else:
+        auth_file = profile_dir / "shadow-chat-auth.json"
+        token = None
+        readable = False
+        if not auth_file.exists():
+            report("FAIL", "chat auth",
+                   f"{auth_file} missing (fix: launch via run.bat once - it "
+                   "writes the file)")
+        else:
+            try:
+                token = json.loads(auth_file.read_text(encoding="utf-8")).get("token")
+                readable = True
+            except Exception as e:
+                report("WARN", "chat auth",
+                       f"{auth_file.name} unparseable ({e}) (fix: launch via "
+                       "run.bat - it rewrites the file)")
+        if readable:
+            if not token:
+                report("WARN", "chat auth",
+                       f"{auth_file.name} has token: null - chat is dormant "
+                       "(offline account at last launch; run `client.py "
+                       "login`, then launch)")
+            else:
+                hours = _jwt_hours_left(token)
+                if hours is None:
+                    report("WARN", "chat auth",
+                           "token is not a parseable JWT (fix: launch via "
+                           "run.bat - it rewrites the file)")
+                else:
+                    try:
+                        # Reuse the launcher's own expiry logic (120s skew).
+                        expired = auth._jwt_expired(token)
+                    except Exception:
+                        expired = hours <= 0
+                    if expired:
+                        report("FAIL", "chat auth",
+                               "token EXPIRED (fix: launch via run.bat - it "
+                               "rewrites the file)")
+                    else:
+                        report("PASS", "chat auth",
+                               f"token VALID ({hours:.1f}h left)")
+
+    # 6. Relay ----------------------------------------------------------------
+    try:
+        # Cloudflare's edge 403s the default Python-urllib User-Agent, which
+        # would make this check cry "relay down" forever. Send the launcher's
+        # UA (same one auth.py uses) so we measure the relay, not the bot wall.
+        req = urllib.request.Request(RELAY_HEALTH_URL,
+                                     headers={"User-Agent": mojang.UA})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            code = r.status
+        if code == 200:
+            report("PASS", "relay", f"{RELAY_HEALTH_URL} -> HTTP {code}")
+        else:
+            report("FAIL", "relay",
+                   f"{RELAY_HEALTH_URL} -> HTTP {code} (relay reachable but "
+                   "unhealthy - chat may be down for everyone)")
+    except Exception as e:
+        report("FAIL", "relay",
+               f"{RELAY_HEALTH_URL} -> {e} (no internet, a firewall, or the "
+               "relay is down)")
+
+    # Verdict -------------------------------------------------------------
+    print("-" * 60)
+    issues = labels.count("FAIL") + labels.count("WARN")
+    if issues == 0:
+        print("All checks passed - chat should work in-game (press ; )")
+        return 0
+    print(f"{issues} issue(s) found - see fixes above")
+    return 1
+
+
 # ---- cli ---------------------------------------------------------------------
 
 
@@ -793,6 +1021,10 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("build-hud",   help="compile + install the Shadow HUD mod (FPS/coords/biome overlay)")
 
+    d = sub.add_parser("doctor", help="diagnose chat / launch problems (read-only self-check)")
+    d.add_argument("--profile", default=None,
+                   help="Which profile to inspect. Defaults to last_used.")
+
     l = sub.add_parser("launch", help="launch Minecraft")
     l.add_argument("--heap", type=int, default=6144, help="heap size in MB (default 6144)")
     l.add_argument("--gc", choices=["g1", "zgc", "safe"], default="g1",
@@ -805,7 +1037,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     return {"setup": cmd_setup, "login": cmd_login, "logout": cmd_logout,
             "launch": cmd_launch, "update-mods": cmd_update_mods,
-            "build-hud": cmd_build_hud}[args.cmd](args)
+            "build-hud": cmd_build_hud, "doctor": cmd_doctor}[args.cmd](args)
 
 
 if __name__ == "__main__":

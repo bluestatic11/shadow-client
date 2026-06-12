@@ -37,6 +37,9 @@ import java.util.UUID;
  */
 public final class ChatOverlay {
 
+    /** Max log lines shown in the passive toast. */
+    private static final int TOAST_LINES = 4;
+
     /** Overlay width as fraction of screen width. */
     private static final double WIDTH_FRACTION = 0.40;
     /** Maximum overlay height in pixels (regardless of how many messages). */
@@ -132,59 +135,34 @@ public final class ChatOverlay {
      * Internal render. Called by the HUD callback (no input field).
      * The fullscreen DiscordChatScreen no longer reuses this path.
      */
+    /**
+     * Compact toast renderer for the passive (activity-gated) panel.
+     *
+     * <p>Pre-0.1.43 this painted the FULL overlay — channel chips,
+     * status banner, presence summary, a half-screen message log, and
+     * the PTT hint — every time it showed. With activity gating that
+     * meant one incoming message flashed a 40%-width wall over the
+     * game. Passive mode now draws just the tail of the conversation
+     * (last {@link #TOAST_LINES} lines) plus the speaking indicator
+     * when voice is live; everything else lives in the fullscreen
+     * chat screen (;).
+     *
+     * <p>{@code showInputField}/{@code inputText} are legacy params —
+     * the fullscreen screen stopped reusing this path long ago; the
+     * HUD callback always passes {@code false, ""}.
+     */
     void render(GuiGraphics gfx, Minecraft mc, boolean showInputField, String inputText) {
         int screenWidth = mc.getWindow().getGuiScaledWidth();
         int screenHeight = mc.getWindow().getGuiScaledHeight();
         Font font = mc.font;
 
-        int panelWidth = Math.max(220, (int) (screenWidth * WIDTH_FRACTION));
-        int panelHeight = Math.min(MAX_HEIGHT, screenHeight / 2);
-
-        // Anchor: bottom-left, lifted ~30px so we don't clash with the
-        // vanilla hotbar / health rendering.
-        int x = 4;
-        int y = screenHeight - panelHeight - 32;
-
-        // ---- background ----
-        gfx.fill(x, y, x + panelWidth, y + panelHeight, BG_COLOR);
-
-        // ---- channel chips (top row) ----
-        int chipY = y + PAD;
-        int chipHeight = font.lineHeight + 4;
-        int chipX = x + PAD;
         String active = state.activeChannel();
+        List<InputState.DisplayLine> all = state.linesFor(active);
+        int show = Math.min(TOAST_LINES, all.size());
 
-        chipX = drawChip(gfx, font, chipX, chipY, chipHeight, "Server",
-                ModConfig.CHANNEL_SERVER.equals(active));
-        for (ModConfig.Group g : new ArrayList<>(config.joinedGroups())) {
-            String channelKey = "group:" + g.id;
-            String label = "G: " + (g.name == null || g.name.isBlank() ? shortId(g.id) : g.name);
-            chipX = drawChip(gfx, font, chipX, chipY, chipHeight, label, channelKey.equals(active));
-            // Wrap chips that overflow — overflow is silently clipped.
-            if (chipX > x + panelWidth - 30) break;
-        }
-
-        // ---- status banner (auth / connection) ----
-        int statusY = chipY + chipHeight + 2;
-        String status = ShadowChatClient.get().statusLine();
-        if (status != null && !status.isBlank()) {
-            gfx.drawString(font, Component.literal(status), x + PAD, statusY, 0xFFAAAAAA, false);
-            statusY += font.lineHeight + 2;
-        }
-
-        // ---- presence summary ----
-        List<ServerEvent.User> presence = state.presenceFor(active);
-        if (!presence.isEmpty()) {
-            String summary = presence.size() + " online: " + summarizeNames(presence);
-            gfx.drawString(font, Component.literal(summary), x + PAD, statusY, 0xFF7AA8E0, false);
-            statusY += font.lineHeight + 2;
-        }
-
-        // ---- speaking indicator ----
-        // Pulled from the voice subsystem each frame. Names are looked
-        // up against the active channel's presence list; falls back to
-        // a short uuid if the speaker isn't in our presence yet (can
-        // happen briefly after a join).
+        // Speaking indicator — may be the ONLY content (voice live,
+        // no recent text), in which case the toast is one line tall.
+        String speakingLine = null;
         VoiceController vc = ShadowChatClient.get().voice();
         if (vc != null) {
             List<UUID> speakers = vc.playback().currentSpeakers();
@@ -195,106 +173,44 @@ public final class ChatOverlay {
                     if (shown > 0) sb.append(", ");
                     sb.append(ShadowChatClient.get().displayNameForUuid(id));
                     shown++;
-                    if (shown >= 4 && speakers.size() > 4) {
+                    if (shown >= 3 && speakers.size() > 3) {
                         sb.append(" +").append(speakers.size() - shown).append(" more");
                         break;
                     }
                 }
-                gfx.drawString(font, Component.literal(sb.toString()),
-                        x + PAD, statusY, SPEAKER_COLOR, false);
-                statusY += font.lineHeight + 2;
+                speakingLine = sb.toString();
             }
         }
+        if (show == 0 && speakingLine == null) return;
 
-        // ---- message log ----
-        int logTop = statusY + 2;
-        // Reserve a line at the bottom for the PTT hint. When the
-        // focused input field is also visible we stack: hint above
-        // input, both above the log floor.
-        int pttHintHeight = font.lineHeight + 2;
-        int inputFieldHeight = showInputField ? font.lineHeight + 6 : 0;
-        int logBottom = y + panelHeight - PAD - inputFieldHeight - pttHintHeight;
-        int maxLines = Math.max(0, (logBottom - logTop) / (font.lineHeight + LINE_GAP));
-        if (maxLines > 0) {
-            List<InputState.DisplayLine> lines = state.linesFor(active);
-            // Take the last N lines so the most recent messages are visible.
-            int start = Math.max(0, lines.size() - maxLines);
-            int drawY = logTop;
-            int textMaxWidth = panelWidth - PAD * 2;
-            for (int i = start; i < lines.size(); i++) {
-                InputState.DisplayLine line = lines.get(i);
-                String rendered = renderLine(line, font, textMaxWidth);
-                int color = line.error() ? 0xFFFF6060
-                        : line.system() ? 0xFFAAAAAA
-                        : 0xFFFFFFFF;
-                gfx.drawString(font, Component.literal(rendered), x + PAD, drawY, color, false);
-                drawY += font.lineHeight + LINE_GAP;
-            }
+        int panelWidth = Math.max(220, Math.min(340, screenWidth / 3));
+        int lineH = font.lineHeight + LINE_GAP;
+        int contentLines = show + (speakingLine != null ? 1 : 0);
+        int panelHeight = PAD * 2 + contentLines * lineH - LINE_GAP;
+
+        // Bottom-left, lifted clear of the hotbar/health rows.
+        int x = 4;
+        int y = screenHeight - panelHeight - 44;
+
+        gfx.fill(x, y, x + panelWidth, y + panelHeight, BG_COLOR);
+
+        int textMaxWidth = panelWidth - PAD * 2;
+        int drawY = y + PAD;
+        for (int i = all.size() - show; i < all.size(); i++) {
+            InputState.DisplayLine line = all.get(i);
+            String rendered = renderLine(line, font, textMaxWidth);
+            int color = line.error() ? 0xFFFF6060
+                    : line.system() ? 0xFFAAAAAA
+                    : 0xFFFFFFFF;
+            gfx.drawString(font, Component.literal(rendered), x + PAD, drawY, color, false);
+            drawY += lineH;
         }
-
-        // ---- voice hint (just above the input field, or the panel floor if no input) ----
-        //   - mic unavailable → grey "Voice unavailable" so the user
-        //     knows why pressing the button does nothing.
-        //   - currently transmitting → red "Talking…" so the user
-        //     can see they're hot before they say something private.
-        //   - otherwise → grey hint pointing at the chat-screen mic.
-        int pttY = y + panelHeight - PAD - inputFieldHeight - pttHintHeight + 1;
-        VoiceController vcHint = ShadowChatClient.get().voice();
-        if (vcHint != null) {
-            String hint;
-            int color;
-            if (!vcHint.capture().isAvailable()) {
-                hint = "Voice unavailable (no microphone)";
-                color = PTT_IDLE_COLOR;
-            } else if (vcHint.isTransmitting()) {
-                hint = "Talking...";
-                color = PTT_HOT_COLOR;
-            } else {
-                hint = "Open chat (;) and click Mic to talk";
-                color = PTT_IDLE_COLOR;
-            }
-            gfx.drawString(font, Component.literal(hint), x + PAD, pttY, color, false);
+        if (speakingLine != null) {
+            gfx.drawString(font, Component.literal(speakingLine),
+                    x + PAD, drawY, SPEAKER_COLOR, false);
         }
-
-        // ---- input field + coords button ----
-        if (showInputField) {
-            int inputY = y + panelHeight - PAD - inputFieldHeight + 1;
-            // Coords button — square-ish chip on the right side of the
-            // input row. (HUD-mode overlay path; the fullscreen
-            // DiscordChatScreen draws its own button.)
-            String btnLabel = "Coords";
-            int btnWidth = font.width(btnLabel) + 10;
-            int btnX1 = x + panelWidth - PAD - btnWidth;
-            int btnY1 = inputY;
-            int btnX2 = x + panelWidth - PAD;
-            int btnY2 = inputY + inputFieldHeight - 2;
-            // Disable visually if there's no player loaded (main menu).
-            boolean enabled = app.shadowclient.chat.cmd.CoordsHelper.hasPlayer();
-            int btnBg = enabled ? 0xFF2D5A8C : 0xFF2A2A2A;
-            int btnFg = enabled ? 0xFFFFFFFF : 0xFF707070;
-            gfx.fill(btnX1, btnY1, btnX2, btnY2, btnBg);
-            gfx.drawString(font, Component.literal(btnLabel),
-                    btnX1 + 5, btnY1 + (inputFieldHeight - 2 - font.lineHeight) / 2 + 1,
-                    btnFg, false);
-            // Stash bounds for hit-testing. Only when the button is
-            // clickable (enabled + visible); set to 0 otherwise so the
-            // hit-test fast-path rejects all clicks.
-            if (enabled) {
-                coordsBtnX1 = btnX1; coordsBtnY1 = btnY1;
-                coordsBtnX2 = btnX2; coordsBtnY2 = btnY2;
-            } else {
-                coordsBtnX2 = 0; // signal "not interactive"
-            }
-
-            // Text input occupies the area to the LEFT of the button.
-            int textRight = btnX1 - 4;
-            gfx.fill(x + PAD, inputY, textRight, inputY + inputFieldHeight - 2, 0xFF1A1A1A);
-            String prompt = "> " + inputText + (System.currentTimeMillis() % 1000 < 500 ? "_" : "");
-            gfx.drawString(font, Component.literal(prompt), x + PAD + 3, inputY + 3, 0xFFFFFFFF, false);
-        } else {
-            // No input field → no button. Clear bounds so hit-test rejects.
-            coordsBtnX2 = 0;
-        }
+        // Passive mode has no coords button — clear so hit-tests reject.
+        coordsBtnX2 = 0;
     }
 
     /** Draw a chip and return the next x position to draw at. */

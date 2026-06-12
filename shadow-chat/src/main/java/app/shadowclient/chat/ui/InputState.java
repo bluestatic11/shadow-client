@@ -57,10 +57,12 @@ public final class InputState {
     private final Map<String, List<ServerEvent.User>> voiceRosterByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
     /**
      * Unread chat-message count per channel. Incremented by
-     * {@link #incrementUnread} when a real message lands on a non-active
-     * channel and reset to zero by {@link #setActiveChannel} for that
-     * channel. System / error / presence updates do NOT count — only
-     * actual chat lines from other people.
+     * {@link #incrementUnread} when a real message lands on a channel
+     * the user isn't currently reading — a non-active channel, or any
+     * channel while the fullscreen chat screen is closed — and reset
+     * to zero by {@link #clearUnread} when the channel becomes active
+     * or the chat screen opens on it. System / error / presence
+     * updates do NOT count — only actual chat lines from other people.
      */
     private final Map<String, Integer> unreadByChannel = Collections.synchronizedMap(new LinkedHashMap<>());
 
@@ -73,7 +75,13 @@ public final class InputState {
     public String activeChannel() { return activeChannel; }
     public void setActiveChannel(String c) {
         this.activeChannel = c;
-        if (c != null) unreadByChannel.put(c, 0);
+        clearUnread(c);
+    }
+
+    /** Reset the unread counter for a channel — called when it becomes
+     *  the active channel and when the chat screen opens onto it. */
+    public void clearUnread(String channel) {
+        if (channel != null) unreadByChannel.put(channel, 0);
     }
 
     /** Get the unread chat-message count for the given channel. Zero by default. */
@@ -82,9 +90,16 @@ public final class InputState {
         return v == null ? 0 : v;
     }
 
-    /** Bump unread count for the given channel by one (capped at 99 for display sanity). */
-    public void incrementUnread(String channel) {
-        if (channel == null || channel.equals(activeChannel)) return;
+    /**
+     * Bump unread count for the given channel by one (capped at 99 for
+     * display sanity). Skipped when {@code channel} is the active channel
+     * AND {@code activeVisible} is true — the user has that log on screen
+     * right now, so the message isn't "unread". Messages landing on the
+     * active channel while the chat screen is closed DO count; they feed
+     * the NEW-messages divider next time the screen opens.
+     */
+    public void incrementUnread(String channel, boolean activeVisible) {
+        if (channel == null || (activeVisible && channel.equals(activeChannel))) return;
         unreadByChannel.merge(channel, 1, (a, b) -> Math.min(99, a + b));
     }
 

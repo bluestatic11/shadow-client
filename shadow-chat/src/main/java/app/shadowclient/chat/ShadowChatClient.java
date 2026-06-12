@@ -593,10 +593,18 @@ public final class ShadowChatClient implements ClientModInitializer {
                         }
                         uiState.append(activeChannelKey,
                                 InputState.DisplayLine.chat(cm.name(), cm.text(), cm.ts()));
-                        // Bump unread count if this channel isn't currently
-                        // active. Skip our own echoed messages so the badge
-                        // doesn't light up immediately after we sent something.
-                        if (!isSelf) uiState.incrementUnread(activeChannelKey);
+                        // Bump unread count unless the user is reading this
+                        // channel right now (it's the active channel AND the
+                        // fullscreen chat screen is open). Messages landing
+                        // on the active channel while the screen is closed
+                        // feed the NEW-messages divider shown on next open.
+                        // Skip our own echoed messages so the badge doesn't
+                        // light up immediately after we sent something.
+                        if (!isSelf) {
+                            boolean reading = Minecraft.getInstance().screen
+                                    instanceof DiscordChatScreen;
+                            uiState.incrementUnread(activeChannelKey, reading);
+                        }
                     } else if (event instanceof Messages.ServerEvent.Presence p) {
                         uiState.setPresence(activeChannelKey, p.users());
                     } else if (event instanceof Messages.ServerEvent.ErrorMsg em) {

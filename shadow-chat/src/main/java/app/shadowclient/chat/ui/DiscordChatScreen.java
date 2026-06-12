@@ -19,6 +19,7 @@ import net.minecraft.world.entity.player.PlayerSkin;
 import org.lwjgl.glfw.GLFW;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -100,13 +101,33 @@ public final class DiscordChatScreen extends Screen {
     /** Set when the Copy ID button was clicked — paints "Copied!" for ~1s. */
     private long copiedFlashUntil = 0;
     /**
-     * How many message-lines back from the newest the log is scrolled.
+     * How many log rows back from the newest the log is scrolled.
+     * Rows include the synthetic day-separator / NEW-divider rows, so
+     * one wheel notch covers the same visual distance everywhere.
      * Zero means "stuck to the bottom showing the latest". Bumped by
-     * mouse wheel up; clamped against the log's length on render.
+     * mouse wheel up; clamped against the row count on render.
      */
     private int scrollOffset = 0;
     /** Channel the scroll offset is currently anchored to — reset when it changes. */
     private String scrollAnchorChannel = null;
+    /**
+     * Unread count for the active channel captured ONCE when this screen
+     * was constructed — anchors the NEW-messages divider. The live unread
+     * counter is cleared right after capture (opening the screen means
+     * the user is now reading), so this is the only memory of where
+     * "new" starts.
+     */
+    private final int unreadAtOpen;
+    /**
+     * The first unread message at open — the exact line instance at index
+     * (size - unreadAtOpen) in the active channel's log when the screen
+     * opened. The NEW divider renders immediately above it and stays
+     * pinned there while the screen is open: new arrivals append after
+     * it, and the identity match in {@link #buildLogRows} keeps the
+     * anchor put (and silently drops the divider if the line is ever
+     * evicted). Null when unreadAtOpen == 0.
+     */
+    private final InputState.DisplayLine firstUnreadAtOpen;
     /**
      * When true the main area renders the Voice Room grid instead of
      * the text-channel message log. Toggled by a clickable entry under
@@ -151,6 +172,24 @@ public final class DiscordChatScreen extends Screen {
     public DiscordChatScreen(ChatOverlay legacyOverlay) {
         super(Component.literal("Shadow Chat"));
         this.overlayLegacy = legacyOverlay;
+        // Capture the active channel's unread count ONCE at open and pin
+        // the NEW divider to the first unread line (index size - unread).
+        // Captured here rather than init() so window resizes (which
+        // re-run init) can't re-anchor or drop the marker mid-session.
+        InputState st = ShadowChatClient.get().uiState();
+        String ch = st.activeChannel();
+        this.unreadAtOpen = st.unreadFor(ch);
+        InputState.DisplayLine anchor = null;
+        if (unreadAtOpen > 0) {
+            List<InputState.DisplayLine> lines = st.linesFor(ch);
+            int idx = Math.max(0, lines.size() - unreadAtOpen);
+            if (idx < lines.size()) anchor = lines.get(idx);
+        }
+        this.firstUnreadAtOpen = anchor;
+        // The user is reading this channel now — clear its unread badge.
+        // (Capture above happened first; the channel-switch clear via
+        // setActiveChannel keeps working independently of this.)
+        st.clearUnread(ch);
     }
 
     @Override
@@ -922,6 +961,71 @@ public final class DiscordChatScreen extends Screen {
                 textX, lineY, TEXT_DIM, false);
     }
 
+    /**
+     * One renderable row of the message log. Exactly one variant is set:
+     * a real message line, a centered day-separator label, or the
+     * NEW-messages divider. Synthetic rows consume one line-height just
+     * like messages, so the scroll/window math stays purely row-based
+     * and nothing can overlap or double-draw.
+     */
+    private record LogRow(InputState.DisplayLine line, String dayLabel, boolean newMarker) {}
+
+    /**
+     * Interleave the channel's messages with synthetic rows: a day
+     * separator between consecutive messages whose timestamps fall on
+     * different LOCAL calendar days, and the NEW divider immediately
+     * above the first-unread line captured at screen-open. Identity
+     * match ({@code ==}) is deliberate — {@link InputState#linesFor}
+     * snapshots hand back the same DisplayLine instances, so the
+     * divider stays pinned as newer lines append and silently vanishes
+     * if the anchor line is evicted from the ring buffer.
+     */
+    private List<LogRow> buildLogRows(List<InputState.DisplayLine> lines) {
+        List<LogRow> rows = new ArrayList<>(lines.size() + 8);
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zone);
+        LocalDate prevDay = null;
+        for (InputState.DisplayLine line : lines) {
+            LocalDate day = Instant.ofEpochMilli(line.ts()).atZone(zone).toLocalDate();
+            if (prevDay != null && !day.equals(prevDay)) {
+                rows.add(new LogRow(null, dayLabel(day, today), false));
+            }
+            prevDay = day;
+            if (line == firstUnreadAtOpen) {
+                rows.add(new LogRow(null, null, true));
+            }
+            rows.add(new LogRow(line, null, false));
+        }
+        return rows;
+    }
+
+    /** "— Today —" / "— Yesterday —" / "— 2026-06-09 —" for older days. */
+    private static String dayLabel(LocalDate day, LocalDate today) {
+        if (day.equals(today)) return "— Today —";
+        if (day.equals(today.minusDays(1))) return "— Yesterday —";
+        return "— " + day + " —";
+    }
+
+    /**
+     * The NEW-messages divider: a thin accent line across the row with a
+     * small right-aligned "NEW" tag, drawn immediately above the first
+     * message that arrived while the screen was closed.
+     */
+    private void drawNewMarker(GuiGraphics gfx, int x, int drawY, int w) {
+        String tag = "NEW";
+        int tagW = this.font.width(tag);
+        int tagX = x + w - 16 - tagW;
+        int lineY = drawY + this.font.lineHeight / 2;
+        gfx.fill(x + 12, lineY, tagX - 6, lineY + 1, ACCENT);
+        gfx.drawString(this.font, tag, tagX, drawY, ACCENT, false);
+    }
+
+    /** Centered dim day-separator row ("— Today —" etc.). */
+    private void drawDaySeparator(GuiGraphics gfx, int x, int drawY, int w, String label) {
+        int lw = this.font.width(label);
+        gfx.drawString(this.font, label, x + Math.max(12, (w - lw) / 2), drawY, TEXT_DIM, false);
+    }
+
     private void drawMessages(GuiGraphics gfx, int x, int y, int w, int h,
                               InputState st, String activeChannel) {
         int lineH = this.font.lineHeight + 4;
@@ -934,19 +1038,26 @@ public final class DiscordChatScreen extends Screen {
             scrollAnchorChannel = activeChannel;
         }
         List<InputState.DisplayLine> lines = st.linesFor(activeChannel);
-        // Clamp scrollOffset against current log size so it can't sit past
-        // the oldest message after eviction.
-        int maxScroll = Math.max(0, lines.size() - maxLines);
+        List<LogRow> rows = buildLogRows(lines);
+        // Clamp scrollOffset against the current row count so it can't sit
+        // past the oldest row after eviction.
+        int maxScroll = Math.max(0, rows.size() - maxLines);
         if (scrollOffset > maxScroll) scrollOffset = maxScroll;
         if (scrollOffset < 0) scrollOffset = 0;
-        int endExclusive = lines.size() - scrollOffset;
+        int endExclusive = rows.size() - scrollOffset;
         int start = Math.max(0, endExclusive - maxLines);
         int visible = endExclusive - start;
         int drawY = y + Math.max(0, h - visible * lineH);
         int textMaxRight = x + w - 16;
         for (int i = start; i < endExclusive; i++) {
-            InputState.DisplayLine line = lines.get(i);
-            drawMessageLine(gfx, x + 12, drawY, textMaxRight, line);
+            LogRow row = rows.get(i);
+            if (row.newMarker()) {
+                drawNewMarker(gfx, x, drawY, w);
+            } else if (row.dayLabel() != null) {
+                drawDaySeparator(gfx, x, drawY, w, row.dayLabel());
+            } else {
+                drawMessageLine(gfx, x + 12, drawY, textMaxRight, row.line());
+            }
             drawY += lineH;
         }
         // "Scrolled up — jump to latest" hint when we're not anchored to bottom.

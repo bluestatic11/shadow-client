@@ -93,21 +93,54 @@ public final class RelayClient {
         // spam while standing still. A protocol-level ping every 30s
         // keeps the connection non-idle; the edge answers the pong
         // itself, so the worker never even sees it.
-        java.util.concurrent.ScheduledExecutorService keepalive =
-                java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
-                    Thread t = new Thread(r, "shadow-chat-keepalive");
-                    t.setDaemon(true);
-                    return t;
-                });
-        keepalive.scheduleAtFixedRate(() -> {
+        // The ping runs on sendExec like every other outbound op, so it
+        // can never collide with a chat send (see enqueueSend).
+        sendExec.scheduleAtFixedRate(() -> {
             Session s = current.get();
             if (s == null || s.socket == null) return;
             try {
-                s.socket.sendPing(ByteBuffer.allocate(0));
+                s.socket.sendPing(ByteBuffer.allocate(0)).join();
             } catch (Exception ignored) {
                 // Dead socket — the listener's onClose/onError owns recovery.
             }
         }, 30, 30, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    /** Connection-lifecycle log channel. These lines land in MC's
+     *  latest.log, which makes disconnect storms / send failures
+     *  visible to log-based diagnostics (doctor, support, the
+     *  autonomous regression sweep) instead of existing only as
+     *  ephemeral UI lines. */
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger("shadow-chat");
+
+    /**
+     * Single-threaded executor that owns EVERY outbound socket op —
+     * chat sends, voice frames, voice join/leave, keepalive pings.
+     * java.net.http.WebSocket permits only one outstanding text/binary
+     * send at a time; concurrent callers got IllegalStateException,
+     * which the old fire-and-forget try/catch swallowed — i.e. a chat
+     * message colliding with another in-flight send was DROPPED
+     * silently. Funnelling everything through one thread (each op
+     * joins before the next runs) makes collisions impossible.
+     */
+    private final java.util.concurrent.ScheduledExecutorService sendExec =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "shadow-chat-send");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /** Run an outbound op on the send thread; log failures so they are
+     *  diagnosable from latest.log instead of vanishing. */
+    private void enqueueSend(String what, Runnable op) {
+        sendExec.execute(() -> {
+            try {
+                op.run();
+            } catch (Exception e) {
+                LOG.warn("shadow-chat: {} failed: {}", what, rootCause(e));
+            }
+        });
     }
 
     /** Current channel string, or null if disconnected. */
@@ -166,6 +199,7 @@ public final class RelayClient {
                 .buildAsync(uri, session.listener)
                 .thenAccept(ws -> {
                     session.socket = ws;
+                    LOG.info("shadow-chat: connected to {}", channel);
                     // Successful connect — clear the backoff counter so
                     // a future drop starts at 1s again, not at whatever
                     // delay we reached last time.
@@ -173,6 +207,7 @@ public final class RelayClient {
                     sink.onConnected(channel);
                 })
                 .exceptionally(err -> {
+                    LOG.warn("shadow-chat: connect to {} failed: {}", channel, rootCause(err));
                     // Connection failed — clear if we're still current
                     // and schedule a retry. Without this, only mid-session
                     // drops auto-retry; first-connect failures (DNS,
@@ -192,11 +227,7 @@ public final class RelayClient {
     public void sendMessage(String text) {
         Session s = current.get();
         if (s == null || s.socket == null) return;
-        try {
-            s.socket.sendText(Messages.encodeMsg(text), true);
-        } catch (Exception ignored) {
-            // Send failed — the listener's onClose/onError will kick in.
-        }
+        enqueueSend("chat send", () -> s.socket.sendText(Messages.encodeMsg(text), true).join());
     }
 
     /**
@@ -208,14 +239,14 @@ public final class RelayClient {
     public void joinVoice() {
         Session s = current.get();
         if (s == null || s.socket == null) return;
-        try { s.socket.sendText(Messages.encodeVoiceJoin(), true); } catch (Exception ignored) {}
+        enqueueSend("voice join", () -> s.socket.sendText(Messages.encodeVoiceJoin(), true).join());
     }
 
     /** Opposite of {@link #joinVoice} — leave the voice room without disconnecting. */
     public void leaveVoice() {
         Session s = current.get();
         if (s == null || s.socket == null) return;
-        try { s.socket.sendText(Messages.encodeVoiceLeave(), true); } catch (Exception ignored) {}
+        enqueueSend("voice leave", () -> s.socket.sendText(Messages.encodeVoiceLeave(), true).join());
     }
 
     /**
@@ -238,11 +269,13 @@ public final class RelayClient {
         buf.put(FRAME_VOICE);
         buf.put(opus);
         buf.flip();
-        try {
-            s.socket.sendBinary(buf, true);
-        } catch (Exception ignored) {
-            // Best-effort; the listener's onClose/onError handles real failures.
-        }
+        sendExec.execute(() -> {
+            try {
+                s.socket.sendBinary(buf, true).join();
+            } catch (Exception ignored) {
+                // Voice is lossy by design — the next frame is 20 ms away.
+            }
+        });
     }
 
     /** Close the current socket if any. Safe to call multiple times.
@@ -292,10 +325,12 @@ public final class RelayClient {
         if (attempt > 10) {
             // Bail and tell the user. Next manual action resets the counter
             // because connect() flips manuallyDisconnected back to false.
+            LOG.warn("shadow-chat: giving up on {} after 10 reconnect attempts", channel);
             sink.onDisconnected(channel, "giving up after 10 reconnect attempts");
             return;
         }
         long delayMs = Math.min(60_000L, 1000L * (1L << Math.min(6, attempt - 1)));
+        LOG.info("shadow-chat: reconnect #{} to {} in {}ms", attempt, channel, delayMs);
         nextReconnectAtMs = System.currentTimeMillis() + delayMs;
         Thread t = new Thread(() -> {
             try { Thread.sleep(delayMs); }
@@ -473,6 +508,9 @@ public final class RelayClient {
             // channels triggers a close on the old socket that we
             // shouldn't surface to the UI as "you got disconnected".
             if (current.compareAndSet(session, null)) {
+                LOG.warn("shadow-chat: disconnected from {} (code {}{})",
+                        session.channel, statusCode,
+                        reason == null || reason.isBlank() ? "" : ", " + reason);
                 session.sink.onDisconnected(session.channel,
                         reason == null || reason.isBlank() ? "code " + statusCode : reason);
                 // Retry on anything except a clean close. NORMAL_CLOSURE
@@ -491,6 +529,7 @@ public final class RelayClient {
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
             if (current.compareAndSet(session, null)) {
+                LOG.warn("shadow-chat: socket error on {}: {}", session.channel, rootCause(error));
                 session.sink.onDisconnected(session.channel, rootCause(error));
                 scheduleReconnect(session.channel, session.sink);
             }

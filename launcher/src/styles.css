@@ -2099,6 +2099,55 @@ body {
   border: 1px solid var(--line);
 }
 
+/* ───── Chat settings tab ─────────────────────────────────────
+   Status card on Settings → Chat. The dot reuses the home-screen
+   chat-hint pill's color language (green ready / red blocked /
+   amber-pulse checking, via the existing chatPulse keyframes) so
+   the two indicators never disagree visually. */
+.chat-status-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text);
+}
+.chat-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-mute);
+  flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.chat-status-dot.ready {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(34, 221, 85, 0.55);
+}
+.chat-status-dot.blocked {
+  background: var(--accent-2);
+  box-shadow: 0 0 8px rgba(var(--accent-glow), 0.6);
+}
+.chat-status-dot.checking {
+  background: #ffd24a;   /* matches .chat-hint.checking */
+  animation: chatPulse 1.4s ease-in-out infinite;
+}
+.chat-status-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+.chat-status-meta dt {
+  color: var(--text-mute);
+}
+.chat-status-meta dd {
+  color: var(--text-dim);
+  font-family: 'Consolas', monospace;
+  word-break: break-all;
+  user-select: text;
+}
+
 /* ───── Log view (inside dialog) ──────────────────────────── */
 .log-view {
   font-family: 'Consolas', monospace;

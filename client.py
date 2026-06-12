@@ -484,11 +484,33 @@ def cmd_update_mods(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mod_stem_prefix(filename: str) -> str | None:
+    """``shadow-chat-0.1.42.jar`` -> ``shadow-chat-``.
+
+    Finds the last ``-`` that is immediately followed by a digit (the
+    version boundary) so versioned siblings of the same mod can be
+    matched. Returns None when the name has no obvious version suffix —
+    callers then skip the sibling sweep rather than guessing.
+    """
+    stem = filename[:-4] if filename.endswith(".jar") else filename
+    for i in range(len(stem) - 1, 0, -1):
+        if stem[i] == "-" and i + 1 < len(stem) and stem[i + 1].isdigit():
+            return stem[: i + 1]
+    return None
+
+
 def _promote_staged_mods(mods_dir: Path) -> None:
     """Replace mods with their sibling `.jar.new` build artifacts if any exist.
 
     Happens when the HUD (or any mod) was rebuilt while MC held a handle on
     the previous jar. This pass runs right before launch, so restarts just work.
+
+    After promoting a VERSIONED jar (name-1.2.3.jar), older siblings of the
+    same mod are swept: the staged file usually carries a NEW version while
+    the lock-holder was the old one (shadow-chat-0.1.41.jar held open while
+    shadow-chat-0.1.42.jar.new staged). Promoting without the sweep would
+    leave both jars in the folder — and Fabric refuses to launch on a
+    duplicate mod id.
     """
     if not mods_dir.exists():
         return
@@ -501,6 +523,18 @@ def _promote_staged_mods(mods_dir: Path) -> None:
             print(f"[launch] promoted staged {target.name}")
         except PermissionError:
             print(f"[launch] can't replace {target.name} (still locked?) — skipping")
+            continue
+        prefix = _mod_stem_prefix(target.name)
+        if not prefix:
+            continue
+        for stale in mods_dir.glob(f"{prefix}*.jar"):
+            if stale.name == target.name:
+                continue
+            try:
+                stale.unlink()
+                print(f"[launch] removed stale {stale.name} (superseded by {target.name})")
+            except OSError as e:
+                print(f"[launch] couldn't remove stale {stale.name}: {e}")
 
 
 def _write_shadow_chat_auth(profile_dir: Path, acct) -> None:

@@ -1824,6 +1824,60 @@ body {
   margin: 14px 0 8px 0;
 }
 
+/* v0.3.104: installed-mods live filter. Sits between the "Installed"
+   heading and the list; hidden via [hidden] until there's >1 mod. */
+.mod-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mod-list-head .mod-section-title { margin-bottom: 6px; }
+.mod-filter-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.mod-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+}
+.mod-filter-row:focus-within {
+  border-color: var(--accent-focus);
+}
+.mod-filter-icon {
+  color: var(--text-mute);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+#mod-filter-input {
+  flex: 1;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  outline: none;
+  padding: 8px 0;
+  font-size: 13px;
+  font-family: inherit;
+}
+#mod-filter-input::placeholder { color: var(--text-mute); }
+.mod-filter-nomatch {
+  margin-top: 4px;
+  padding: 24px 20px;
+}
+/* [hidden] must beat the class-level display:flex on these, otherwise a
+   filtered-out row / the collapsed filter row stays visible. The UA
+   [hidden]{display:none} rule loses to a class selector on specificity. */
+.mod-row[hidden],
+.mod-filter-row[hidden] { display: none !important; }
+
 /* v0.3.40: profile manager rows. Lives in Settings → General. */
 .profile-list {
   list-style: none;

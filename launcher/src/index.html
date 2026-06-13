@@ -505,10 +505,28 @@
           <input type="file" id="add-mod-input" accept=".jar"
                  multiple hidden>
         </div>
-        <h4 class="mod-section-title">Installed</h4>
+        <div class="mod-list-head">
+          <h4 class="mod-section-title">Installed</h4>
+          <!-- v0.3.104: client-side live filter over the already-rendered
+               installed-mods list. Hidden until there's more than one mod
+               to filter (toggled by applyModFilter() in main.js). The count
+               on the right updates as you type. -->
+          <span class="mod-filter-count" id="mod-filter-count" aria-live="polite" hidden></span>
+        </div>
+        <div class="mod-filter-row" id="mod-filter-row" hidden>
+          <span class="mod-filter-icon" aria-hidden="true">⌕</span>
+          <input type="search" id="mod-filter-input"
+                 placeholder="Filter installed mods by name…"
+                 autocomplete="off" autocapitalize="off" spellcheck="false"
+                 aria-label="Filter installed mods" aria-controls="mod-list">
+        </div>
         <ul class="mod-list" id="mod-list" aria-label="Installed mods">
           <li class="empty">No mods scanned yet</li>
         </ul>
+        <!-- Shown by applyModFilter() when the current query matches no
+             installed mod. Kept as a sibling of #mod-list (not a child) so
+             refreshMods()' list.innerHTML reset can't wipe it out. -->
+        <div class="mod-filter-nomatch empty" id="mod-filter-nomatch" hidden></div>
       </section>
 
       <!-- Chat — Shadow Chat's proper home. Readiness card + the

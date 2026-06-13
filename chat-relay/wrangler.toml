@@ -9,6 +9,11 @@
 
 name = "shadow-chat-relay"
 main = "src/index.ts"
+# Pinned so wrangler never has to enumerate accounts — its OAuth token
+# can fail that lookup ("Failed to automatically retrieve account IDs")
+# even when it can deploy fine. Account IDs aren't secret (they're in
+# every Cloudflare API URL + the dashboard), so this is safe to commit.
+account_id = "d88207ef0d36eb8eab0e6d0f7e3cb83f"
 compatibility_date = "2025-01-15"
 compatibility_flags = ["nodejs_compat"]
 

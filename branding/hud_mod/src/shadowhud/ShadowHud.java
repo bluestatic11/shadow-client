@@ -5875,8 +5875,34 @@ public final class ShadowHud implements ClientModInitializer {
             float scale = cfgHudScale / 100f;
             int dx = (int)((mouseX - hudDragOriginX) / scale);
             int dy = (int)((mouseY - hudDragOriginY) / scale);
+            // Offset that produced last frame's cached frame bounds (the value
+            // still in cfgHudOffset* right now — flushHudLines ran after the
+            // previous tick's update). Capture BEFORE reassigning so the clamp
+            // below can map an offset to the screen-space frame edge.
+            int offOldX = cfgHudOffsetX, offOldY = cfgHudOffsetY;
             cfgHudOffsetX = hudDragStartOffX + dx;
             cfgHudOffsetY = hudDragStartOffY + dy;
+            // Keep the stack on-screen. Without this the editor lets the user
+            // fling the whole HUD past any edge, where it vanishes and can no
+            // longer be grabbed (the drag hit-test is the frame rect, now
+            // off-screen) — the only recovery was a Reset button buried in the
+            // menu. Clamp so at least MARGIN px of the frame stay visible on
+            // every side. hudFrame*, mouseX/Y and screenWidth/Height are all in
+            // the same logical (GUI-scaled) space, and the frame edge is a
+            // linear function of the offset: edge(off) = frameEdge + (off-offOld)*scale.
+            int frameW = hudFrameR - hudFrameL;
+            int frameH = hudFrameB - hudFrameT;
+            if (frameW > 0 && frameH > 0 && scale > 0f) {
+                final int MARGIN = 12;
+                int sw = screenWidth(null), sh = screenHeight(null);
+                // X: frame left must stay within [MARGIN - frameW, sw - MARGIN].
+                int loX = offOldX + Math.round((MARGIN - frameW - hudFrameL) / scale);
+                int hiX = offOldX + Math.round((sw - MARGIN     - hudFrameL) / scale);
+                if (loX <= hiX) cfgHudOffsetX = Math.max(loX, Math.min(hiX, cfgHudOffsetX));
+                int loY = offOldY + Math.round((MARGIN - frameH - hudFrameT) / scale);
+                int hiY = offOldY + Math.round((sh - MARGIN     - hudFrameT) / scale);
+                if (loY <= hiY) cfgHudOffsetY = Math.max(loY, Math.min(hiY, cfgHudOffsetY));
+            }
         }
         // Scroll-wheel = adjust scale by 5% steps
         if (Math.abs(pendingScrollDelta) >= 0.5) {

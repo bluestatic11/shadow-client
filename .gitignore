@@ -88,3 +88,12 @@ Thumbs.db
 .venv/
 venv/
 env/
+
+# ===== Local helper scripts (machine-specific paths) =====
+# DEPLOY-RELAY.bat hardcodes this machine's portable-node path; it's a
+# convenience launcher for `wrangler login && wrangler deploy`, not part
+# of the shipped product.
+chat-relay/DEPLOY-RELAY.bat
+
+# ===== Agent scratch =====
+.claude/edge-tmp/

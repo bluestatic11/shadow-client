@@ -6,7 +6,7 @@ Commands:
   login
   launch [--heap MB] [--gc g1|zgc] [--username NAME]
   update-mods
-  doctor [--profile NAME]
+  doctor [--profile NAME] [--fix]
 
 The first `setup` run downloads vanilla, installs Fabric, and pulls the
 performance mod stack. `launch` re-uses the installed state. Login is only
@@ -865,6 +865,111 @@ def _jwt_hours_left(token: str) -> float | None:
         return None
 
 
+def _minecraft_running() -> bool | None:
+    """Best-effort: is a launcher-spawned Minecraft alive right now?
+
+    Returns True if a java/javaw process whose command line references THIS
+    install (SHARED_DIR) is running, False if we scanned and found none, and
+    None if we couldn't tell (no supported probe, or the probe errored). The
+    None case matters: `doctor --fix` refuses to rewrite the auth file unless
+    it is *sure* MC is down, because the running game reads that file once at
+    startup and a concurrent rewrite races with it.
+
+    Windows only for the positive path (PowerShell + CIM command-line scan);
+    on other OSes we return None so the caller stays conservative. Every
+    failure mode collapses to None, never a traceback.
+    """
+    if platform.system() != "Windows":
+        return None
+    try:
+        marker = str(SHARED_DIR.resolve())
+    except Exception:
+        marker = str(SHARED_DIR)
+    # Match java*.exe processes whose CommandLine mentions our install root.
+    # CIM (Get-CimInstance) is the supported replacement for the removed
+    # wmic.exe on Windows 11. -replace strips backslashes from both sides so
+    # path-separator quirks (C:\ vs C:/) never cause a false negative.
+    ps = (
+        "$m = ($env:SC_MARKER -replace '\\\\','/'); "
+        "$p = Get-CimInstance Win32_Process -Filter "
+        "\"Name='java.exe' OR Name='javaw.exe'\" -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.CommandLine -and "
+        "(($_.CommandLine -replace '\\\\','/') -like ('*' + $m + '*')) }; "
+        "if ($p) { 'RUNNING' } else { 'STOPPED' }"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, text=True, timeout=20,
+            env={**os.environ, "SC_MARKER": marker},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = (r.stdout or "").strip()
+    if "RUNNING" in out:
+        return True
+    if "STOPPED" in out:
+        return False
+    return None
+
+
+def _doctor_fix_chat_auth(profile_dir: Path, acct, report) -> str | None:
+    """Try to auto-recover an expired chat token (only called by --fix).
+
+    Mirrors what `launch` does every boot: force a Microsoft token refresh,
+    then rewrite shadow-chat-auth.json so the in-game mod can reconnect -
+    auth.Account.refresh_if_needed -> _write_shadow_chat_auth, both of which
+    already exist and are battle-tested. Returns the FRESH token string on a
+    successful refresh (so the caller can re-check expiry + reuse it for the
+    relay-auth probe), or None if it bailed / failed. Emits its own FIX/WARN
+    report lines describing exactly what it did. Wrapped end-to-end so a
+    network blip or a half-installed tree degrades to a WARN, never a crash.
+
+    Refuses to act unless three preconditions hold, because a rewrite races
+    the running game's one-shot read of the file:
+      * we have a Microsoft (msa) account with refresh material, and
+      * no launcher-spawned Minecraft is currently running, and
+      * we could positively confirm MC is down (a 'maybe' is treated as up).
+    """
+    if acct is None or getattr(acct, "user_type", "") != "msa":
+        report("WARN", "chat auth fix",
+               "skipped - need a Microsoft account to refresh (run "
+               "`client.py login`)")
+        return None
+    running = _minecraft_running()
+    if running is not False:
+        why = ("Minecraft is running" if running
+               else "could not confirm Minecraft is closed")
+        report("WARN", "chat auth fix",
+               f"skipped - {why}; close the game, then re-run `doctor --fix` "
+               "(the game reads the auth file once at startup, so refreshing "
+               "it underneath a live session would not take effect anyway)")
+        return None
+    try:
+        prism_path = Path.home() / "AppData/Roaming/PrismLauncher/accounts.json"
+        use_prism = prism_path if prism_path.exists() else None
+        refreshed = acct.refresh_if_needed(ACCOUNT_FILE, prism_path=use_prism,
+                                           force=True)
+    except Exception as e:
+        report("WARN", "chat auth fix",
+               f"token refresh failed ({e}); run `client.py login` to "
+               "re-authenticate")
+        return None
+    if not refreshed:
+        report("WARN", "chat auth fix",
+               "Microsoft declined the refresh (refresh token may be expired) "
+               "- run `client.py login`")
+        return None
+    # _write_shadow_chat_auth is itself best-effort (prints its own [chat]
+    # line and swallows IO errors), so this won't raise either.
+    _write_shadow_chat_auth(profile_dir, acct)
+    report("FIX", "chat auth fix",
+           f"refreshed token for '{acct.username}' and rewrote "
+           "shadow-chat-auth.json")
+    new_token = getattr(acct, "access_token", None)
+    return new_token or None
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """One-shot self-diagnosis for the "chat doesn't work" class of problems.
 
@@ -873,12 +978,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     shadow-chat-auth.json token, and the relay - printing one labeled
     PASS/FAIL/WARN line per finding with a concrete fix.
 
-    Read-only by design: unlike resolve_dirs() it never mkdirs, never writes
+    Read-only by default: unlike resolve_dirs() it never mkdirs, never writes
     state, and every probe is wrapped so a half-installed (or never-installed)
     tree degrades to clean FAIL/WARN lines instead of a traceback. Output is
     strictly ASCII - doctor output is exactly the thing that gets pasted from
     broken cp1252 consoles.
+
+    `--fix` enables exactly one mutation: if the chat-auth token is EXPIRED
+    (the most common "chat doesn't work" cause) AND no launcher-spawned
+    Minecraft is running, it force-refreshes the Microsoft token and rewrites
+    shadow-chat-auth.json - the same auth.Account.refresh_if_needed ->
+    _write_shadow_chat_auth path `launch` runs on every boot - then re-checks
+    the token. Plain `doctor` stays 100% read-only.
     """
+    fix = bool(getattr(args, "fix", False))
     labels: list[str] = []
 
     def report(label: str, name: str, detail: str) -> None:
@@ -886,6 +999,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"[{label}] {name}: {detail}")
 
     print("Shadow Client doctor - checking the chat/launch dependency chain")
+    if fix:
+        print("(--fix on: will auto-refresh an EXPIRED chat token if MC is closed)")
     print("-" * 60)
 
     # 1. Java ------------------------------------------------------------
@@ -1040,9 +1155,38 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                         expired = auth._jwt_expired(token)
                     except Exception:
                         expired = hours <= 0
-                    if expired:
+                    if expired and fix:
+                        # INFO (not FAIL): we're about to repair it, so the
+                        # final verdict should reflect the post-fix state, not
+                        # this transient pre-fix one. The subsequent PASS/WARN
+                        # (or the fixer's own WARN) is what counts.
+                        report("INFO", "chat auth",
+                               "token EXPIRED - attempting auto-refresh "
+                               "(--fix)...")
+                        fresh = _doctor_fix_chat_auth(profile_dir, acct, report)
+                        if fresh:
+                            # Re-check the freshly written token so the verdict
+                            # and the relay-auth probe (#7) both see the new one.
+                            token = fresh
+                            new_hours = _jwt_hours_left(fresh)
+                            try:
+                                still_expired = auth._jwt_expired(fresh)
+                            except Exception:
+                                still_expired = (new_hours is not None
+                                                 and new_hours <= 0)
+                            if still_expired:
+                                report("WARN", "chat auth",
+                                       "refreshed token still reads as expired "
+                                       "(clock skew?) - try `client.py login`")
+                            else:
+                                margin = (f" ({new_hours:.1f}h left)"
+                                          if new_hours is not None else "")
+                                report("PASS", "chat auth",
+                                       f"token VALID after refresh{margin}")
+                    elif expired:
                         report("FAIL", "chat auth",
-                               "token EXPIRED (fix: launch via run.bat - it "
+                               "token EXPIRED (fix: re-run with `doctor --fix` "
+                               "to auto-refresh, or launch via run.bat - it "
                                "rewrites the file)")
                     else:
                         report("PASS", "chat auth",
@@ -1148,6 +1292,10 @@ def main(argv: list[str] | None = None) -> int:
     d = sub.add_parser("doctor", help="diagnose chat / launch problems (read-only self-check)")
     d.add_argument("--profile", default=None,
                    help="Which profile to inspect. Defaults to last_used.")
+    d.add_argument("--fix", action="store_true",
+                   help="Auto-refresh an EXPIRED chat-auth token when MC is "
+                        "closed (rewrites shadow-chat-auth.json). Without this "
+                        "flag, doctor only reports and never mutates.")
 
     l = sub.add_parser("launch", help="launch Minecraft")
     l.add_argument("--heap", type=int, default=6144, help="heap size in MB (default 6144)")

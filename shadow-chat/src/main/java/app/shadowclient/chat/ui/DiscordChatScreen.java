@@ -88,6 +88,33 @@ public final class DiscordChatScreen extends Screen {
 
     private final ChatOverlay overlayLegacy; // unused — kept to preserve old signature compat
     private final StringBuilder buffer = new StringBuilder();
+    /**
+     * Caret position within {@link #buffer}, measured in chars in
+     * [0, buffer.length()]. Insert / backspace / DELETE all act here,
+     * not at the end. Clamped by {@link #clampCaret()} after every edit.
+     */
+    private int caret = 0;
+
+    /**
+     * Sent-message ring (newest last), shared across screen instances so
+     * recall survives the screen closing on send — each open is a fresh
+     * {@code new DiscordChatScreen(...)}, so a per-instance list would
+     * forget everything the moment Enter fires. Capped at
+     * {@link #HISTORY_MAX}; the Enter handler pushes the sent text before
+     * clearing the buffer.
+     */
+    private static final int HISTORY_MAX = 30;
+    private static final java.util.ArrayDeque<String> SENT_HISTORY = new java.util.ArrayDeque<>();
+    /**
+     * Terminal-style recall cursor. -1 = editing the live draft (nothing
+     * recalled); 0 = newest sent line, increasing toward older. UP walks
+     * back, DOWN walks forward and at -1 restores {@link #liveDraft}.
+     * Reset to -1 on screen open (constructor).
+     */
+    private int historyIndex = -1;
+    /** The in-progress draft stashed when the user first presses UP, so
+     *  DOWN past the newest history entry restores it verbatim. */
+    private String liveDraft = "";
 
     /** Hit-test rectangle for a clickable channel row. */
     private record ChannelHit(int x1, int y1, int x2, int y2, String channelKey) {}
@@ -190,6 +217,10 @@ public final class DiscordChatScreen extends Screen {
         // (Capture above happened first; the channel-switch clear via
         // setActiveChannel keeps working independently of this.)
         st.clearUnread(ch);
+        // Fresh open → start in the live draft, not mid-recall. (The
+        // shared SENT_HISTORY itself persists; only this per-open cursor
+        // resets.)
+        this.historyIndex = -1;
     }
 
     @Override
@@ -1222,32 +1253,51 @@ public final class DiscordChatScreen extends Screen {
         // Text caret area between plus and coords.
         int textX1 = plusX2 + 8;
         int textX2 = btnX1 - 8;
-        String placeholder = "Message #" + channelDisplayName(ShadowChatClient.get().uiState().activeChannel()) + "...";
-        String shown = buffer.length() == 0 ? placeholder : buffer.toString();
-        int color = buffer.length() == 0 ? TEXT_DIM : TEXT_BRIGHT;
-        // Truncate if it would overflow the input box.
-        if (this.font.width(shown) > textX2 - textX1) {
-            while (shown.length() > 1 && this.font.width(shown + "...") > textX2 - textX1) {
-                shown = shown.substring(0, shown.length() - 1);
+        int avail = Math.max(0, textX2 - textX1);
+        int textY = y + (h - this.font.lineHeight) / 2 + 1;
+        clampCaret();
+        if (buffer.length() == 0) {
+            // Placeholder + a dim caret at the start.
+            String placeholder = "Message #"
+                    + channelDisplayName(ShadowChatClient.get().uiState().activeChannel()) + "...";
+            String shown = placeholder;
+            if (this.font.width(shown) > avail) {
+                while (shown.length() > 1 && this.font.width(shown + "...") > avail) {
+                    shown = shown.substring(0, shown.length() - 1);
+                }
+                shown = shown + "...";
             }
-            shown = shown + "...";
-        }
-        gfx.drawString(this.font, shown,
-                textX1, y + (h - this.font.lineHeight) / 2 + 1, color, false);
-        // Blinking caret when we have a buffer.
-        if (buffer.length() > 0 && (System.currentTimeMillis() % 1000 < 500)) {
-            int caretX = textX1 + Math.min(this.font.width(buffer.toString()), textX2 - textX1 - 2);
-            gfx.fill(caretX, y + 8, caretX + 1, y + h - 8, TEXT_BRIGHT);
-        } else if (buffer.length() == 0 && (System.currentTimeMillis() % 1000 < 500)) {
-            int caretX = textX1;
-            gfx.fill(caretX, y + 8, caretX + 1, y + h - 8, TEXT_DIM);
+            gfx.drawString(this.font, shown, textX1, textY, TEXT_DIM, false);
+            if (System.currentTimeMillis() % 1000 < 500) {
+                gfx.fill(textX1, y + 8, textX1 + 1, y + h - 8, TEXT_DIM);
+            }
+        } else {
+            // Single-line field with a horizontal scroll that keeps the
+            // caret in view: left-anchored until the caret runs past the
+            // right edge, then it tracks the caret. Computed fresh each
+            // frame (stateless) from the caret's pixel offset.
+            String text = buffer.toString();
+            int caretOffset = this.font.width(text.substring(0, caret));
+            int scrollPx = 0;
+            if (caretOffset - scrollPx > avail - 2) scrollPx = caretOffset - (avail - 2);
+            if (caretOffset - scrollPx < 0) scrollPx = caretOffset;
+            if (scrollPx < 0) scrollPx = 0;
+            // Clip text + caret to the field so a long line can't paint
+            // over the Coords / Mic buttons.
+            gfx.enableScissor(textX1, y, textX2, y + h);
+            gfx.drawString(this.font, text, textX1 - scrollPx, textY, TEXT_BRIGHT, false);
+            if (System.currentTimeMillis() % 1000 < 500) {
+                int caretX = textX1 - scrollPx + caretOffset;
+                gfx.fill(caretX, y + 8, caretX + 1, y + h - 8, TEXT_BRIGHT);
+            }
+            gfx.disableScissor();
         }
 
         // Character counter when approaching the 512-char cap. Hidden
         // when the buffer is short (~ < 80%) to keep the input row
         // uncluttered for the common case. Amber as we approach the
         // limit, red when at it — and at the cap the user is silently
-        // dropping further keystrokes via appendSafe, which is
+        // dropping further keystrokes via insertAtCaret, which is
         // confusing without this indicator.
         int len = buffer.length();
         int threshold = MAX_INPUT * 4 / 5;       // 80 %
@@ -1269,28 +1319,65 @@ public final class DiscordChatScreen extends Screen {
     public boolean keyPressed(KeyEvent event) {
         int keyCode = event.key();
         int modifiers = event.modifiers();
+        boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             String text = buffer.toString().trim();
             buffer.setLength(0);
+            caret = 0;
+            historyIndex = -1;
             if (!text.isEmpty()) {
+                // Record before dispatch so even slash-commands are recallable.
+                pushHistory(text);
                 ShadowChatClient.get().submitInput(text);
             }
             this.onClose();
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-            if (buffer.length() > 0) buffer.setLength(buffer.length() - 1);
+            if (ctrl) deletePrevWord();
+            else deleteBeforeCaret();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_DELETE) {
+            deleteAtCaret();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_LEFT) {
+            clampCaret();
+            caret = ctrl ? prevWordBoundary(caret) : Math.max(0, caret - 1);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_RIGHT) {
+            clampCaret();
+            caret = ctrl ? nextWordBoundary(caret) : Math.min(buffer.length(), caret + 1);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_HOME) {
+            caret = 0;
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_END) {
+            caret = buffer.length();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_UP) {
+            recallHistory(-1);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_DOWN) {
+            recallHistory(+1);
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             buffer.setLength(0);
+            caret = 0;
             this.onClose();
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_V && (modifiers & GLFW.GLFW_MOD_CONTROL) != 0) {
+        if (keyCode == GLFW.GLFW_KEY_V && ctrl) {
             if (this.minecraft != null) {
                 String clip = this.minecraft.keyboardHandler.getClipboard();
-                if (clip != null) appendSafe(clip.replace('\n', ' ').replace('\r', ' '));
+                if (clip != null) insertAtCaret(clip.replace('\n', ' ').replace('\r', ' '));
             }
             return true;
         }
@@ -1321,7 +1408,7 @@ public final class DiscordChatScreen extends Screen {
     public boolean charTyped(CharacterEvent event) {
         int cp = event.codepoint();
         if (cp >= 32 && cp != 127) {
-            appendSafe(new String(Character.toChars(cp)));
+            insertAtCaret(new String(Character.toChars(cp)));
             return true;
         }
         return super.charTyped(event);
@@ -1338,8 +1425,11 @@ public final class DiscordChatScreen extends Screen {
                 && mx >= coordsBtnX1 && mx <= coordsBtnX2
                 && my >= coordsBtnY1 && my <= coordsBtnY2) {
             CoordsHelper.currentCoords().ifPresent(coords -> {
-                if (buffer.length() > 0 && buffer.charAt(buffer.length() - 1) != ' ') appendSafe(" ");
-                appendSafe(coords);
+                // Insert at the caret; add a leading space only when the
+                // char immediately before the caret is a non-space.
+                if (caret > 0 && caret <= buffer.length()
+                        && buffer.charAt(caret - 1) != ' ') insertAtCaret(" ");
+                insertAtCaret(coords);
             });
             return true;
         }
@@ -1512,11 +1602,126 @@ public final class DiscordChatScreen extends Screen {
 
     // ============================================================ helpers
 
-    private void appendSafe(String s) {
+    /**
+     * Insert {@code s} at the caret, honoring the {@link #MAX_INPUT} cap
+     * (truncating the inserted text to whatever room is left), and move
+     * the caret to the end of what was inserted. Replaces the old
+     * append-only {@code appendSafe}; every typing / paste path routes
+     * through here so the caret stays correct.
+     */
+    private void insertAtCaret(String s) {
+        if (s == null || s.isEmpty()) return;
+        clampCaret();
         int room = MAX_INPUT - buffer.length();
         if (room <= 0) return;
         if (s.length() > room) s = s.substring(0, room);
-        buffer.append(s);
+        buffer.insert(caret, s);
+        caret += s.length();
+        clampCaret();
+    }
+
+    /** Clamp {@link #caret} into [0, buffer.length()]. */
+    private void clampCaret() {
+        if (caret < 0) caret = 0;
+        if (caret > buffer.length()) caret = buffer.length();
+    }
+
+    /** Backspace at the caret: delete the char immediately before it. */
+    private void deleteBeforeCaret() {
+        clampCaret();
+        if (caret > 0) {
+            buffer.deleteCharAt(caret - 1);
+            caret--;
+        }
+    }
+
+    /** DELETE at the caret: delete the char immediately after it. */
+    private void deleteAtCaret() {
+        clampCaret();
+        if (caret < buffer.length()) {
+            buffer.deleteCharAt(caret);
+        }
+    }
+
+    /** Ctrl+Backspace: delete from the previous word boundary to the caret. */
+    private void deletePrevWord() {
+        clampCaret();
+        int target = prevWordBoundary(caret);
+        if (target < caret) {
+            buffer.delete(target, caret);
+            caret = target;
+        }
+    }
+
+    /**
+     * Index of the start of the word before {@code from}: skip any
+     * spaces immediately left of the caret, then skip the run of
+     * non-space chars. Mirrors a terminal's Ctrl+Left / Ctrl+Backspace.
+     */
+    private int prevWordBoundary(int from) {
+        int i = Math.min(from, buffer.length());
+        while (i > 0 && buffer.charAt(i - 1) == ' ') i--;
+        while (i > 0 && buffer.charAt(i - 1) != ' ') i--;
+        return i;
+    }
+
+    /**
+     * Index of the start of the next word after {@code from}: skip the
+     * current run of non-space chars, then skip the following spaces, so
+     * the caret lands on the first char of the next word.
+     */
+    private int nextWordBoundary(int from) {
+        int len = buffer.length();
+        int i = Math.max(0, from);
+        while (i < len && buffer.charAt(i) != ' ') i++;
+        while (i < len && buffer.charAt(i) == ' ') i++;
+        return i;
+    }
+
+    /**
+     * Replace the whole buffer with {@code s} and drop the caret at the
+     * end — used by history recall (UP / DOWN).
+     */
+    private void setBuffer(String s) {
+        buffer.setLength(0);
+        if (s != null) buffer.append(s);
+        caret = buffer.length();
+        clampCaret();
+    }
+
+    /**
+     * Recall sent history by {@code dir} (-1 = older / UP, +1 = newer /
+     * DOWN). Terminal semantics: the first UP stashes the live draft;
+     * DOWN past the newest entry restores it. No-op when history is empty.
+     */
+    private void recallHistory(int dir) {
+        if (SENT_HISTORY.isEmpty()) return;
+        // ArrayDeque iteration is oldest→newest; index 0 must be the
+        // NEWEST sent line, so address it from the tail.
+        java.util.List<String> snap = new ArrayList<>(SENT_HISTORY);
+        int newestFirst = snap.size() - 1; // index into snap of history pos 0
+        if (dir < 0) {
+            // UP — walk toward older entries.
+            if (historyIndex == -1) liveDraft = buffer.toString();
+            if (historyIndex < snap.size() - 1) historyIndex++;
+            setBuffer(snap.get(newestFirst - historyIndex));
+        } else {
+            // DOWN — walk toward newer; past the newest returns to draft.
+            if (historyIndex <= -1) return; // already on the live draft
+            historyIndex--;
+            if (historyIndex == -1) setBuffer(liveDraft);
+            else setBuffer(snap.get(newestFirst - historyIndex));
+        }
+    }
+
+    /** Push a just-sent line onto the shared history ring (newest last). */
+    private static void pushHistory(String sent) {
+        if (sent == null || sent.isEmpty()) return;
+        // Avoid a duplicate when the user re-sends the immediately
+        // previous line unchanged — keeps recall tidy like a shell.
+        if (sent.equals(SENT_HISTORY.peekLast())) return;
+        SENT_HISTORY.addLast(sent);
+        while (SENT_HISTORY.size() > HISTORY_MAX) SENT_HISTORY.removeFirst();
     }
 
     private static int nameColor(String name) {

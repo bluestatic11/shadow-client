@@ -802,6 +802,51 @@ def cmd_launch(args: argparse.Namespace) -> int:
 # HTTP health endpoint of the same worker the mod connects to over wss://
 # (see _write_shadow_chat_auth's default relay_url).
 RELAY_HEALTH_URL = "https://shadow-chat-relay.edisongushf.workers.dev/health"
+RELAY_HOST = "shadow-chat-relay.edisongushf.workers.dev"
+
+
+def _ws_upgrade_status(host: str, token: str, channel: str, ua: str) -> int:
+    """Open the real /ws WebSocket handshake and return its HTTP status.
+
+    The relay's /health endpoint only proves the Worker is *up* — it never
+    touches token verification. The actual auth path is the /ws upgrade,
+    which calls Mojang to verify the token: 101 = accepted, 401 = rejected
+    (expired token, OR the relay can't reach Mojang from its egress — the
+    single most common "chat doesn't work" cause). stdlib http.client chokes
+    on a 101 response, so we hand-roll the handshake over a raw TLS socket
+    and read just the status line. Raises on any socket/TLS error.
+    """
+    import socket
+    import ssl
+    from urllib.parse import quote
+
+    path = f"/ws?token={quote(token, safe='')}&channel={quote(channel, safe='')}"
+    req = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        f"User-Agent: {ua}\r\n"
+        "\r\n"
+    )
+    ctx = ssl.create_default_context()
+    raw = socket.create_connection((host, 443), timeout=12)
+    try:
+        with ctx.wrap_socket(raw, server_hostname=host) as s:
+            s.sendall(req.encode("ascii"))
+            # The status line ("HTTP/1.1 101 ...") arrives in the first
+            # packet; read a small chunk and parse it.
+            data = s.recv(256)
+        line = data.split(b"\r\n", 1)[0].decode("ascii", "replace")
+        parts = line.split(" ", 2)
+        return int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else -1
+    finally:
+        try:
+            raw.close()
+        except OSError:
+            pass
 
 
 def _jwt_hours_left(token: str) -> float | None:
@@ -958,12 +1003,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                    "chat disabled - run `client.py login`")
 
     # 5. Chat auth file -------------------------------------------------------
+    token = None  # hoisted: the relay-auth probe (#7) reuses it
     if profile_dir is None:
         report("WARN", "chat auth",
                "skipped - no usable profile (fix the profile check first)")
     else:
         auth_file = profile_dir / "shadow-chat-auth.json"
-        token = None
         readable = False
         if not auth_file.exists():
             report("FAIL", "chat auth",
@@ -1022,6 +1067,40 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         report("FAIL", "relay",
                f"{RELAY_HEALTH_URL} -> {e} (no internet, a firewall, or the "
                "relay is down)")
+
+    # 7. Relay auth path ------------------------------------------------------
+    # /health only proves the Worker is up - it never verifies a token, so a
+    # green relay check used to sit next to a totally broken chat. THIS probes
+    # the real /ws auth handshake with the actual token, which is the leg that
+    # actually decides whether chat connects in-game.
+    if not token:
+        report("WARN", "relay auth",
+               "skipped - no usable token (fix the chat auth check first)")
+    else:
+        try:
+            ws_code = _ws_upgrade_status(RELAY_HOST, token, "server:doctor", mojang.UA)
+            if ws_code == 101:
+                report("PASS", "relay auth",
+                       "/ws handshake -> 101 (relay accepts your token)")
+            elif ws_code == 401:
+                report("FAIL", "relay auth",
+                       "/ws handshake -> 401: relay REJECTED a token Mojang "
+                       "itself accepts. The relay verifies tokens by calling "
+                       "Mojang from its Cloudflare-Worker egress; a consistent "
+                       "401 means that egress can't reach Mojang (IP block) - "
+                       "chat will not connect for anyone until the relay is "
+                       "redeployed or its verification path is changed")
+            elif ws_code == 400:
+                report("FAIL", "relay auth",
+                       "/ws handshake -> 400 (bad token/channel encoding - "
+                       "report this, it is a client bug)")
+            else:
+                report("WARN", "relay auth",
+                       f"/ws handshake -> HTTP {ws_code} (unexpected; relay "
+                       "may be mid-deploy)")
+        except Exception as e:
+            report("FAIL", "relay auth",
+                   f"/ws handshake failed to connect: {e}")
 
     # Verdict -------------------------------------------------------------
     print("-" * 60)

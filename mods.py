@@ -97,7 +97,7 @@ def _pick_version(slug: str, mc_version: str, loader: str = "fabric") -> dict[st
 # sides are bumped together in the release convention. Without this entry,
 # run.bat users never received the chat mod (or its updates) from
 # setup / update-mods; only the Tauri launcher's installer carried it.
-SHADOW_CHAT_VERSION = "0.1.44"
+SHADOW_CHAT_VERSION = "0.1.45"
 SHADOW_CHAT_URL = (
     "https://github.com/bluestatic11/shadow-client/releases/download/"
     f"chat-mod-v{SHADOW_CHAT_VERSION}/shadow-chat-{SHADOW_CHAT_VERSION}.jar"

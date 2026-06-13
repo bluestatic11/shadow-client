@@ -182,7 +182,7 @@ public final class RelayClient {
 
         URI uri;
         try {
-            uri = buildUri(auth.relayUrl(), auth.token(), channel);
+            uri = buildUri(auth.relayUrl(), auth.token(), channel, auth.name());
         } catch (Exception e) {
             sink.onDisconnected(channel, "bad relay URL: " + e.getMessage());
             return CompletableFuture.failedFuture(e);
@@ -362,7 +362,7 @@ public final class RelayClient {
 
     // ---------- internals ----------
 
-    private static URI buildUri(String relayUrl, String token, String channel) {
+    private static URI buildUri(String relayUrl, String token, String channel, String name) {
         // relayUrl may already have a trailing slash; normalize.
         String base = relayUrl;
         if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
@@ -373,7 +373,12 @@ public final class RelayClient {
 
         String t = URLEncoder.encode(token, StandardCharsets.UTF_8);
         String c = URLEncoder.encode(channel, StandardCharsets.UTF_8);
-        return URI.create(base + "/ws?token=" + t + "&channel=" + c);
+        // Display name — the relay verifies the token offline (Mojang's
+        // bot wall blocks the Worker's egress), and the token carries the
+        // UUID but not the name, so we hand the relay our name for display.
+        // Identity is still the token's verified UUID; this is cosmetic.
+        String n = URLEncoder.encode(name == null ? "" : name, StandardCharsets.UTF_8);
+        return URI.create(base + "/ws?token=" + t + "&channel=" + c + "&name=" + n);
     }
 
     private static String rootCause(Throwable t) {

@@ -10,7 +10,7 @@
 // chat-room.ts inside the DO so per-channel state stays isolated and
 // scales horizontally.
 
-import { verifyToken } from './auth';
+import { verifyTokenOffline } from './auth';
 
 // Re-export the DOs so Workers' runtime can find the class bindings
 // declared in wrangler.toml.
@@ -70,7 +70,10 @@ async function handlePresenceHeartbeat(req: Request, env: Env): Promise<Response
       status: 401, headers: { 'content-type': 'application/json' },
     });
   }
-  const profile = await verifyToken(token);
+  // Offline verification (same reason as the /ws path — the Worker can't
+  // reach Mojang). UUID comes from the verified token; name from the
+  // client-supplied body (cosmetic).
+  const profile = verifyTokenOffline(token);
   if (!profile) {
     return new Response(JSON.stringify({ error: 'invalid token' }), {
       status: 401, headers: { 'content-type': 'application/json' },
@@ -79,10 +82,13 @@ async function handlePresenceHeartbeat(req: Request, env: Env): Promise<Response
   let body: unknown = {};
   try { body = await req.json(); } catch {}
   if (!body || typeof body !== 'object') body = {};
+  const bodyName = (body as { name?: unknown }).name;
   const merged = {
     ...(body as Record<string, unknown>),
     uuid: profile.uuid,
-    name: profile.name,
+    name: typeof bodyName === 'string' && bodyName.trim()
+      ? bodyName.trim().slice(0, 32)
+      : 'Player-' + profile.uuid.slice(0, 8),
   };
   const stub = env.PRESENCE.get(env.PRESENCE.idFromName('presence-hub'));
   return stub.fetch('https://do/heartbeat', {
@@ -131,10 +137,22 @@ async function handleWsUpgrade(req: Request, env: Env, url: URL): Promise<Respon
     return new Response('invalid channel name', { status: 400 });
   }
 
-  const profile = await verifyToken(token);
+  // Offline verification — read identity from the token's own signed
+  // claims instead of calling Mojang, because the Worker's egress IP is
+  // blocked by Mojang's bot protection (see verifyTokenOffline). This is
+  // what unbreaks chat: the old per-connection Mojang fetch 401'd every
+  // token from inside the Worker.
+  const profile = verifyTokenOffline(token);
   if (!profile) {
     return new Response('invalid or expired Minecraft token', { status: 401 });
   }
+  // The token carries the UUID but not the display name, so take it from
+  // the client (cosmetic only — identity is the verified uuid). Old mods
+  // that don't send `name` fall back to a short uuid tag.
+  const rawName = url.searchParams.get('name');
+  profile.name = rawName && rawName.trim()
+    ? rawName.trim().slice(0, 32)
+    : 'Player-' + profile.uuid.slice(0, 8);
 
   // Forward to the channel's Durable Object. Cloudflare's idFromName
   // gives us a stable DO instance keyed by the channel string, so any

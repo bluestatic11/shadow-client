@@ -2625,6 +2625,9 @@ dialogTabs.forEach(tab => {
 async function refreshMods() {
   const list = $('mod-list');
   if (!list) return;
+  // The filter UI only makes sense once rows exist; hide it while we're
+  // scanning / empty / errored, then re-show + re-apply after rows render.
+  setModFilterVisible(false);
   list.innerHTML = '<li class="empty">Scanning…</li>';
   try {
     // Always scope to the currently picked version's profile so the user
@@ -2639,16 +2642,76 @@ async function refreshMods() {
       const row = document.createElement('li');
       const disabled = name.endsWith('.disabled');
       row.className = 'mod-row' + (disabled ? ' disabled' : '');
-      row.innerHTML = `
-        <span class="mod-status" aria-hidden="true"></span>
-        <span class="mod-name">${name}</span>
-      `;
+      // data-name carries the lowercased filename so applyModFilter() can
+      // substring-match without re-reading textContent each keystroke.
+      row.dataset.name = name.toLowerCase();
+      // Build via DOM (not innerHTML) so a mod filename containing angle
+      // brackets can't inject markup — and so .mod-name holds the exact name.
+      const status = document.createElement('span');
+      status.className = 'mod-status';
+      status.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.className = 'mod-name';
+      label.textContent = name;
+      row.append(status, label);
       list.appendChild(row);
     }
+    // Only offer the filter when there's enough to filter through.
+    setModFilterVisible(mods.length > 1);
+    applyModFilter();
   } catch (e) {
     list.innerHTML = '<li class="empty">Error: ' + e + '</li>';
   }
 }
+
+// ───── Mods list: client-side live filter (v0.3.104) ────────────
+// Filters the already-rendered #mod-list rows in place as the user types.
+// Purely a view concern — no IPC, no re-fetch. Listener is attached once at
+// module load (see below); refreshMods() re-applies the current query after
+// it repaints the rows so a refresh doesn't silently show hidden mods.
+const modFilterInput   = $('mod-filter-input');
+const modFilterRow     = $('mod-filter-row');
+const modFilterCount   = $('mod-filter-count');
+const modFilterNoMatch = $('mod-filter-nomatch');
+
+function setModFilterVisible(on) {
+  if (modFilterRow)   modFilterRow.hidden = !on;
+  if (modFilterCount) modFilterCount.hidden = !on;
+  // When hiding the whole filter UI, also clear any lingering no-match note.
+  if (!on && modFilterNoMatch) modFilterNoMatch.hidden = true;
+}
+
+function applyModFilter() {
+  const list = $('mod-list');
+  if (!list) return;
+  const rows = list.querySelectorAll('.mod-row');
+  const total = rows.length;
+  if (!total) return;   // nothing rendered (scanning / empty / error state)
+  const q = (modFilterInput?.value || '').trim().toLowerCase();
+  let shown = 0;
+  rows.forEach(row => {
+    // Fall back to textContent if data-name is somehow absent.
+    const name = row.dataset.name || (row.textContent || '').toLowerCase();
+    const match = q === '' || name.includes(q);
+    row.hidden = !match;
+    if (match) shown++;
+  });
+  if (modFilterCount) {
+    modFilterCount.textContent = q === ''
+      ? `${total} mod${total === 1 ? '' : 's'}`
+      : `${shown} of ${total}`;
+  }
+  if (modFilterNoMatch) {
+    const none = shown === 0 && q !== '';
+    modFilterNoMatch.hidden = !none;
+    if (none) modFilterNoMatch.textContent = `No installed mods match "${q}".`;
+  }
+}
+
+modFilterInput?.addEventListener('input', applyModFilter);
+// A native search-input "×" fires a 'search' event on clear in WebView2;
+// re-apply so the list resets immediately rather than on the next keystroke.
+modFilterInput?.addEventListener('search', applyModFilter);
 
 $('refresh-mods')?.addEventListener('click', refreshMods);
 

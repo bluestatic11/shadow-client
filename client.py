@@ -641,7 +641,29 @@ def cmd_launch(args: argparse.Namespace) -> int:
 
     version_id = p_state["version_id"]
     version_json = shared_dir / "versions" / version_id / f"{version_id}.json"
-    version = json.loads(version_json.read_text())
+    # The install can be incomplete (interrupted setup) or wiped (the user
+    # deleted game_dir, an external tool cleaned it, etc.). Detect the
+    # missing-files case and tell the user to re-run setup instead of
+    # dumping a raw FileNotFoundError traceback at them.
+    if not version_json.is_file():
+        raise SystemExit(
+            f"[launch] install is missing files for '{version_id}' "
+            f"({version_json.relative_to(HERE) if version_json.is_relative_to(HERE) else version_json} "
+            "not found).\n"
+            "        The game_dir looks incomplete or was deleted. "
+            "Re-run setup to rebuild it:\n"
+            f"            python client.py setup --version {p_state.get('mc_version', version_id)}\n"
+            "        (your worlds in game_dir/profiles/<ver>/saves are not "
+            "touched by setup.)"
+        )
+    try:
+        version = json.loads(version_json.read_text())
+    except (OSError, ValueError) as e:
+        raise SystemExit(
+            f"[launch] version manifest {version_json.name} is unreadable "
+            f"({e}). Re-run `python client.py setup --version "
+            f"{p_state.get('mc_version', version_id)}` to repair the install."
+        )
 
     # Rebuild classpath from libraries already on disk
     os_name, arch = mojang.detect_os()

@@ -119,6 +119,7 @@ public final class ShadowChatClient implements ClientModInitializer {
         Qol.recipePreviewEnabled      = modConfig.helperToggle("recipe_preview");
         Qol.coordsHudEnabled          = modConfig.helperToggle("coords_hud");
         Qol.heldItemHudEnabled        = modConfig.helperToggle("held_item_hud");
+        Qol.cooldownHudEnabled        = modConfig.helperToggle("cooldown_hud");
 
         // IPC drop-file watcher — lets the launcher signal us to (e.g.)
         // open the chat screen automatically on world load. See

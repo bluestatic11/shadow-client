@@ -747,6 +747,10 @@ public final class DiscordChatScreen extends Screen {
                 "Held-item HUD",
                 "Selected hotbar item floats above the bar for ~2 s when you switch slots, then fades.",
                 "qol_helditem", app.shadowclient.chat.qol.Qol.heldItemHudEnabled);
+        rowY = drawToggleRow(gfx, x + 24, rowY, w - 48, mouseX, mouseY,
+                "Cooldown HUD (left edge)",
+                "Lists your own items on cooldown (legendaries, golden heads, ability items) with time remaining. Reads only your local cooldown state; hides when nothing's cooling down.",
+                "qol_cooldown", app.shadowclient.chat.qol.Qol.cooldownHudEnabled);
 
         // ─── Minigame helpers ─────────────────────────────────────────
         gfx.fill(x + 24, rowY + 2, x + w - 24, rowY + 3, DIVIDER);
@@ -1542,6 +1546,11 @@ public final class DiscordChatScreen extends Screen {
                         boolean v = !app.shadowclient.chat.qol.Qol.heldItemHudEnabled;
                         app.shadowclient.chat.qol.Qol.heldItemHudEnabled = v;
                         cfg.setHelperToggle("held_item_hud", v);
+                    }
+                    case "qol_cooldown" -> {
+                        boolean v = !app.shadowclient.chat.qol.Qol.cooldownHudEnabled;
+                        app.shadowclient.chat.qol.Qol.cooldownHudEnabled = v;
+                        cfg.setHelperToggle("cooldown_hud", v);
                     }
                     case "mg_speed"     -> {
                         boolean v = !app.shadowclient.chat.minigame.Minigames.speedHudEnabled;

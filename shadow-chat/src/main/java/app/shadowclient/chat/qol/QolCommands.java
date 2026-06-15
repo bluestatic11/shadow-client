@@ -21,6 +21,8 @@ public final class QolCommands {
             case "/coordshud", "/coordshud-toggle":
                                         handleCoords(parts, echo);     return true;
             case "/helditemhud":        handleHeld(parts, echo);       return true;
+            case "/cooldowns", "/cdhud", "/cd":
+                                        handleCooldown(parts, echo);   return true;
             case "/qol":                listAll(echo);                 return true;
             default: return false;
         }
@@ -35,6 +37,8 @@ public final class QolCommands {
                         + onOff(Qol.coordsHudEnabled),
                 "/helditemhud on|off       — show selected item above hotbar on slot switch — currently "
                         + onOff(Qol.heldItemHudEnabled),
+                "/cooldowns on|off         — left-edge list of your items on cooldown + time left — currently "
+                        + onOff(Qol.cooldownHudEnabled),
                 "/qol                      — list all QoL helpers + state",
         };
     }
@@ -106,12 +110,36 @@ public final class QolCommands {
         }
     }
 
+    private static void handleCooldown(String[] parts, Consumer<InputState.DisplayLine> echo) {
+        String sub = sub(parts);
+        if (sub == null || "status".equals(sub)) {
+            echo.accept(InputState.DisplayLine.system("Cooldown HUD: " + onOff(Qol.cooldownHudEnabled)));
+            return;
+        }
+        switch (sub) {
+            case "on", "true", "enable" -> {
+                Qol.cooldownHudEnabled = true;
+                persist("cooldown_hud", true);
+                echo.accept(InputState.DisplayLine.system(
+                        "Cooldown HUD enabled (left edge). Items on cooldown show with time remaining; "
+                                + "hides itself when nothing's cooling down."));
+            }
+            case "off", "false", "disable" -> {
+                Qol.cooldownHudEnabled = false;
+                persist("cooldown_hud", false);
+                echo.accept(InputState.DisplayLine.system("Cooldown HUD disabled."));
+            }
+            default -> echo.accept(InputState.DisplayLine.error("Unknown subcommand: " + sub));
+        }
+    }
+
     private static void listAll(Consumer<InputState.DisplayLine> echo) {
         echo.accept(InputState.DisplayLine.system("QoL helpers:"));
         echo.accept(InputState.DisplayLine.system("  Recipe preview:  " + onOff(Qol.recipePreviewEnabled)
                 + " · " + RecipePreview.knownRecipeCount() + " items in table"));
         echo.accept(InputState.DisplayLine.system("  Coords HUD:      " + onOff(Qol.coordsHudEnabled)));
         echo.accept(InputState.DisplayLine.system("  Held-item HUD:   " + onOff(Qol.heldItemHudEnabled)));
+        echo.accept(InputState.DisplayLine.system("  Cooldown HUD:    " + onOff(Qol.cooldownHudEnabled)));
         echo.accept(InputState.DisplayLine.system("Toggle with /<name> on|off."));
     }
 

@@ -20,6 +20,10 @@ package app.shadowclient.chat.qol;
  *   <li><b>Held-item HUD</b> — when you scroll to a new hotbar slot,
  *       the item name + count float above the hotbar for a couple
  *       seconds and fade out.</li>
+ *   <li><b>Cooldown HUD</b> — left-edge list of your own items
+ *       currently on cooldown (legendaries, golden heads, ability
+ *       items) with the time remaining next to each. Reads only your
+ *       local client cooldown state.</li>
  * </ul>
  */
 public final class Qol {
@@ -27,6 +31,7 @@ public final class Qol {
     public static volatile boolean recipePreviewEnabled = false;
     public static volatile boolean coordsHudEnabled = false;
     public static volatile boolean heldItemHudEnabled = false;
+    public static volatile boolean cooldownHudEnabled = false;
 
     private Qol() {}
 
@@ -34,5 +39,6 @@ public final class Qol {
         RecipePreview.register();
         CoordsHud.register();
         HeldItemHud.register();
+        CooldownHud.register();
     }
 }

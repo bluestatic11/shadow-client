@@ -223,6 +223,7 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("PearlCool",  false, "Combat",  "Show ender pearl cooldown timer (vanilla 1s = 20 ticks)");
         addModule("AntiAFK",    false, "Utility", "Tiny periodic input to prevent server AFK timeouts");
         addModule("CombatTime", false, "Combat",  "Time since last damage taken (combat tag indicator)");
+        addModule("CombatMusic",false, "Combat",  "Plays hype music while you're fighting another player");
         addModule("TotemCount", false, "Combat",  "Show total totems of undying in inventory");
         addModule("PearlCount", false, "Combat",  "Show total ender pearls in inventory");
         addModule("ArrowCount", false, "Combat",  "Show total arrows (any type) in inventory");
@@ -1676,6 +1677,10 @@ public final class ShadowHud implements ClientModInitializer {
                     swapScrollCallback(menuOpen);
                 }
                 trackCurrentChunk();
+                // Combat music runs every frame, independent of whether any
+                // HUD module is drawn — it only reads combat state and drives
+                // the sound engine, so it must not be gated behind renderHud.
+                try { updateCombatMusic(); } catch (Throwable t) { logOnce("CombatMusic", t); }
                 // Run renderHud and renderMenu in separate try-blocks so a
                 // throw in one doesn't skip the other. renderMenu drains
                 // pendingScrollDelta — if we let renderHud's exception
@@ -14802,6 +14807,194 @@ public final class ShadowHud implements ClientModInitializer {
             Object inst = hsPositionedSoundFactory.invoke(null, hsSoundEventHit, pitch, 1.0f);
             if (inst != null) hsSoundManagerPlay.invoke(hsSoundManager, inst);
         } catch (Throwable ignored) {}
+    }
+
+    // ===================== Combat music ================================
+    // Plays a hype track while you're in PvP combat (you hit a player, or you
+    // take damage with a player nearby) and stops it once the combat tag
+    // expires. All reflection is verified against the 1.21.11 mappings:
+    //   class_1144 SoundManager.method_4873 play / 4870 stop / 4877 isActive
+    //   class_1109.method_4757(SoundEvent,pitch,vol)  (the master/forUI factory)
+    //   class_3414.method_47908(Identifier)           (SoundEvent from id)
+    /** Vanilla disc used as the fight track. Any minecraft:music_disc.* id
+     *  works — swap this one line to change the song. */
+    private static final String CM_TRACK     = "music_disc.pigstep";
+    private static final long   CM_WINDOW_MS = 8000L;   // combat-tag duration
+    private static final float  CM_VOLUME    = 0.7f;
+    private static final double CM_RADIUS    = 14.0;    // "player nearby" range
+
+    private static boolean cmSoundResolveTried;
+    private static Object  cmSoundManager;     // class_1144
+    private static Method  cmPlay, cmStop, cmIsActive;  // SoundManager.play/stop/isActive
+    private static Method  cmMasterFactory;    // class_1109.method_4757
+    private static Object  cmMusicEvent;       // class_3414 for CM_TRACK
+
+    private static long    cmLastPvpMs;
+    private static float   cmLastHp = -1f;
+    private static boolean cmPlaying;
+    private static Object  cmInstance;
+    private static boolean cmLmbWasUp = true;
+
+    private static void cmEnsureSound() {
+        if (cmSoundResolveTried) return;
+        cmSoundResolveTried = true;
+        try {
+            Class<?> siCls = Class.forName("net.minecraft.class_1113"); // SoundInstance
+            for (Method m : mc.getClass().getMethods()) {
+                if (m.getParameterCount() != 0) continue;
+                String n = m.getName();
+                if ((n.equals("method_1483") || n.equals("getSoundManager"))
+                    && m.getReturnType().getName().equals("net.minecraft.class_1144")) {
+                    cmSoundManager = m.invoke(mc); break;
+                }
+            }
+            if (cmSoundManager != null) {
+                for (Method m : cmSoundManager.getClass().getMethods()) {
+                    if (m.getParameterCount() != 1) continue;
+                    if (!siCls.isAssignableFrom(m.getParameterTypes()[0])) continue;
+                    String n = m.getName();
+                    if ((n.equals("method_4873") || n.equals("play")) && cmPlay == null) cmPlay = m;
+                    else if ((n.equals("method_4870") || n.equals("stop")) && cmStop == null) cmStop = m;
+                    else if ((n.equals("method_4877") || n.equals("isActive"))
+                             && m.getReturnType() == boolean.class && cmIsActive == null) cmIsActive = m;
+                }
+            }
+            Class<?> seCls  = Class.forName("net.minecraft.class_3414");
+            Class<?> psiCls = Class.forName("net.minecraft.class_1109");
+            for (Method m : psiCls.getMethods()) {
+                if (!Modifier.isStatic(m.getModifiers()) || m.getParameterCount() != 3) continue;
+                if (m.getParameterTypes()[0] != seCls) continue;
+                if (m.getParameterTypes()[1] != float.class || m.getParameterTypes()[2] != float.class) continue;
+                if (m.getName().equals("method_4757") || m.getName().equals("master")
+                    || m.getName().equals("forUI")) { cmMasterFactory = m; break; }
+            }
+            Class<?> idCls = Class.forName("net.minecraft.class_2960");
+            Method idOf = null;
+            for (Method m : idCls.getMethods()) {
+                if (!Modifier.isStatic(m.getModifiers()) || m.getParameterCount() != 2) continue;
+                if (m.getParameterTypes()[0] != String.class || m.getParameterTypes()[1] != String.class) continue;
+                if (m.getName().equals("method_60655") || m.getName().equals("of")) { idOf = m; break; }
+            }
+            Object id = idOf != null ? idOf.invoke(null, "minecraft", CM_TRACK) : null;
+            if (id != null) {
+                for (Method m : seCls.getMethods()) {
+                    if (!Modifier.isStatic(m.getModifiers()) || m.getParameterCount() != 1) continue;
+                    if (!idCls.isAssignableFrom(m.getParameterTypes()[0])) continue;
+                    String n = m.getName();
+                    if (n.equals("method_47908") || n.equals("of") || n.equals("create")) {
+                        cmMusicEvent = m.invoke(null, id); break;
+                    }
+                }
+            }
+            System.out.println("[ShadowHud][CombatMusic] resolve — sm=" + (cmSoundManager != null)
+                + " play=" + (cmPlay != null) + " stop=" + (cmStop != null)
+                + " isActive=" + (cmIsActive != null) + " factory=" + (cmMasterFactory != null)
+                + " event=" + (cmMusicEvent != null) + " track=" + CM_TRACK);
+        } catch (Throwable t) {
+            System.err.println("[ShadowHud][CombatMusic] resolve threw: " + t);
+        }
+    }
+
+    /** True if any OTHER player is within {@code radius} blocks of self. */
+    private static boolean cmPlayerWithin(Object self, double radius) {
+        try {
+            Object world = worldField != null ? worldField.get(mc) : null;
+            if (world == null) return false;
+            Object plist = tryInvoke(world, "method_18456", "players", "getPlayers");
+            if (!(plist instanceof Iterable)) return false;
+            double sx = firstNum(self, "method_23317", "getX").doubleValue();
+            double sy = firstNum(self, "method_23318", "getY").doubleValue();
+            double sz = firstNum(self, "method_23321", "getZ").doubleValue();
+            double r2 = radius * radius;
+            for (Object p : (Iterable<?>) plist) {
+                if (p == null || p == self) continue;
+                double ox = firstNum(p, "method_23317", "getX").doubleValue();
+                double oy = firstNum(p, "method_23318", "getY").doubleValue();
+                double oz = firstNum(p, "method_23321", "getZ").doubleValue();
+                double d2 = (ox - sx) * (ox - sx) + (oy - sy) * (oy - sy) + (oz - sz) * (oz - sz);
+                if (d2 <= r2) return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    /** Per-frame combat-music driver. Self-contained: it does its own combat
+     *  detection (HP drop with a player nearby, or a left-click landing on a
+     *  player) so it doesn't depend on any other module being enabled. */
+    private static void updateCombatMusic() {
+        if (mc == null || playerField == null) return;
+        if (!modOn("CombatMusic", false)) { if (cmPlaying) cmStopMusic(); return; }
+
+        Object player;
+        try { player = playerField.get(mc); } catch (Throwable t) { return; }
+        if (player == null) { if (cmPlaying) cmStopMusic(); cmLastHp = -1f; return; }
+
+        long now = System.currentTimeMillis();
+        boolean near = cmPlayerWithin(player, CM_RADIUS);
+
+        // (1) took damage while a player is nearby → PvP
+        try {
+            float hp = firstNum(player, "method_6032", "getHealth").floatValue();
+            if (cmLastHp >= 0f && hp < cmLastHp - 0.01f && near) cmLastPvpMs = now;
+            cmLastHp = hp;
+        } catch (Throwable ignored) {}
+
+        // (2) left-click landed on a player → PvP
+        try {
+            boolean lmb = mouseButtonDown(MB_LEFT);
+            if (lmb && cmLmbWasUp) {
+                Object hit = tryInvoke(mc, "method_64829", "getCrosshairTarget", "crosshairTarget");
+                Object ht  = hit == null ? null : tryInvoke(hit, "method_17783", "getType");
+                if (ht != null && ht.toString().contains("ENTITY")) {
+                    Object tgt = tryInvoke(hit, "method_17782", "getEntity");
+                    if (tgt != null && shadowhud$isPlayerEntity(tgt)) cmLastPvpMs = now;
+                }
+            }
+            cmLmbWasUp = !lmb;
+        } catch (Throwable ignored) {}
+
+        boolean inCombat = cmLastPvpMs != 0 && (now - cmLastPvpMs) < CM_WINDOW_MS;
+        if (inCombat) {
+            if (!cmPlaying) cmStartMusic();
+            else cmLoopMusic();
+        } else if (cmPlaying) {
+            cmStopMusic();
+        }
+    }
+
+    private static void cmStartMusic() {
+        cmEnsureSound();
+        if (cmSoundManager == null || cmPlay == null || cmMasterFactory == null || cmMusicEvent == null) return;
+        try {
+            Object inst = cmMasterFactory.invoke(null, cmMusicEvent, 1.0f, CM_VOLUME);
+            if (inst != null) {
+                cmPlay.invoke(cmSoundManager, inst);
+                cmInstance = inst;
+                cmPlaying  = true;
+                flashToast("§d♪ §fCombat music");
+            }
+        } catch (Throwable t) { logOnce("CombatMusic.start", t); }
+    }
+
+    /** Replay the track if it finished while combat is still going. */
+    private static void cmLoopMusic() {
+        if (cmInstance == null || cmIsActive == null || cmPlay == null
+            || cmMasterFactory == null || cmSoundManager == null) return;
+        try {
+            Object active = cmIsActive.invoke(cmSoundManager, cmInstance);
+            if (Boolean.FALSE.equals(active)) {
+                Object inst = cmMasterFactory.invoke(null, cmMusicEvent, 1.0f, CM_VOLUME);
+                if (inst != null) { cmPlay.invoke(cmSoundManager, inst); cmInstance = inst; }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void cmStopMusic() {
+        cmPlaying = false;
+        if (cmInstance != null && cmStop != null && cmSoundManager != null) {
+            try { cmStop.invoke(cmSoundManager, cmInstance); } catch (Throwable ignored) {}
+        }
+        cmInstance = null;
     }
 
     /** Soft UI click — used when the user toggles a module. Resolves the

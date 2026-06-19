@@ -2980,13 +2980,15 @@ public final class ShadowHud implements ClientModInitializer {
                 + " texture=" + (cosmVtxTexture != null));
             return;
         }
-        // If only one path works, skip the modules that depend on the other.
-        if (!canDoLines) {
-            wantWings = false; wantAngel = false;
-            cosmFailOnce(12, "Wings/Angel disabled — line handles missing (lineLayer/peek/posMat/vtx/color)");
-        }
+        // Wings/AngelWings now render via the SOLID mesh path, not the
+        // wireframe "lines" layer. The 1.21.11 lines RenderType needs a
+        // LineWidth vertex element the wireframe code never writes, which
+        // crashes at buffer-flush time (see the retired line buffer below).
+        // The solid path uses the textured-quad handles, so gate Wings/Angel
+        // (and Cape) on those, not on the now-unused line handles.
         if (!canDoTexture) {
-            cosmFailOnce(13, "Cape texture disabled — texture handle missing (cosmVtxTexture null)");
+            wantWings = false; wantAngel = false;
+            cosmFailOnce(13, "Wings/Angel/Cape disabled — solid/texture handles missing (cosmVtxTexture null)");
         }
 
         try {
@@ -3022,12 +3024,16 @@ public final class ShadowHud implements ClientModInitializer {
             // Resolve once: matrix entry / posMat / line-buffer / vertex args.
             Object entry  = cosmPeekStack.invoke(matrices);
             Object posMat = cosmGetPosMat.invoke(entry);
-            // Line buffer is null-safe — only acquired if cosmLineLayer
-            // resolved. Cape rendering uses its own per-frame layer buffer
-            // and doesn't depend on this one.
-            Object buffer = (cosmLineLayer != null)
-                ? cosmGetBuffer.invoke(provider, cosmLineLayer)
-                : null;
+            // RETIRED wireframe line buffer. The 1.21.11 "lines" RenderType's
+            // vertex format requires a LineWidth element that cosmDrawShape/
+            // cosmLine never write, so MC throws "Missing elements in vertex:
+            // LineWidth" when it flushes the batch at frame end — AFTER this
+            // method returns, so a local try/catch can't catch it. That was the
+            // "opening the Wings module crashes the game" bug. Forcing this null
+            // makes every buffer!=null line-draw below no-op; Wings/AngelWings/
+            // Cape all render through the solid mesh / textured-quad paths,
+            // which the 1.21.11 render pipeline accepts.
+            Object buffer = null;
             Object vertexArg = cosmVtxPos.getParameterTypes()[0].isInstance(entry)
                 ? entry : posMat;
             Object normalArg = (cosmVtxNormal != null

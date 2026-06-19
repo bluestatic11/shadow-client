@@ -6495,7 +6495,13 @@ public final class ShadowHud implements ClientModInitializer {
         if (modOn("ClickTotal", false)) {
             y = drawLine(dc, font, "§4Clicks §fL " + sessionLeftClicks + " §8| §fR " + sessionRightClicks, y);
         }
-        if (modOn("Combo", true)) {
+        // Hit detection feeds Combo / Killstreak / HitsDealt / DPS / BestCombo,
+        // so it must run whenever ANY of them is enabled — not only when Combo
+        // is shown. Gating it on Combo alone (the old bug) left Killstreak /
+        // HitsDealt / DPS frozen at 0 unless Combo happened to also be on,
+        // which read as "lots of PvP modules don't work".
+        if (modOn("Combo", true) || modOn("Killstreak", false) || modOn("HitsDealt", false)
+                || modOn("DPS", false) || modOn("BestCombo", false)) {
             try {
                 long now = System.currentTimeMillis();
                 if (now - comboLastMs > 3000 && comboCount != 0) comboCount = 0;
@@ -6575,8 +6581,10 @@ public final class ShadowHud implements ClientModInitializer {
                     }
                 }
                 lmbWasUpForCombo = !mouseButtonDown(MB_LEFT);
-                String col = comboCount >= 5 ? "§c" : comboCount > 0 ? "§e" : "§7";
-                y = drawLine(dc, font, "§4Combo " + col + comboCount + "§4 hits", y);
+                if (modOn("Combo", true)) {
+                    String col = comboCount >= 5 ? "§c" : comboCount > 0 ? "§e" : "§7";
+                    y = drawLine(dc, font, "§4Combo " + col + comboCount + "§4 hits", y);
+                }
             } catch (Throwable t) { logOnce("Combo", t); }
         }
         if (player != null && modOn("Reach", true)) {
@@ -14943,7 +14951,14 @@ public final class ShadowHud implements ClientModInitializer {
         try {
             boolean lmb = mouseButtonDown(MB_LEFT);
             if (lmb && cmLmbWasUp) {
+                // method_64829 is NOT getCrosshairTarget on 1.21.11 (it maps to
+                // withPosition); the reliable source is the field_1765/hitResult
+                // field, same fallback the Combo/Reach modules use.
                 Object hit = tryInvoke(mc, "method_64829", "getCrosshairTarget", "crosshairTarget");
+                if (hit == null) {
+                    Field f = cachedField(mc.getClass(), "field_1765");
+                    if (f != null) try { hit = f.get(mc); } catch (Throwable ignored) {}
+                }
                 Object ht  = hit == null ? null : tryInvoke(hit, "method_17783", "getType");
                 if (ht != null && ht.toString().contains("ENTITY")) {
                     Object tgt = tryInvoke(hit, "method_17782", "getEntity");

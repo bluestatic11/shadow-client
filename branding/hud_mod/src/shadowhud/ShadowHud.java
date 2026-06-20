@@ -15127,7 +15127,59 @@ public final class ShadowHud implements ClientModInitializer {
         }
     }
 
+    // Optional user-supplied custom track: drop a standard PCM WAV at
+    // config/shadowclient-combatmusic.wav and it plays instead of the vanilla
+    // disc. Played via javax.sound (independent of MC's sound engine), looped
+    // while in combat and stopped when the combat tag expires.
+    private static javax.sound.sampled.Clip cmClip;
+    private static boolean cmClipTried;
+    private static boolean cmCustomActive;
+
+    private static javax.sound.sampled.Clip cmGetClip() {
+        if (cmClipTried) return cmClip;
+        cmClipTried = true;
+        try {
+            java.io.File f = java.nio.file.Paths.get("config", "shadowclient-combatmusic.wav").toFile();
+            if (!f.isFile()) return null;
+            javax.sound.sampled.AudioInputStream in = javax.sound.sampled.AudioSystem.getAudioInputStream(f);
+            javax.sound.sampled.Clip clip = javax.sound.sampled.AudioSystem.getClip();
+            clip.open(in);
+            cmClip = clip;
+            System.out.println("[ShadowHud][CombatMusic] loaded custom WAV: "
+                + f.getAbsolutePath() + " (" + (f.length() / 1024) + " KB)");
+        } catch (Throwable t) {
+            System.err.println("[ShadowHud][CombatMusic] custom WAV load failed "
+                + "(needs a standard PCM .wav): " + t);
+        }
+        return cmClip;
+    }
+
+    private static void cmSetClipVolume(javax.sound.sampled.Clip clip) {
+        try {
+            if (clip.isControlSupported(javax.sound.sampled.FloatControl.Type.MASTER_GAIN)) {
+                javax.sound.sampled.FloatControl g = (javax.sound.sampled.FloatControl)
+                    clip.getControl(javax.sound.sampled.FloatControl.Type.MASTER_GAIN);
+                float db = (float) (20.0 * Math.log10(Math.max(0.0001, CM_VOLUME)));
+                g.setValue(Math.max(g.getMinimum(), Math.min(g.getMaximum(), db)));
+            }
+        } catch (Throwable ignored) {}
+    }
+
     private static void cmStartMusic() {
+        // Prefer the user's custom WAV if present.
+        javax.sound.sampled.Clip clip = cmGetClip();
+        if (clip != null) {
+            try {
+                cmSetClipVolume(clip);
+                clip.setFramePosition(0);
+                clip.loop(javax.sound.sampled.Clip.LOOP_CONTINUOUSLY);
+                cmPlaying = true;
+                cmCustomActive = true;
+                flashToast("§d♪ §fCombat music (custom)");
+                return;
+            } catch (Throwable t) { logOnce("CombatMusic.customStart", t); }
+        }
+        // Vanilla-disc fallback.
         cmEnsureSound();
         if (cmSoundManager == null || cmPlay == null || cmMasterFactory == null || cmMusicEvent == null) return;
         try {
@@ -15141,8 +15193,10 @@ public final class ShadowHud implements ClientModInitializer {
         } catch (Throwable t) { logOnce("CombatMusic.start", t); }
     }
 
-    /** Replay the track if it finished while combat is still going. */
+    /** Replay the disc if it finished while combat is still going. The custom
+     *  clip loops natively, so it needs no replay. */
     private static void cmLoopMusic() {
+        if (cmCustomActive) return;
         if (cmInstance == null || cmIsActive == null || cmPlay == null
             || cmMasterFactory == null || cmSoundManager == null) return;
         try {
@@ -15156,6 +15210,11 @@ public final class ShadowHud implements ClientModInitializer {
 
     private static void cmStopMusic() {
         cmPlaying = false;
+        if (cmCustomActive) {
+            cmCustomActive = false;
+            if (cmClip != null) { try { cmClip.stop(); } catch (Throwable ignored) {} }
+            return;
+        }
         if (cmInstance != null && cmStop != null && cmSoundManager != null) {
             try { cmStop.invoke(cmSoundManager, cmInstance); } catch (Throwable ignored) {}
         }

@@ -67,8 +67,6 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("SessionTime",false, "Display", "Total play-time this launch");
         // ----- World / position -----------------------------------------
         addModule("XYZ",        true,  "World",   "Player coordinates");
-        addModule("Facing",     true,  "World",   "Cardinal direction");
-        addModule("Compass",    false, "World",   "Direction with degrees");
         addModule("Day",        false, "World",   "In-game day counter");
         addModule("DayArc",     false, "World",   "Visual sun / moon position");
         addModule("Light",      false, "World",   "Sky / block light level");
@@ -81,7 +79,6 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("EntityCount",false, "World",   "Total loaded entities");
         addModule("TPS",        false, "World",   "Server tick rate (lag)");
         addModule("Level",      false, "World",   "XP level + progress");
-        addModule("TabCount",   false, "World",   "Online players (tab list)");
         addModule("WorldBorder",false, "World",   "Distance to world border");
         addModule("SpawnDist",  false, "World",   "Distance from world spawn");
         addModule("Distance",   false, "World",   "Distance walked this session");
@@ -128,19 +125,16 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("Memory",     false, "Server",  "JVM heap usage");
         addModule("AFK",        false, "Server",  "Idle-time / activity tracker");
         addModule("Streamer",   false, "Server",  "Hide server IP / name");
-        addModule("FakePing",   false, "Server",  "Display fake ping (2000 ms)");
         addModule("Music",      false, "Server",  "Currently-playing music");
         addModule("ChatFilter", false, "Server",  "Hide chat lines matching patterns");
         // ----- Utility (interactive features) ---------------------------
         addModule("Map",        true,  "Utility", "Mini-map with terrain");
         addModule("Keystrokes", true,  "Utility", "WASD + mouse overlay");
         addModule("Zoom",       true,  "Utility", "Hold C to zoom in");
-        addModule("ToggleSprint", false,"Utility","Force sprint while moving");
         addModule("ToggleSneak",  false,"Utility","Force persistent sneak");
         addModule("AutoRespawn",false, "Utility", "Instant respawn on death");
         addModule("Fullbright", false, "Utility", "Boost gamma for max brightness");
         addModule("CoordCopy",  false, "Utility", "Press Insert to copy XYZ");
-        addModule("Waypoint",   false, "Utility", "Press Home to set / clear");
         addModule("Tracker",    false, "Utility", "Direction to nearest player");
         addModule("Crosshair",  false, "Utility", "Custom crosshair (Enter cycles)");
         addModule("TabHp",      true,  "Utility", "Show your HP on tab list");
@@ -170,9 +164,6 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("BlockHighlight",false,"Utility","Tint the block face under your crosshair");
         addModule("WingsSolid",   false,"Utility","Solid filled wings (instead of wireframe/particles) — render with Wings off");
         addModule("AngelWingsSolid",false,"Utility","Solid filled angel wings (instead of wireframe/particles)");
-        addModule("WaterMark",  false, "Display", "Shadow Client branding watermark");
-        addModule("DateTime",   false, "Display", "Real-world date and time");
-        addModule("Uptime",     false, "Display", "Game uptime (HH:MM:SS since launch)");
         addModule("HeldDur",    false, "Inventory","Held item durability % (color-coded)");
         addModule("EnchantList",false, "Inventory","Enchants on the currently-held item");
         addModule("PotionTimer",false, "Display", "Active status effects with countdowns");
@@ -188,16 +179,12 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("MoonPhase",  false, "World",   "Current moon phase (full / new / quarter)");
         addModule("HitMarker",  false, "Combat",  "Visual ✕ flash on screen when you land a hit");
         addModule("JumpCount",  false, "Display", "Total jumps this session");
-        addModule("WelcomeMsg", false, "Server",  "Chat greeting from Shadow Client when you join a server");
         // AutoTotem removed — auto-action that gives unfair PvP advantage.
-        addModule("TitleAnim",  false, "Display", "Animated rainbow gradient on the in-game menu title");
         addModule("NameTag",    false, "Display", "Show your username pinned at the top of the HUD");
         // EnemyArmor removed — see-through-walls combat-info hack.
-        addModule("GameTick",   false, "World",   "Current world tick counter (mod 24000)");
         addModule("InvBar",     false, "Inventory","Visual progress bar of free hotbar+inventory slots");
         addModule("BlockUnder", false, "World",   "Block currently under the player's feet");
         addModule("WorldName",  false, "Server",  "Singleplayer world name or multiplayer server label");
-        addModule("Coords4TP",  false, "Display", "XYZ formatted as /tp argument for easy copy");
         addModule("PlayerCount",false, "Server",  "Players currently online (from tab list)");
         addModule("ToolBreak",  false, "Combat",  "Sound + flash when held tool dips below 5% durability");
         addModule("Diagnostic", false, "Display", "Lists every enabled module + any that have logged errors (debug)");
@@ -208,7 +195,6 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("DeathLog",   false, "Display", "Auto-save death coords + dimension to config/shadowclient-deaths.txt");
         addModule("CoordsHistory", false, "Display", "Track places visited (>100b apart) → config/shadowclient-coords-history.txt");
         addModule("HotbarTotal",false, "Inventory", "Sum of held-item count across entire inventory (handy for blocks/arrows)");
-        addModule("PingHistory",false, "Server",  "Visual ping bar showing recent ping samples (last 30s)");
         addModule("HotbarLock", false, "Inventory", "Lock current hotbar slot — scroll wheel and 1-9 keys revert until toggled off");
         addModule("CoordsBeacon",false,"Display", "Direction + distance to world spawn (0,0)");
         addModule("XpDrop",     false, "Display", "Animated +N counter when you absorb XP orbs");
@@ -243,14 +229,12 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("LookYaw",    false, "World",   "Yaw / pitch in degrees (3-decimal precision)");
         addModule("ClickTotal", false, "Combat",  "Total clicks (left/right) this session");
         addModule("VoidWarn",   false, "World",   "Audible alert when below Y=5 (void protection)");
-        addModule("DirectionWord",false,"World",  "Compass direction as full word (north / northeast)");
         addModule("PortalCoords",false,"World",   "Paired Nether/Overworld coords (auto-converts ratio)");
         addModule("HeartIcons", false, "Inventory","Visual heart row (red + yellow absorption)");
         addModule("HotbarItems",false, "Inventory","All 9 hotbar slots in one compact row");
         addModule("YBestHigh",  false, "Display", "Highest Y reached this session (peak counterpart)");
         addModule("ServerJoinTime",false,"Server","Time since current server/world join");
         addModule("WeatherAlert",false,"World",   "Visual flash when weather state changes");
-        addModule("WaypointDist",false,"Utility", "Distance to your set Waypoint (Home key)");
         addModule("InvFull",    false, "Inventory","Inventory % occupied (slots used)");
         addModule("BedExplodes",false, "Combat",  "Warn when holding bed in Nether/End (will explode)");
         addModule("AnchorExplodes",false,"Combat","Warn when holding respawn anchor in non-Nether dim");
@@ -261,7 +245,6 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("GuiScale",   false, "Display", "GUI scale setting");
         addModule("FpsCap",     false, "Display", "Maximum FPS cap setting");
         addModule("EntityDist", false, "Display", "Entity render distance scale");
-        addModule("RotationLog",false, "Display", "Yaw/pitch delta per tick (debug)");
         addModule("MaxLevel",   false, "Display", "Highest XP level reached this session");
         addModule("MinHp",      false, "Combat",  "Lowest HP touched this session (close-call tracker)");
         addModule("DimWatcher", false, "World",   "Banner notification when dimension changes");
@@ -5055,7 +5038,7 @@ public final class ShadowHud implements ClientModInitializer {
         }
 
         // Waypoint: tap HOME to set (or clear if already set in this world).
-        if (modOn("Waypoint", true) && edge(KEY_HOME_KEY)) {
+        if (modOn("Waypoint", false) && edge(KEY_HOME_KEY)) {
             try {
                 Object p = playerField != null ? playerField.get(mc) : null;
                 if (p != null) {
@@ -6681,23 +6664,40 @@ public final class ShadowHud implements ClientModInitializer {
                     Field f = cachedField(mc.getClass(), "field_1765");
                     if (f != null) try { hit = f.get(mc); } catch (Throwable ignored) {}
                 }
+                // Only measure reach to an ENTITY target. The old code measured
+                // distance to WHATEVER the crosshair hit — blocks, and even empty
+                // air (the hit result is never null; a miss is a MISS result at
+                // max range) — so the number jumped around constantly (the
+                // glitch). Gate on the HitResult.Type enum being ENTITY.
+                Object hitType = hit == null ? null : tryInvoke(hit, "method_17783", "getType");
+                boolean entityTarget = hitType != null && hitType.toString().contains("ENTITY");
                 String reach = "—";
-                boolean hasTarget = (hit != null);
-                if (hit != null) {
+                if (entityTarget) {
+                    double px = firstNum(player, "method_23317", "getX").doubleValue();
+                    double py = firstNum(player, "method_23320", "getEyeY").doubleValue();
+                    double pz = firstNum(player, "method_23321", "getZ").doubleValue();
+                    // Prefer the exact hit point on the entity's hitbox (true
+                    // reach distance); fall back to the entity's position.
                     Object hp = tryInvoke(hit, "method_17784", "getPos", "getLocation");
+                    double d = -1;
                     if (hp != null) {
-                        double hx = firstNum(hp, "field_1352", "x").doubleValue();
-                        double hy = firstNum(hp, "field_1351", "y").doubleValue();
-                        double hz = firstNum(hp, "field_1350", "z").doubleValue();
-                        double px = firstNum(player, "method_23317", "getX").doubleValue();
-                        double py = firstNum(player, "method_23320", "getEyeY").doubleValue();
-                        double pz = firstNum(player, "method_23321", "getZ").doubleValue();
-                        double d  = Math.sqrt((hx-px)*(hx-px)+(hy-py)*(hy-py)+(hz-pz)*(hz-pz));
-                        reach = String.format("%.2f", d) + (cfgReachShowUnit ? " blocks" : "");
+                        double hx = firstNum(hp, "field_1352", "method_10216", "x").doubleValue();
+                        double hy = firstNum(hp, "field_1351", "method_10214", "y").doubleValue();
+                        double hz = firstNum(hp, "field_1350", "method_10215", "z").doubleValue();
+                        d = Math.sqrt((hx-px)*(hx-px)+(hy-py)*(hy-py)+(hz-pz)*(hz-pz));
+                    } else {
+                        Object tgt = tryInvoke(hit, "method_17782", "getEntity");
+                        if (tgt != null) {
+                            double tx = firstNum(tgt, "method_23317", "getX").doubleValue();
+                            double ty = firstNum(tgt, "method_23318", "getY").doubleValue();
+                            double tz = firstNum(tgt, "method_23321", "getZ").doubleValue();
+                            d = Math.sqrt((tx-px)*(tx-px)+(ty-py)*(ty-py)+(tz-pz)*(tz-pz));
+                        }
                     }
+                    if (d >= 0) reach = String.format("%.2f", d) + (cfgReachShowUnit ? " blocks" : "");
                 }
-                // Skip render if "Only when targeting" is on and we have no entity target.
-                if (!cfgReachOnlyOnTarget || hasTarget) {
+                // "Only when targeting" now means only-on-entity; else show "—".
+                if (!cfgReachOnlyOnTarget || entityTarget) {
                     y = drawLine(dc, font, "§4Reach §f" + reach, y);
                 }
             } catch (Throwable t) { logOnce("Reach", t); }
@@ -6940,13 +6940,13 @@ public final class ShadowHud implements ClientModInitializer {
                 y = drawLine(dc, font, text, y);
             } catch (Throwable t) { logOnce("XYZ", t); }
         }
-        if (player != null && modOn("Facing", true)) {
+        if (player != null && modOn("Facing", false)) {
             try {
                 float yaw = firstNum(player, "method_36454", "getYRot", "getYaw").floatValue();
                 y = drawLine(dc, font, "§4Facing §f" + facing(yaw), y);
             } catch (Throwable t) { logOnce("Facing", t); }
         }
-        if (player != null && modOn("Compass", true)) {
+        if (player != null && modOn("Compass", false)) {
             try {
                 float yaw = firstNum(player, "method_36454", "getYRot", "getYaw").floatValue();
                 float norm = ((yaw % 360f) + 360f) % 360f;
@@ -7582,7 +7582,7 @@ public final class ShadowHud implements ClientModInitializer {
                 y = drawLine(dc, font, "§4Session §f" + t, y);
             } catch (Throwable t) { logOnce("SessionTime", t); }
         }
-        if (modOn("TabCount", true)) {
+        if (modOn("TabCount", false)) {
             try {
                 Object net = tryInvoke(mc, "method_1562", "getNetworkHandler", "getConnection");
                 if (net != null) {
@@ -8129,7 +8129,7 @@ public final class ShadowHud implements ClientModInitializer {
                 y = drawLine(dc, font, "§4Streamer §c● protected", y);
             } catch (Throwable t) { logOnce("Streamer", t); }
         }
-        if (player != null && modOn("Waypoint", true)) {
+        if (player != null && modOn("Waypoint", false)) {
             try {
                 String wid = currentMapKey();
                 if (wpSet && wid.equals(wpWorld)) {

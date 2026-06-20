@@ -146,14 +146,10 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("TabHp",      true,  "Utility", "Show your HP on tab list");
         addModule("TabPings",   true,  "Utility", "Numeric ping by every player on tab");
         addModule("SmoothSwing",false, "Utility", "Slower 1.8-style arm swing");
-        addModule("Trail",      false, "Utility", "Particle cosmetic (Enter cycles)");
-        addModule("Halo",       false, "Utility", "Spinning particle halo above head");
         addModule("Wings",      false, "Utility", "Dragon-style flapping wings");
         addModule("AngelWings", false, "Utility", "Curved feathered angel wings");
         addModule("Cape",       false, "Utility", "Textured cape behind shoulders (no particles)");
-        addModule("Fairies",    false, "Utility", "Orbiting companion particles");
-        addModule("Footsteps",  false, "Utility", "Lingering trail on the ground");
-        addModule("BowTrail",   false, "Utility", "Particle trail on your arrows");
+        addModule("BowTrail",   false, "Utility", "Sparse crit-particle trail on your arrows");
         // ----- New modules (Badlion / Lunar feature gaps) -------------------
         addModule("Saturation", false, "Inventory","Food saturation value");
         addModule("ArmorList",  false, "Inventory","Each armor piece + durability");
@@ -868,6 +864,7 @@ public final class ShadowHud implements ClientModInitializer {
      *  subclass owned by you). Interpolates between frames so the trail is
      *  continuous even at 60+ m/s flight speed. */
     private static int      bowTrailIdx;
+    private static long     bowTrailLastMs;   // throttle for the sparse crit trail
 
     // ---- SmoothSwing reflection cache ---------------------------------
     private static Field  handSwingField;     // LivingEntity.handSwingTicks
@@ -2478,19 +2475,10 @@ public final class ShadowHud implements ClientModInitializer {
             // VertexConsumer.normal — so the mesh path silently no-ops on
             // current MC. The particle path below is the visible fallback
             // that actually shows something when the user toggles Wings on.
-            if (modOn("Trail",      false))
-                try { spawnTrailParticles(world, player);     } catch (Throwable t) { logOnce("Trail",     t); }
-            if (modOn("Halo",       false))
-                try { spawnHaloParticles(world, player);      } catch (Throwable t) { logOnce("Halo",      t); }
-            // Wings / AngelWings / Cape: 3D mesh ONLY. The previous
-            // particle-fallback paths have been removed at user request —
-            // if the 3D mesh path can't render, the cosmetic just doesn't
-            // show. Use WingsSolid / AngelWingsSolid for filled-mesh
-            // variants when the wireframe lines aren't visible enough.
-            if (modOn("Fairies",    false))
-                try { spawnFairyParticles(world, player);     } catch (Throwable t) { logOnce("Fairies",   t); }
-            if (modOn("Footsteps",  false))
-                try { spawnFootstepParticles(world, player);  } catch (Throwable t) { logOnce("Footsteps", t); }
+            // Particle cosmetics Trail / Halo / Fairies / Footsteps were
+            // removed at user request — they cluttered the view. Wings /
+            // AngelWings / Cape render as 3D mesh (no particles). The only
+            // particle effect kept is the sparse crit arrow trail below.
             if (modOn("BowTrail",   false))
                 try { spawnBowTrailParticles(world, player);  } catch (Throwable t) { logOnce("BowTrail",  t); }
         } catch (Throwable ignored) {}
@@ -2500,9 +2488,13 @@ public final class ShadowHud implements ClientModInitializer {
      *  spawn a row of particles along its current motion vector so the path
      *  reads as a continuous streak rather than dotted gaps. */
     private static void spawnBowTrailParticles(Object world, Object player) {
+        // Throttle so the trail reads as a light sparkle, not a dense beam.
+        long now = System.currentTimeMillis();
+        if (now - bowTrailLastMs < 70L) return;
+        bowTrailLastMs = now;
         resolveParticleApi(world);
         if (addParticleMethod == null) return;
-        Object particle = resolveParticleAt(bowTrailIdx);
+        Object particle = particleByField("field_11205");   // CRIT particle
         if (particle == null) return;
         try {
             Object entIter = tryInvoke(world, "method_18112", "getEntities", "entitiesForRendering");
@@ -2540,13 +2532,10 @@ public final class ShadowHud implements ClientModInitializer {
                         vz = firstNum(vel, "field_1350", "z").doubleValue();
                     } catch (Throwable ignored) {}
                 }
-                int steps = 5;
-                for (int i = 0; i < steps; i++) {
-                    double t = i / (double) steps;       // 0..0.8 of one tick back
-                    addParticleMethod.invoke(world, particle, true, true,
-                        ex - vx * t, ey - vy * t, ez - vz * t,
-                        0d, 0d, 0d);
-                }
+                // A single crit particle just behind the arrow — sparse trail.
+                addParticleMethod.invoke(world, particle, true, true,
+                    ex - vx * 0.5, ey - vy * 0.5, ez - vz * 0.5,
+                    0d, 0d, 0d);
             }
         } catch (Throwable ignored) {}
     }

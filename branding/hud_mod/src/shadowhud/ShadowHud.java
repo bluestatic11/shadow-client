@@ -224,6 +224,9 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("AntiAFK",    false, "Utility", "Tiny periodic input to prevent server AFK timeouts");
         addModule("CombatTime", false, "Combat",  "Time since last damage taken (combat tag indicator)");
         addModule("CombatMusic",false, "Combat",  "Plays hype music while you're fighting another player");
+        addModule("CritReady",  false, "Combat",  "Lights up when your next melee hit will land a critical");
+        addModule("GappleCount",false, "Combat",  "Count of golden + enchanted golden apples in inventory");
+        addModule("Waystones",  false, "Utility", "Named waypoints — Insert adds here, Delete removes nearest; shows name+dist+arrow");
         addModule("TotemCount", false, "Combat",  "Show total totems of undying in inventory");
         addModule("PearlCount", false, "Combat",  "Show total ender pearls in inventory");
         addModule("ArrowCount", false, "Combat",  "Show total arrows (any type) in inventory");
@@ -882,6 +885,57 @@ public final class ShadowHud implements ClientModInitializer {
     private static String  wpWorld;
     private static boolean wpSet;
     private static final int KEY_HOME_KEY = 268;   // HOME — toggle waypoint
+
+    // --- Waystones: multiple named, persisted waypoints (SMP navigation) ---
+    private static final int KEY_WAYSTONE_ADD = 260;  // INSERT — add current pos
+    private static final int KEY_WAYSTONE_DEL = 261;  // DELETE — remove nearest
+    private static final java.nio.file.Path WAYSTONES_FILE =
+        java.nio.file.Paths.get("config", "shadowclient-waystones.txt");
+    /** Each entry: {String name, double x, double y, double z, String dim}. */
+    private static final java.util.List<Object[]> WAYSTONES = new java.util.ArrayList<>();
+    private static boolean waystonesLoaded;
+
+    private static void loadWaystones() {
+        waystonesLoaded = true;
+        try {
+            if (!java.nio.file.Files.exists(WAYSTONES_FILE)) return;
+            WAYSTONES.clear();
+            for (String line : java.nio.file.Files.readAllLines(WAYSTONES_FILE)) {
+                String t = line.trim();
+                if (t.isEmpty() || t.startsWith("#")) continue;
+                String[] f = t.split("\\|");
+                if (f.length < 5) continue;
+                try {
+                    WAYSTONES.add(new Object[]{ f[0], Double.parseDouble(f[1]),
+                        Double.parseDouble(f[2]), Double.parseDouble(f[3]), f[4] });
+                } catch (NumberFormatException ignored) {}
+            }
+        } catch (Throwable t) { logOnce("Waystones.load", t); }
+    }
+
+    private static void saveWaystones() {
+        try {
+            StringBuilder sb = new StringBuilder("# Shadow Client waystones — name|x|y|z|dimension\n");
+            for (Object[] w : WAYSTONES) {
+                sb.append(w[0]).append('|').append((double) w[1]).append('|')
+                  .append((double) w[2]).append('|').append((double) w[3]).append('|')
+                  .append(w[4]).append('\n');
+            }
+            java.nio.file.Files.createDirectories(WAYSTONES_FILE.getParent());
+            java.nio.file.Files.write(WAYSTONES_FILE, sb.toString().getBytes());
+        } catch (Throwable t) { logOnce("Waystones.save", t); }
+    }
+
+    /** 8-way arrow pointing from the player (facing {@code yaw}) toward a target. */
+    private static String waystoneArrow(double px, double pz, double wx, double wz, float yaw) {
+        double angTo = Math.toDegrees(Math.atan2(wz - pz, wx - px));   // 0 = +X (east)
+        double yawR = Math.toRadians(yaw);
+        double facing = Math.toDegrees(Math.atan2(Math.cos(yawR), -Math.sin(yawR)));
+        double rel = ((angTo - facing) % 360 + 540) % 360 - 180;       // [-180,180], 0 = ahead
+        String[] arrows = { "↑", "↗", "→", "↘", "↓", "↙", "←", "↖" };
+        int idx = (((int) Math.round(rel / 45.0)) % 8 + 8) % 8;
+        return arrows[idx];
+    }
 
     // ---- Block/drop counters ------------------------------------------
     private static int  sessionBlocksPlaced;
@@ -5031,6 +5085,50 @@ public final class ShadowHud implements ClientModInitializer {
                     }
                 }
             } catch (Throwable ignored) {}
+        }
+
+        // Waystones: INSERT adds the current position as a new waystone, DELETE
+        // removes the nearest one in this dimension. Keys only fire while the
+        // module is on. Auto-named WP1, WP2, … — rename by editing
+        // config/shadowclient-waystones.txt.
+        if (modOn("Waystones", false)) {
+            if (!waystonesLoaded) loadWaystones();
+            if (edge(KEY_WAYSTONE_ADD)) {
+                try {
+                    Object p = playerField != null ? playerField.get(mc) : null;
+                    if (p != null) {
+                        double x = firstNum(p, "method_23317", "getX").doubleValue();
+                        double yv = firstNum(p, "method_23318", "getY").doubleValue();
+                        double z = firstNum(p, "method_23321", "getZ").doubleValue();
+                        WAYSTONES.add(new Object[]{ "WP" + (WAYSTONES.size() + 1), x, yv, z, currentMapKey() });
+                        saveWaystones();
+                        System.out.println("[ShadowHud] Waystone added @ " + (int) x + "," + (int) yv + "," + (int) z);
+                    }
+                } catch (Throwable ignored) {}
+            }
+            if (edge(KEY_WAYSTONE_DEL)) {
+                try {
+                    Object p = playerField != null ? playerField.get(mc) : null;
+                    if (p != null && !WAYSTONES.isEmpty()) {
+                        double px = firstNum(p, "method_23317", "getX").doubleValue();
+                        double pz = firstNum(p, "method_23321", "getZ").doubleValue();
+                        String dim = currentMapKey();
+                        int best = -1; double bestD = Double.MAX_VALUE;
+                        for (int i = 0; i < WAYSTONES.size(); i++) {
+                            Object[] w = WAYSTONES.get(i);
+                            if (!dim.equals(w[4])) continue;
+                            double dx = (double) w[1] - px, dz = (double) w[3] - pz;
+                            double d = dx * dx + dz * dz;
+                            if (d < bestD) { bestD = d; best = i; }
+                        }
+                        if (best >= 0) {
+                            Object[] removed = WAYSTONES.remove(best);
+                            saveWaystones();
+                            System.out.println("[ShadowHud] Waystone removed: " + removed[0]);
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
         }
 
         // Block-placed counter: edge-trigger on RMB while holding a Block item.
@@ -9821,6 +9919,62 @@ public final class ShadowHud implements ClientModInitializer {
                 y = drawLine(dc, font, String.format("§4WP §f%.0fb §8(%.0f %.0f %.0f)",
                     dist, wpX, wpY, wpZ), y);
             } catch (Throwable t) { logOnce("WaypointDist", t); }
+        }
+        if (player != null && modOn("Waystones", false)) {
+            try {
+                if (!waystonesLoaded) loadWaystones();
+                double px = firstNum(player, "method_23317", "getX").doubleValue();
+                double py = firstNum(player, "method_23318", "getY").doubleValue();
+                double pz = firstNum(player, "method_23321", "getZ").doubleValue();
+                float yaw = firstNum(player, "method_36454", "getYRot", "getYaw").floatValue();
+                String dim = currentMapKey();
+                int shown = 0;
+                for (Object[] w : WAYSTONES) {
+                    if (!dim.equals(w[4])) continue;
+                    double dx = (double) w[1] - px, dy = (double) w[2] - py, dz = (double) w[3] - pz;
+                    double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    String arrow = waystoneArrow(px, pz, (double) w[1], (double) w[3], yaw);
+                    String col = dist < 32 ? "§a" : dist < 200 ? "§e" : "§7";
+                    y = drawLine(dc, font, String.format("§b★ §f%s  %s%.0fm §b%s", w[0], col, dist, arrow), y);
+                    if (++shown >= 8) break;
+                }
+                if (shown == 0) {
+                    y = drawLine(dc, font, "§b★ §7no waystones here §8(Insert to add)", y);
+                }
+            } catch (Throwable t) { logOnce("Waystones", t); }
+        }
+        if (player != null && modOn("CritReady", false)) {
+            try {
+                boolean onGround  = Boolean.TRUE.equals(tryInvoke(player, "method_24828", "isOnGround", "onGround"));
+                boolean inWater   = Boolean.TRUE.equals(tryInvoke(player, "method_5799", "isInWater", "isInLiquid"));
+                boolean sprinting = Boolean.TRUE.equals(tryInvoke(player, "method_5624", "isSprinting"));
+                float fall = 0f;
+                Class<?> c = player.getClass();
+                while (c != null) {
+                    try { Field hf = c.getDeclaredField("field_6017"); hf.setAccessible(true); fall = hf.getFloat(player); break; }
+                    catch (NoSuchFieldException ignored) { c = c.getSuperclass(); }
+                }
+                boolean crit = fall > 0f && !onGround && !inWater && !sprinting;
+                y = drawLine(dc, font, crit ? "§e⚔ Crit ready" : "§8⚔ no crit", y);
+            } catch (Throwable t) { logOnce("CritReady", t); }
+        }
+        if (player != null && modOn("GappleCount", false)) {
+            try {
+                int gapples = 0, notch = 0;
+                Object inv = tryInvoke(player, "method_31548", "getInventory");
+                Object listObj = inv != null ? tryInvoke(inv, "method_67533") : null;
+                if (listObj instanceof Iterable) {
+                    for (Object s : (Iterable<?>) listObj) {
+                        if (s == null || Boolean.TRUE.equals(tryInvoke(s, "method_7960", "isEmpty"))) continue;
+                        String id = getItemId(s);
+                        Object cntObj = tryInvoke(s, "method_7947", "getCount");
+                        int cnt = cntObj instanceof Number ? ((Number) cntObj).intValue() : 0;
+                        if (id.contains("enchanted_golden_apple")) notch += cnt;
+                        else if (id.contains("golden_apple"))       gapples += cnt;
+                    }
+                }
+                y = drawLine(dc, font, String.format("§4Gapples §f%d §7| §6Notch §f%d", gapples, notch), y);
+            } catch (Throwable t) { logOnce("GappleCount", t); }
         }
         if (player != null && modOn("HeartIcons", false)) {
             try {
@@ -16155,6 +16309,7 @@ public final class ShadowHud implements ClientModInitializer {
     // ---- config persistence (tiny JSON — no external dep) ------------------
 
     private static void loadConfig() {
+        loadWaystones();   // independent file — load even if main config is absent
         try {
             if (!Files.exists(CONFIG)) return;
             String s = new String(Files.readAllBytes(CONFIG));

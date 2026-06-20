@@ -7085,7 +7085,12 @@ public final class ShadowHud implements ClientModInitializer {
                 y = drawLine(dc, font, s.toString(), y);
             } catch (Throwable t) { logOnce("HP", t); }
         }
-        if (player != null && modOn("Damage", true)) {
+        // HP-drop detection feeds HitsTaken, CombatTime (time-since-last-damage)
+        // and the Killstreak reset, so it must run whenever ANY of those is on —
+        // not only when the Damage readout is shown. (Same gating bug as Combo:
+        // HitsTaken stayed frozen at 0 unless Damage was also enabled.)
+        if (player != null && (modOn("Damage", true) || modOn("HitsTaken", false)
+                || modOn("CombatTime", false) || modOn("Killstreak", false))) {
             try {
                 float hp = firstNum(player, "method_6032", "getHealth").floatValue();
                 if (lastSeenHp >= 0 && hp < lastSeenHp - 0.01f) {
@@ -7095,16 +7100,18 @@ public final class ShadowHud implements ClientModInitializer {
                     killstreak = 0;       // streak interrupted
                 }
                 lastSeenHp = hp;
-                String line;
-                if (lastDamageMs == 0) {
-                    line = "§4Last hit §7—";
-                } else {
-                    long ago = (System.currentTimeMillis() - lastDamageMs) / 100;  // tenths of seconds
-                    String col = ago < 30 ? "§c" : ago < 100 ? "§e" : "§7";
-                    line = String.format("§4Last hit §f%.1f§4❤  %s%.1fs ago",
-                                         lastDamageAmount, col, ago / 10.0);
+                if (modOn("Damage", true)) {
+                    String line;
+                    if (lastDamageMs == 0) {
+                        line = "§4Last hit §7—";
+                    } else {
+                        long ago = (System.currentTimeMillis() - lastDamageMs) / 100;  // tenths of seconds
+                        String col = ago < 30 ? "§c" : ago < 100 ? "§e" : "§7";
+                        line = String.format("§4Last hit §f%.1f§4❤  %s%.1fs ago",
+                                             lastDamageAmount, col, ago / 10.0);
+                    }
+                    y = drawLine(dc, font, line, y);
                 }
-                y = drawLine(dc, font, line, y);
             } catch (Throwable t) { logOnce("Damage", t); }
         }
         if (player != null && modOn("HitDir", true)) {

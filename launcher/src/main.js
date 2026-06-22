@@ -2597,7 +2597,7 @@ function activateDialogTab(tab) {
     p.classList.toggle('active', active);
     p.hidden = !active;
   });
-  if (tab.dataset.tab === 'mods') refreshMods();
+  if (tab.dataset.tab === 'mods') { refreshMods(); ensureModrinthBrowse(); }
   // Re-pull chat health on tab open so the card is current, not up to
   // 30s stale from the background tick.
   if (tab.dataset.tab === 'chat') runChatHealthCheck();
@@ -2953,50 +2953,104 @@ const modrinthForm    = $('modrinth-search-form');
 const modrinthQuery   = $('modrinth-query');
 const modrinthResults = $('modrinth-results');
 
+const modrinthSort     = $('modrinth-sort');
+const modrinthCategory = $('modrinth-category');
+const modrinthMoreRow  = $('modrinth-more-row');
+const modrinthMoreBtn  = $('modrinth-more');
+const modrinthCount    = $('modrinth-count');
+
+const MODRINTH_PAGE = 20;
+let modrinthState   = { offset: 0, total: 0, loading: false };
+let modrinthBrowsed = false;   // lazy-load the browse list once, when Mods opens
+let modrinthDebounce = null;
+
 if (modrinthForm) {
-  modrinthForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await runModrinthSearch();
-  });
+  modrinthForm.addEventListener('submit', (e) => { e.preventDefault(); loadModrinth(true); });
+}
+// Live browse/search: re-query (debounced) as you type. Empty box = browse all.
+modrinthQuery?.addEventListener('input', () => {
+  clearTimeout(modrinthDebounce);
+  modrinthDebounce = setTimeout(() => loadModrinth(true), 350);
+});
+modrinthSort?.addEventListener('change', () => loadModrinth(true));
+modrinthCategory?.addEventListener('change', () => loadModrinth(true));
+modrinthMoreBtn?.addEventListener('click', () => loadModrinth(false));
+
+/** Populate the browse list the first time the Mods tab is opened. */
+function ensureModrinthBrowse() {
+  if (modrinthBrowsed) return;
+  modrinthBrowsed = true;
+  loadModrinth(true);
 }
 
-async function runModrinthSearch() {
-  const q = (modrinthQuery?.value || '').trim();
-  if (!modrinthResults) return;
-  if (!q) {
-    modrinthResults.hidden = true;
-    modrinthResults.innerHTML = '';
-    return;
-  }
-  modrinthResults.hidden = false;
-  modrinthResults.innerHTML = '<li class="modrinth-empty">Searching Modrinth…</li>';
+// Keep the old name working in case anything else calls it.
+function runModrinthSearch() { return loadModrinth(true); }
 
+/**
+ * Browse / search Modrinth. reset=true starts fresh (clears the list +
+ * offset); reset=false appends the next page (Load more). An EMPTY query
+ * browses every Fabric mod for the active MC version, sorted by the chosen
+ * index (downloads by default) — the Lunar-style "browse all mods" mode.
+ */
+async function loadModrinth(reset) {
+  if (!modrinthResults || modrinthState.loading) return;
+  const q     = (modrinthQuery?.value || '').trim();
+  const sort  = modrinthSort?.value || 'downloads';
+  const cat   = modrinthCategory?.value || '';
   const mcVer = getPickedVersion();
-  // Facets restrict to fabric mods that target the current MC version.
-  const facets = JSON.stringify([
-    ['project_type:mod'],
-    [`versions:${mcVer}`],
-    ['categories:fabric'],
-  ]);
-  const url = `${MODRINTH_API}/search?query=${encodeURIComponent(q)}&limit=15&facets=${encodeURIComponent(facets)}`;
+
+  if (reset) {
+    modrinthState = { offset: 0, total: 0, loading: true };
+    modrinthResults.hidden = false;
+    modrinthResults.innerHTML = '<li class="modrinth-empty">Loading mods…</li>';
+    if (modrinthMoreRow) modrinthMoreRow.hidden = true;
+  } else {
+    modrinthState.loading = true;
+    if (modrinthMoreBtn) modrinthMoreBtn.textContent = 'Loading…';
+  }
+
+  // Restrict to Fabric mods for the active MC version; add the picked category.
+  const facetArr = [['project_type:mod'], [`versions:${mcVer}`], ['categories:fabric']];
+  if (cat) facetArr.push([`categories:${cat}`]);
+  const params = new URLSearchParams({
+    limit:  String(MODRINTH_PAGE),
+    offset: String(modrinthState.offset),
+    index:  sort,
+    facets: JSON.stringify(facetArr),
+  });
+  if (q) params.set('query', q);
+  const url = `${MODRINTH_API}/search?${params.toString()}`;
+
   try {
     const resp = await fetch(url, { headers: { 'User-Agent': 'shadow-client (github.com/bluestatic11/shadow-client)' } });
     if (!resp.ok) {
-      modrinthResults.innerHTML = `<li class="modrinth-empty">Modrinth returned ${resp.status}</li>`;
+      if (reset) modrinthResults.innerHTML = `<li class="modrinth-empty">Modrinth returned ${resp.status}</li>`;
       return;
     }
     const data = await resp.json();
     const hits = data.hits || [];
-    if (!hits.length) {
-      modrinthResults.innerHTML = `<li class="modrinth-empty">No fabric mods for MC ${mcVer} match "${q}".</li>`;
-      return;
+    modrinthState.total = data.total_hits || 0;
+
+    if (reset) modrinthResults.innerHTML = '';
+    if (reset && !hits.length) {
+      modrinthResults.innerHTML =
+        `<li class="modrinth-empty">No Fabric mods for MC ${mcVer}${q ? ` matching "${escapeHtml(q)}"` : ''}.</li>`;
+    } else {
+      for (const hit of hits) modrinthResults.appendChild(buildModrinthResult(hit, mcVer));
     }
-    modrinthResults.innerHTML = '';
-    for (const hit of hits) {
-      modrinthResults.appendChild(buildModrinthResult(hit, mcVer));
-    }
+    modrinthState.offset += hits.length;
+
+    // Load-more visibility + "N of M" counter.
+    const more = modrinthState.offset < modrinthState.total;
+    if (modrinthMoreRow) modrinthMoreRow.hidden = modrinthState.offset === 0;
+    if (modrinthMoreBtn) { modrinthMoreBtn.hidden = !more; modrinthMoreBtn.textContent = 'Load more'; }
+    if (modrinthCount)   modrinthCount.textContent =
+      modrinthState.total ? `${modrinthState.offset} of ${formatCount(modrinthState.total)}` : '';
   } catch (err) {
-    modrinthResults.innerHTML = `<li class="modrinth-empty">Search failed: ${err.message || err}</li>`;
+    if (reset) modrinthResults.innerHTML =
+      `<li class="modrinth-empty">Browse failed: ${escapeHtml(err.message || String(err))}</li>`;
+  } finally {
+    modrinthState.loading = false;
   }
 }
 

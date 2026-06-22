@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.106</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.107</span>
     </h1>
 
     <div class="topbar-actions">
@@ -490,11 +490,45 @@
              auto-filters to fabric mods matching the active MC version. -->
         <form class="modrinth-search" id="modrinth-search-form">
           <input type="search" id="modrinth-query"
-                 placeholder="Search Modrinth for mods (e.g. sodium, jei, journeymap)…"
+                 placeholder="Browse or search Modrinth mods (e.g. sodium, jei, journeymap)…"
                  autocomplete="off" spellcheck="false">
           <button type="submit" class="btn-sm primary" id="modrinth-search-btn">Search</button>
         </form>
+        <!-- v0.3.107: full browse — sort + category let you discover all
+             Fabric mods on the platform without typing (Lunar-style). An
+             empty query browses by the chosen sort; Load more pages through. -->
+        <div class="modrinth-controls">
+          <label class="modrinth-ctl">Sort
+            <select id="modrinth-sort">
+              <option value="downloads">Most downloads</option>
+              <option value="follows">Most followed</option>
+              <option value="relevance">Relevance</option>
+              <option value="newest">Newest</option>
+              <option value="updated">Recently updated</option>
+            </select>
+          </label>
+          <label class="modrinth-ctl">Category
+            <select id="modrinth-category">
+              <option value="">All</option>
+              <option value="optimization">Optimization</option>
+              <option value="utility">Utility</option>
+              <option value="adventure">Adventure</option>
+              <option value="decoration">Decoration</option>
+              <option value="game-mechanics">Game mechanics</option>
+              <option value="social">Social</option>
+              <option value="storage">Storage</option>
+              <option value="technology">Technology</option>
+              <option value="magic">Magic</option>
+              <option value="worldgen">World gen</option>
+              <option value="library">Library</option>
+            </select>
+          </label>
+        </div>
         <ul class="modrinth-results" id="modrinth-results" aria-live="polite" hidden></ul>
+        <div class="modrinth-more-row" id="modrinth-more-row" hidden>
+          <button class="btn-sm" id="modrinth-more" type="button">Load more</button>
+          <span class="modrinth-count" id="modrinth-count" aria-live="polite"></span>
+        </div>
 
         <div class="page-actions">
           <button class="btn-sm" id="refresh-mods" type="button">Refresh</button>

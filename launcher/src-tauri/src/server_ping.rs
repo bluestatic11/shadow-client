@@ -59,6 +59,10 @@ pub struct ServerStatus {
     /// rotate the sample, so calling this repeatedly gets different
     /// names — that's expected.
     pub sample_names: Vec<String>,
+    /// Milliseconds the TCP connect took — a clean 1×RTT over the same
+    /// path the game uses (game servers block ICMP, so this is the
+    /// honest ping). None when the server was unreachable.
+    pub latency_ms: Option<u32>,
 }
 
 /// Ping a server's status endpoint. Returns Ok(...) with `online=false`
@@ -66,6 +70,9 @@ pub struct ServerStatus {
 /// Err. Callers should treat "we couldn't ping" the same as "no friends
 /// detected here" rather than spamming the user with errors.
 pub async fn ping(host: &str, port: u16) -> Result<ServerStatus> {
+    // Time the TCP connect — one clean round-trip, before any protocol
+    // exchange (which would add server processing time to the number).
+    let t0 = std::time::Instant::now();
     let conn = timeout(CONNECT_TIMEOUT, TcpStream::connect((host, port))).await;
     let mut stream = match conn {
         Ok(Ok(s)) => s,
@@ -77,9 +84,11 @@ pub async fn ping(host: &str, port: u16) -> Result<ServerStatus> {
                 online_players: None,
                 max_players: None,
                 sample_names: Vec::new(),
+                latency_ms: None,
             });
         }
     };
+    let latency_ms = Some(t0.elapsed().as_millis().min(u32::MAX as u128) as u32);
     stream.set_nodelay(true).ok();
 
     // --- handshake ---
@@ -160,6 +169,7 @@ pub async fn ping(host: &str, port: u16) -> Result<ServerStatus> {
         online_players,
         max_players,
         sample_names,
+        latency_ms,
     })
 }
 

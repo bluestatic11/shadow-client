@@ -4658,7 +4658,111 @@ setTimeout(() => {
 
   // Pull recent release notes for the home-screen "Latest updates" list.
   fetchLatestUpdates();
+
+  // Live network monitor — starts once, then self-refreshes every 20s.
+  runNetworkMonitor();
+  setInterval(runNetworkMonitor, 20000);
 }, 200);
+
+// ───── Network monitor ─────────────────────────────────────────
+// Pings the servers that matter (Hoplite always, plus whatever the user
+// has saved) using the game's own TCP path — game hosts block ICMP, so a
+// TCP connect is the honest ping. Color-codes each row and, for known
+// servers with an expected baseline, calls out a degraded route.
+const netMonitorEl = $('net-monitor');
+const netEmptyEl   = $('net-empty');
+const netVerdictEl = $('net-verdict');
+
+// Servers we always show + their expected good ping (ms) so we can flag
+// "you're at 200 but this route is normally ~80". Baseline is the rough
+// physical floor for a well-routed connection to that datacenter.
+const NET_PINNED = [
+  { host: 'hoplite.gg', port: 25565, label: 'Hoplite', baseline: 85 },
+];
+
+let netMonitorBusy = false;
+
+function netTier(ms) {
+  if (ms == null) return { cls: 'off',  txt: 'offline' };
+  if (ms < 60)    return { cls: 'good', txt: ms + 'ms' };
+  if (ms < 110)   return { cls: 'ok',   txt: ms + 'ms' };
+  if (ms < 180)   return { cls: 'warn', txt: ms + 'ms' };
+  return { cls: 'bad', txt: ms + 'ms' };
+}
+
+async function runNetworkMonitor() {
+  if (!netMonitorEl || netMonitorBusy) return;
+  netMonitorBusy = true;
+  try {
+    // Build the target list: pinned servers + the user's saved servers
+    // (deduped by host:port), capped so a huge server list can't stall boot.
+    const targets = [...NET_PINNED];
+    try {
+      const saved = await invoke('list_local_mc_servers');
+      const seen = new Set(targets.map(t => `${t.host}:${t.port}`.toLowerCase()));
+      for (const s of (saved || [])) {
+        const port = s.port || 25565;
+        const key = `${s.host}:${port}`.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        targets.push({ host: s.host, port, label: s.name || s.host, baseline: null });
+        if (targets.length >= 6) break;
+      }
+    } catch (_) { /* no saved servers — pinned only */ }
+
+    // Ping them all in parallel.
+    const results = await Promise.all(targets.map(async (t) => {
+      try {
+        const st = await invoke('ping_minecraft_server', { host: t.host, port: t.port });
+        return { ...t, ms: (st && st.online) ? (st.latency_ms ?? null) : null,
+                 players: st && st.online_players, max: st && st.max_players };
+      } catch (_) {
+        return { ...t, ms: null, players: null, max: null };
+      }
+    }));
+
+    // Render rows.
+    netMonitorEl.innerHTML = '';
+    for (const r of results) {
+      const tier = netTier(r.ms);
+      const li = document.createElement('li');
+      li.className = 'net-row';
+      const players = (r.players != null && r.max != null)
+        ? `<span class="net-players">${r.players}/${r.max}</span>` : '';
+      li.innerHTML =
+        `<span class="net-name">${escapeHtml(r.label)}</span>` +
+        players +
+        `<span class="net-ping ${tier.cls}">${tier.txt}</span>`;
+      netMonitorEl.appendChild(li);
+    }
+    if (netEmptyEl) netEmptyEl.remove();
+
+    // Route verdict for the primary pinned server (Hoplite).
+    const primary = results.find(r => r.baseline);
+    if (netVerdictEl && primary) {
+      if (primary.ms == null) {
+        netVerdictEl.hidden = true;
+      } else if (primary.ms > primary.baseline * 2.2) {
+        netVerdictEl.hidden = false;
+        netVerdictEl.className = 'net-verdict bad';
+        netVerdictEl.textContent =
+          `⚠ ${primary.label} is ${primary.ms}ms but normally ~${primary.baseline}ms — ` +
+          `your route is degraded right now (not your PC). Restart your router; it usually clears.`;
+      } else if (primary.ms > primary.baseline * 1.5) {
+        netVerdictEl.hidden = false;
+        netVerdictEl.className = 'net-verdict warn';
+        netVerdictEl.textContent =
+          `${primary.label} is a bit high (${primary.ms}ms vs ~${primary.baseline}ms). Watch for spikes.`;
+      } else {
+        netVerdictEl.hidden = false;
+        netVerdictEl.className = 'net-verdict good';
+        netVerdictEl.textContent = `${primary.label} route looks healthy (${primary.ms}ms).`;
+      }
+    }
+  } finally {
+    netMonitorBusy = false;
+  }
+}
 
 function showPythonBanner(probeResult) {
   const banner = document.createElement('div');

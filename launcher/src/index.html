@@ -34,7 +34,7 @@
     <h1 class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name"><span class="accent">SHADOW</span> CLIENT</span>
-      <span class="brand-sub" id="version-label" aria-label="version">v0.3.107</span>
+      <span class="brand-sub" id="version-label" aria-label="version">v0.3.108</span>
     </h1>
 
     <div class="topbar-actions">
@@ -344,6 +344,18 @@
           <button id="packs-dialog-done" class="primary-btn" type="button">Done</button>
         </div>
       </dialog>
+
+      <!-- v0.3.108: Network monitor — live ping to Hoplite + the user's
+           saved servers, measured as a TCP connect over the SAME path the
+           game uses (game hosts block ICMP ping, so this is the honest
+           number). Color-coded per row; the verdict line below calls out
+           a degraded route ("normally ~80ms, currently 200ms") so bad-ISP-
+           route days are diagnosable at a glance instead of mid-fight. -->
+      <h3 class="section-title">Network</h3>
+      <ul class="net-monitor" id="net-monitor" aria-label="Live server ping">
+        <li class="net-empty" id="net-empty">Measuring…</li>
+      </ul>
+      <p class="net-verdict" id="net-verdict" role="status" hidden></p>
 
       <!-- Latest updates — pulled from GitHub Releases on boot. Each card
            shows version + relative date + first line of release notes.

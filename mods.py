@@ -35,9 +35,12 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("ebe",                "Enhanced Block Entities — baked chests",    False),
     ("particle-core",      "GPU-batched particle rendering",            False),
     ("scalablelux",        "modern lighting engine (Phosphor successor)",False),
+    ("exordium",           "render HUD/GUI at a lower framerate",       False),
 
     # --- CPU / memory / network ------------------------------------------
     ("krypton",            "network stack optimizations",               False),
+    ("c2me-fabric",        "parallel chunk loading/gen across cores",   False),
+    ("threadtweak",        "thread scheduling — smoother frametimes",   False),
     ("moreculling",        "extra block culling wins",                  False),
     ("memoryleakfix",      "patches known memory leaks",                False),
     ("modernfix",          "many bug + memory fixes",                   False),

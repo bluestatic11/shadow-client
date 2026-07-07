@@ -97,3 +97,8 @@ chat-relay/DEPLOY-RELAY.bat
 
 # ===== Agent scratch =====
 .claude/edge-tmp/
+
+# ===== Session handoff artifacts (local only — travel via folder copy) =====
+# The raw chat transcript contains MC access tokens from tool output — NEVER commit it.
+chat-transcript-*.jsonl
+assistant-memory-snapshot/

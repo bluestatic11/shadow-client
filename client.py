@@ -777,9 +777,15 @@ def cmd_launch(args: argparse.Namespace) -> int:
     if args.java:
         java = Path(args.java)
     else:
-        java = find_java()
-        if java_major_version(java) < required:
-            print(f"[launch] installed Java is too old (need {required}); fetching bundled JDK…")
+        # find_java() raises SystemExit when the machine has no Java AT ALL
+        # (fresh PC) — that's just as fixable as "too old": fetch the bundled
+        # JDK instead of dying. Only --java (explicit user choice) skips this.
+        try:
+            java = find_java()
+        except SystemExit:
+            java = None
+        if java is None or java_major_version(java) < required:
+            print(f"[launch] no suitable Java on disk (need {required}); fetching bundled JDK…")
             java = jdk_mod.download_jdk(required, HERE / f"jdk-{required}")
 
     jmaj = java_major_version(java)

@@ -139,6 +139,19 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
 ]
 
 
+# Mods that are version-locked to a sibling and must NOT auto-update to the
+# newest build. Iris and Sodium ship as a matched pair — each Iris release
+# supports exactly ONE Sodium API version, so picking "newest of each"
+# independently crashes Fabric at load with an incompatibility error. Pin
+# Sodium to the version the current Iris requires. **When Iris ships a build
+# that supports a newer Sodium, bump or delete this entry** — check the Iris
+# version's Sodium dependency on Modrinth. Value is a substring matched
+# against the Modrinth version_number.
+VERSION_PINS: dict[str, str] = {
+    "sodium": "0.8.12",   # Iris 1.10.7 rejects Sodium 0.8.13
+}
+
+
 def _pick_version(slug: str, mc_version: str, loader: str = "fabric") -> dict[str, Any] | None:
     """Return the newest Modrinth version compatible with (mc_version, loader).
 
@@ -148,6 +161,7 @@ def _pick_version(slug: str, mc_version: str, loader: str = "fabric") -> dict[st
     had changed — see ModernFix/Noisium earlier. Better to miss a mod than
     install a poisoned one.
     """
+    pin = VERSION_PINS.get(slug)
     try:
         versions = json.loads(_http_get(f"{MODRINTH}/project/{slug}/version"))
     except Exception as e:
@@ -159,6 +173,12 @@ def _pick_version(slug: str, mc_version: str, loader: str = "fabric") -> dict[st
         if mc_version not in v.get("game_versions", []):
             continue
         if v.get("version_type") == "alpha":
+            continue
+        # Version-locked mods (see VERSION_PINS): skip any build whose version
+        # string doesn't contain the pinned token. Release sorts ahead of its
+        # own betas in Modrinth's newest-first order, so the first match is the
+        # pinned release, not a beta of it.
+        if pin and pin not in v.get("version_number", ""):
             continue
         return v
     return None

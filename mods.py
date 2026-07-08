@@ -96,7 +96,6 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("extrapvp",           "hitbox highlights, elytra + gapple indicators", False),
     ("crosshair-addons-public", "Lunar-style crosshair customization",  False),
     ("crosshair-attack-indicator", "crosshair tints red when target in reach", False),
-    ("mace-hitboxes",      "auto-show hitboxes while holding a mace",   False),
     ("consumableoptimizer","no desync on gapples/pots (Walksy optimizer)", False),
     ("anchor-optimizer",   "anchor PvP — no wait on server anchor cleanup", False),
     ("no-death-animation", "instant death poof — see totem pops clearly", False),

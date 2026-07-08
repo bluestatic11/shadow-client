@@ -84,6 +84,29 @@ fn user_data_root() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
+/// Canonical per-user Microsoft account file, shared between the desktop app
+/// and the Python CLI (`client.py` resolves the identical path). Before this,
+/// each install kept its own copy under its game_dir — the installed app used
+/// %APPDATA%/ShadowClient/game_dir/ while run.bat used <repo>/game_dir/ — so
+/// using both meant signing in twice. One canonical file = sign in once per
+/// machine; the ~90-day rolling refresh token keeps it alive from there.
+///
+/// Migration: if the canonical file doesn't exist yet but a legacy game_dir
+/// copy does, adopt (copy) it so existing sign-ins carry over silently.
+pub(crate) fn account_path() -> PathBuf {
+    let canonical = user_data_root().join("mc-client-account.json");
+    if !canonical.exists() {
+        let legacy = project_root().join("game_dir").join("mc-client-account.json");
+        if legacy.exists() {
+            if let Some(parent) = canonical.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::copy(&legacy, &canonical);
+        }
+    }
+    canonical
+}
+
 /// Tracks if a long-running task is in flight so the UI can disable PLAY etc.
 #[derive(Default)]
 pub struct AppState {
@@ -259,8 +282,7 @@ async fn microsoft_login(
     app: tauri::AppHandle,
     busy: State<'_, AppState>,
 ) -> Result<i32, String> {
-    let here = project_root();
-    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let account_file = account_path();
     with_busy(app, busy, |app| async move {
         let app2 = app.clone();
         let progress = move |line: String| emit_line(&app2, "stdout", line);
@@ -303,8 +325,7 @@ async fn logout_account(
     _busy: State<'_, AppState>,
     username: String,
 ) -> Result<i32, String> {
-    let here = project_root();
-    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let account_file = account_path();
     auth::Account::offline(&username)
         .save(&account_file)
         .map_err(|e| format!("{e:#}"))?;
@@ -320,8 +341,7 @@ pub struct AccountInfo {
 
 #[tauri::command]
 fn read_account() -> Result<Option<AccountInfo>, String> {
-    let here = project_root();
-    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let account_file = account_path();
     let Some(a) = auth::Account::load(&account_file) else { return Ok(None) };
     Ok(Some(AccountInfo {
         username: Some(a.username),
@@ -359,7 +379,7 @@ async fn load_fresh_msa_account(account_file: &Path) -> Result<auth::Account, St
 /// give live feedback before the user commits to the (cooldown-limited) change.
 #[tauri::command]
 async fn check_mc_name(name: String) -> Result<String, String> {
-    let account_file = project_root().join("game_dir").join("mc-client-account.json");
+    let account_file = account_path();
     let acct = load_fresh_msa_account(&account_file).await?;
     let status = auth::check_name_availability(&acct.access_token, name.trim())
         .await
@@ -377,7 +397,7 @@ async fn check_mc_name(name: String) -> Result<String, String> {
 /// cooldown — not a client-side display override.
 #[tauri::command]
 async fn change_mc_name(name: String) -> Result<String, String> {
-    let account_file = project_root().join("game_dir").join("mc-client-account.json");
+    let account_file = account_path();
     let acct = load_fresh_msa_account(&account_file).await?;
     let updated = auth::change_minecraft_name(&acct, name.trim())
         .await
@@ -719,8 +739,7 @@ fn list_recent_crash_reports(version: Option<String>, limit: Option<usize>) -> R
 
 #[tauri::command]
 fn chat_test_token() -> Result<String, String> {
-    let here = project_root();
-    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let account_file = account_path();
     let acct = auth::Account::load(&account_file)
         .ok_or_else(|| "No account file — sign in with Microsoft first.".to_string())?;
     if acct.user_type != "msa" {
@@ -738,8 +757,7 @@ fn chat_test_token() -> Result<String, String> {
 /// completion when MC exits (status=false).
 #[tauri::command]
 async fn presence_heartbeat(playing: bool, server: Option<String>) -> Result<(), String> {
-    let here = project_root();
-    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let account_file = account_path();
     let acct = auth::Account::load(&account_file)
         .ok_or_else(|| "no account file".to_string())?;
     if acct.user_type != "msa" || acct.access_token.len() < 10 {
@@ -1582,7 +1600,7 @@ fn diagnostics() -> Diagnostics {
 fn chat_diagnostics() -> String {
     let root = project_root();
     let game_dir = root.join("game_dir");
-    let account_file = game_dir.join("mc-client-account.json");
+    let account_file = account_path();
     let state_file = root.join("installed.json");
     let state = setup::load_state(&state_file);
     let last_profile = state.last_used.clone().unwrap_or_default();
@@ -1696,7 +1714,7 @@ pub struct ChatHealthCheck {
 #[tauri::command]
 async fn refresh_chat_auth(version: Option<String>, force: Option<bool>) -> Result<String, String> {
     let here = project_root();
-    let account_file = here.join("game_dir").join("mc-client-account.json");
+    let account_file = account_path();
     let mut acct = auth::Account::load(&account_file)
         .ok_or_else(|| "not signed in — sign in with Microsoft first".to_string())?;
     if acct.user_type != "msa" {
@@ -1741,7 +1759,7 @@ async fn refresh_chat_auth(version: Option<String>, force: Option<bool>) -> Resu
 fn chat_health_check() -> ChatHealthCheck {
     let root = project_root();
     let game_dir = root.join("game_dir");
-    let account_file = game_dir.join("mc-client-account.json");
+    let account_file = account_path();
     let state_file = root.join("installed.json");
     let state = setup::load_state(&state_file);
     let last_profile = state.last_used.clone().unwrap_or_default();

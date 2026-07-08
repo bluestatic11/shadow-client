@@ -53,7 +53,39 @@ PROFILES_DIR = SHARED_DIR / "profiles"
 # Back-compat alias — older code paths referenced GAME_DIR directly. New code
 # should call `resolve_dirs(profile)` to get a (profile_dir, shared_dir) tuple.
 GAME_DIR = SHARED_DIR
-ACCOUNT_FILE = SHARED_DIR / "mc-client-account.json"
+
+
+def _canonical_account_file() -> Path:
+    """One per-user account file shared with the Tauri desktop app.
+
+    Must mirror the launcher's `user_data_root()` exactly (lib.rs): the CLI
+    and the installed app used to each keep their own copy under their own
+    game_dir, so using both meant signing in with Microsoft twice. A single
+    canonical location + the ~90-day rolling refresh token = sign in once
+    per machine, ever (as long as you play at least once every 3 months).
+    """
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming")))
+        return base / "ShadowClient" / "mc-client-account.json"
+    if sys.platform == "darwin":
+        return Path.home() / "Library/Application Support/ShadowClient/mc-client-account.json"
+    return Path.home() / ".shadowclient" / "mc-client-account.json"
+
+
+ACCOUNT_FILE = _canonical_account_file()
+# Migrate a legacy per-install account file (old location: game_dir/) so an
+# existing sign-in carries over to the shared location silently. If the
+# canonical dir isn't writable for some reason, fall back to old behavior
+# rather than breaking login entirely.
+_LEGACY_ACCOUNT_FILE = SHARED_DIR / "mc-client-account.json"
+if not ACCOUNT_FILE.exists() and _LEGACY_ACCOUNT_FILE.exists():
+    try:
+        ACCOUNT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_LEGACY_ACCOUNT_FILE, ACCOUNT_FILE)
+        print(f"[auth] migrated account file to {ACCOUNT_FILE}")
+    except OSError:
+        ACCOUNT_FILE = _LEGACY_ACCOUNT_FILE
+
 STATE_FILE = HERE / "installed.json"
 
 

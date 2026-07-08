@@ -134,8 +134,10 @@ pub async fn setup(
         std::fs::write(&opts, jvm::OPTIONS_TXT)?;
     }
 
-    // Persist account file (offline) for the launch phase.
-    let account_file = shared_dir.join("mc-client-account.json");
+    // Persist account file (offline) for the launch phase. Uses the shared
+    // per-user path so a Microsoft sign-in done anywhere (app or CLI) is
+    // picked up here instead of being shadowed by a fresh offline account.
+    let account_file = crate::account_path();
     if !account_file.exists() {
         Account::offline(&username).save(&account_file)?;
     }
@@ -213,8 +215,8 @@ pub async fn launch(
     let natives_dir = shared_dir.join("versions").join(version_id).join("natives");
     let client_jar = PathBuf::from(p.client_jar.as_deref().unwrap_or(""));
 
-    // Account
-    let account_file = shared_dir.join("mc-client-account.json");
+    // Account — canonical per-user location (shared with the Python CLI).
+    let account_file = crate::account_path();
     let mut acct = Account::load(&account_file).unwrap_or_else(|| {
         Account::offline(username.as_deref().unwrap_or("Player"))
     });

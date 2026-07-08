@@ -5797,14 +5797,23 @@ public final class ShadowHud implements ClientModInitializer {
             // 1.21.11: SimpleOption fields are private. findFieldUp finds
             // them, but we MUST type-check — field_1841 is a Boolean
             // SimpleOption (not Double/gamma), and accepting it would
-            // ClassCast-fail downstream. Also prefer field_1843 (Double
-            // SimpleOption — current intermediary for gamma) when present.
+            // ClassCast-fail downstream.
+            //
+            // VERIFIED against yarn 1.21.11+build.6 mappings:
+            //   field_1840 = gamma            ← the one we want
+            //   field_1843 = mouseSensitivity ← NEVER touch. A previous
+            //     version of this list put field_1843 FIRST believing it was
+            //     gamma, so enabling Fullbright silently overwrote the user's
+            //     mouse sensitivity every session ("sens resets to 100% when
+            //     I join"). Do not re-add it, and do not let the brute-force
+            //     fallback pick it either.
             Class<?> simpleOptCls;
             try { simpleOptCls = Class.forName("net.minecraft.class_7172"); }
             catch (Throwable t) { simpleOptCls = null; }
             String[] gammaNames = {
-                "field_1843", "field_1840", "field_1842", "gamma"
+                "field_1840", "field_1842", "gamma"
                 // field_1841 deliberately excluded — Boolean in 1.21.11
+                // field_1843 deliberately excluded — mouseSensitivity!
             };
             Field f = null;
             for (String n : gammaNames) {
@@ -5827,7 +5836,10 @@ public final class ShadowHud implements ClientModInitializer {
                 f = findSimpleOptionByValue(opts, "Fullbright", v ->
                     (v instanceof Double || v instanceof Float)
                         && ((Number) v).doubleValue() >= 0.0
-                        && ((Number) v).doubleValue() <= 1.0);
+                        && ((Number) v).doubleValue() <= 1.0,
+                    // mouseSensitivity is ALSO a Double in [0,1] — grabbing it
+                    // here is how the sens-reset bug happened. Never again.
+                    "field_1843");
             }
             if (f != null) {
                 f.setAccessible(true);
@@ -6293,7 +6305,8 @@ public final class ShadowHud implements ClientModInitializer {
      *  matches a predicate. Used by fov + gamma resolvers when the known
      *  field names don't match the runtime mappings. */
     private static Field findSimpleOptionByValue(Object opts, String labelForLog,
-                                                  java.util.function.Predicate<Object> valueMatches) {
+                                                  java.util.function.Predicate<Object> valueMatches,
+                                                  String... excludeFields) {
         Class<?> simpleOptCls;
         try { simpleOptCls = Class.forName("net.minecraft.class_7172"); }
         catch (Throwable t) {
@@ -6304,6 +6317,11 @@ public final class ShadowHud implements ClientModInitializer {
         for (Class<?> c = opts.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
             for (Field cand : c.getDeclaredFields()) {
                 if (!simpleOptCls.isAssignableFrom(cand.getType())) continue;
+                boolean excluded = false;
+                for (String ex : excludeFields) {
+                    if (cand.getName().equals(ex)) { excluded = true; break; }
+                }
+                if (excluded) continue;
                 try {
                     cand.setAccessible(true);
                     Object so = cand.get(opts);

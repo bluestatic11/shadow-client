@@ -2,7 +2,9 @@
 setlocal
 cd /d "%~dp0"
 
-set PY=C:\Users\ediso\AppData\Local\Programs\Python\Python313\python.exe
+rem Resolve Python per-machine: %LOCALAPPDATA% works for any username
+rem (the old hardcoded C:\Users\ediso\... broke on the new PC).
+set PY=%LOCALAPPDATA%\Programs\Python\Python313\python.exe
 if not exist "%PY%" set PY=python
 
 if "%~1"=="" goto menu

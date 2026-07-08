@@ -51,6 +51,10 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # --- entity / world tuning -------------------------------------------
     ("lmd",                "Let Me Despawn — fewer idle mobs",          False),
     ("get-it-together-drops","merge item entities on the ground",       False),
+    ("clumps",             "merge XP orbs (fewer entities; helps singleplayer)", False),
+    ("debugify",           "fixes dozens of vanilla bugs incl. perf bugs", False),
+    ("fastquit",           "save-and-quit without the freeze (async world save)", False),
+    ("fast-ip-ping",       "faster server-list pings",                  False),
     ("rrls",               "Remove Reloading Screen (no stutter reload)",False),
     ("puzzle",             "resource-pack / particle cache",            False),
 

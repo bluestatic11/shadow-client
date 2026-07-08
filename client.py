@@ -1425,7 +1425,10 @@ def main(argv: list[str] | None = None) -> int:
                         "flag, doctor only reports and never mutates.")
 
     l = sub.add_parser("launch", help="launch Minecraft")
-    l.add_argument("--heap", type=int, default=6144, help="heap size in MB (default 6144)")
+    # 8 GB default: past ~8 GB, bigger heaps just lengthen G1 pauses. The old
+    # 6 GB default was sized for a 16 GB laptop; on 32-64 GB desktops 8 GB
+    # gives modpack headroom for free.
+    l.add_argument("--heap", type=int, default=8192, help="heap size in MB (default 8192)")
     l.add_argument("--gc", choices=["g1", "zgc", "safe"], default="g1",
                    help="GC profile; 'safe' = bare minimum flags for troubleshooting")
     l.add_argument("--java", help="path to java / javaw executable")

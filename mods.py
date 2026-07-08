@@ -52,6 +52,9 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("lmd",                "Let Me Despawn — fewer idle mobs",          False),
     ("get-it-together-drops","merge item entities on the ground",       False),
     ("clumps",             "merge XP orbs (fewer entities; helps singleplayer)", False),
+    ("ksyxis",             "faster world load (skip spawn-chunk preload)", False),
+    ("distanthorizons",    "LOD renderer — huge render distance for cheap", False),
+    ("bobby",              "cache chunks past the server's render distance", False),
     ("debugify",           "fixes dozens of vanilla bugs incl. perf bugs", False),
     ("fastquit",           "save-and-quit without the freeze (async world save)", False),
     ("fast-ip-ping",       "faster server-list pings",                  False),
@@ -110,6 +113,11 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("scoreboardtweaks",   "hide/shrink the sidebar scoreboard",        False),
     ("cursorcentered-fix", "cursor re-centers when menus close",        False),
     ("multidisplayfix",    "fullscreen on the right monitor (multi-display)", False),
+    # slug really is "cpvp" — this is Totem Tweaks (2M dl): small totem pop.
+    # Skipped from the same search: inventory-totem/void-totem (mechanics,
+    # server-side anyway), Silly's/Plus auto-totems (automation = cheat).
+    ("cpvp",               "Totem Tweaks — small totem pop, custom pop anim", False),
+    ("capes",              "cape support (OptiFine/Cosmetica capes render)", False),
     ("status-effect-bars", "potion effects as timer bars",              False),
     ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
     ("combat-hitboxes",    "hitboxes recolor when target is in your sights (1.4M dl)", False),

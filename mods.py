@@ -57,11 +57,22 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # --- options UI ------------------------------------------------------
     ("sodium-extra",       "extra sodium options (zoom, etc.)",         False),
 
+    # --- PvP / QoL (Lunar-style, server-legal) ---------------------------
+    # Only rendering/info/QoL — nothing that changes reach, targeting, or
+    # automates actions (same line ShadowHud draws: EnemyArmor/DamageIndicator
+    # /AutoEat were all removed as unfair).
+    ("appleskin",          "hunger + saturation overlay (food timing)", False),
+    ("mouse-tweaks",       "inventory drag/scroll QoL",                 False),
+    ("zoomify",            "Lunar-style zoom key",                      False),
+    ("no-chat-reports",    "strip chat-report signatures (PvP-server standard)", False),
+    ("better-ping-display-fabric", "numeric ping in the tab list",      False),
+
     # --- shared library dependencies (required by mods above) ------------
     # These aren't FPS mods themselves — they're libraries other mods pull
     # in. Without them Fabric refuses to launch. Order doesn't matter at
     # install time, but keeping them last makes the log tidier.
     ("almanac",                "lib: needed by Let Me Despawn",         False),
+    ("yacl",                   "lib: needed by Zoomify",                False),
     ("fabric-language-kotlin", "lib: needed by Particle Core",          False),
     ("fzzy-config",            "lib: needed by Particle Core",          False),
     ("forge-config-api-port",  "lib: needed by RRLS",                   False),

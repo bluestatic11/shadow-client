@@ -542,13 +542,28 @@ def cmd_update_mods(args: argparse.Namespace) -> int:
 
     # Delete only jars whose filename heuristically belongs to a previously-
     # managed slug. Never rmtree the whole directory.
-    removed = 0
+    #
+    # Refuse to start at all while Minecraft holds the jars: a PermissionError
+    # halfway through the sweep used to leave the mods folder half-emptied.
+    # Probe with a rename-in-place — Windows denies renames on files another
+    # process has open, which is exactly the "MC is running" signal.
     prev_slugs = [s.lower() for s in p_state.get("installed_mods", [])]
-    for jar in list(mods_dir.glob("*.jar")):
-        name_lc = jar.name.lower()
-        if any(name_lc.startswith(slug) for slug in prev_slugs):
-            jar.unlink()
-            removed += 1
+    managed = [j for j in mods_dir.glob("*.jar")
+               if any(j.name.lower().startswith(slug) for slug in prev_slugs)]
+    for jar in managed:
+        probe = jar.with_name(jar.name + ".locktest")
+        try:
+            jar.rename(probe)
+            probe.rename(jar)
+        except OSError:
+            raise SystemExit(
+                f"[update-mods] {jar.name} is in use — Minecraft is running.\n"
+                f"[update-mods] Close Minecraft and run update-mods again "
+                f"(no files were changed).")
+    removed = 0
+    for jar in managed:
+        jar.unlink()
+        removed += 1
 
     installed, skipped = mods.install_mods(mods_dir, p_state["mc_version"])
     p_state["installed_mods"] = installed

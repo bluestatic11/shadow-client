@@ -465,6 +465,48 @@ def _sync_player_files(profile_dir: Path, *, pull: bool) -> None:
             print(f"[sync] {name} skipped ({e})")
 
 
+# Performance options FORCED into options.txt on every launch, regardless of
+# what the game or a synced profile last wrote. These are pure-FPS settings
+# with no visual or gameplay downside, so they must never silently drift back.
+# Personal prefs (fov, mouseSensitivity, key_* binds, guiScale) are deliberately
+# NOT here — those stay user-owned and synced by _sync_player_files. In
+# particular guiScale is left alone so "auto" (0) or any manual choice sticks.
+ENFORCED_OPTIONS = {
+    "maxFps": "260",          # 260 == "Unlimited" on MC's framerate slider
+    "enableVsync": "false",   # vsync always off (uncapped frames, lower latency)
+}
+
+
+def _enforce_options(profile_dir: Path) -> None:
+    """Stamp ENFORCED_OPTIONS into the profile's options.txt, in place.
+
+    Runs after the pre-launch sync-pull so it wins over whatever the master
+    carried, and before Java starts so the game reads the forced values.
+    Only the enforced keys are rewritten; every other line (keybinds, fov,
+    sensitivity, guiScale, graphics prefs) is preserved byte-for-byte.
+    """
+    opts = profile_dir / "options.txt"
+    if not opts.exists():
+        return
+    try:
+        lines = opts.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    seen: set[str] = set()
+    for i, line in enumerate(lines):
+        key = line.split(":", 1)[0] if ":" in line else None
+        if key in ENFORCED_OPTIONS:
+            lines[i] = f"{key}:{ENFORCED_OPTIONS[key]}"
+            seen.add(key)
+    for key, val in ENFORCED_OPTIONS.items():
+        if key not in seen:
+            lines.append(f"{key}:{val}")
+    try:
+        opts.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        print(f"[perf] couldn't enforce options.txt ({e})")
+
+
 def cmd_login(args: argparse.Namespace) -> int:
     """Sign in for online play.
 
@@ -880,6 +922,9 @@ def cmd_launch(args: argparse.Namespace) -> int:
     # Pull shared player files (servers, keybinds, hotbars) that another
     # profile may have updated since this one last ran.
     _sync_player_files(profile_dir, pull=True)
+    # Then force the performance options (uncapped FPS, no vsync) over whatever
+    # the pull brought in — these are always-on regardless of profile history.
+    _enforce_options(profile_dir)
 
     # Tee Java's output to both console and a log file so silent crashes leave
     # a trail. Runs with cwd=profile_dir so MC's relative paths (saves/,

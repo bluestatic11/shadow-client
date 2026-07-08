@@ -66,13 +66,21 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("zoomify",            "Lunar-style zoom key",                      False),
     ("no-chat-reports",    "strip chat-report signatures (PvP-server standard)", False),
     ("better-ping-display-fabric", "numeric ping in the tab list",      False),
+    ("armor-hud",          "armor pieces + durability by the hotbar",   False),
+    ("dynamic-fire-overlay","low fire — shrink/lower the burning overlay", False),
+    ("bettershields",      "low shield — QoL shield rendering",         False),
+    ("status-effect-bars", "potion effects as timer bars",              False),
+    ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
+    ("hitboxplus",         "configurable hitbox display (F3+B on keybind)", False),
 
     # --- shared library dependencies (required by mods above) ------------
     # These aren't FPS mods themselves — they're libraries other mods pull
     # in. Without them Fabric refuses to launch. Order doesn't matter at
     # install time, but keeping them last makes the log tidier.
     ("almanac",                "lib: needed by Let Me Despawn",         False),
-    ("yacl",                   "lib: needed by Zoomify",                False),
+    ("yacl",                   "lib: needed by Zoomify, HitBox+, Health Indicators", False),
+    ("ukulib",                 "lib: needed by Better Shields",         False),
+    ("architectury-api",       "lib: needed by Health Indicators",      False),
     ("fabric-language-kotlin", "lib: needed by Particle Core",          False),
     ("fzzy-config",            "lib: needed by Particle Core",          False),
     ("forge-config-api-port",  "lib: needed by RRLS",                   False),

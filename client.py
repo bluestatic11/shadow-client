@@ -409,8 +409,14 @@ def cmd_login(args: argparse.Namespace) -> int:
         try:
             acct = auth.from_prism_launcher()
             print(f"[login] imported PrismLauncher account: {acct.username}")
-        except auth.PrismRefreshExpired as e:
-            print(f"[login] Prism auth stale ({e}).")
+        # RuntimeError covers every way the Prism import can fail —
+        # PrismRefreshExpired (stale token) subclasses it, and the "accounts
+        # file not found" / "no accounts" / "no profile" cases raise it
+        # directly. Any of them just means Prism can't help on this machine
+        # (e.g. a fresh PC where Prism was never installed), so fall through
+        # to the interactive device-code flow instead of crashing.
+        except RuntimeError as e:
+            print(f"[login] Prism import unavailable ({e}).")
             print("[login] Falling back to a direct Microsoft sign-in — "
                   "you only have to do this once, it'll cache after.")
             acct = auth.microsoft_login()

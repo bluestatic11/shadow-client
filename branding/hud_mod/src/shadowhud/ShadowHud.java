@@ -191,6 +191,8 @@ public final class ShadowHud implements ClientModInitializer {
         addModule("AutoTool",   false, "Utility", "Auto-swap to best tool (pickaxe/axe/shovel/shears/sword) for block at crosshair");
         addModule("HitSounds",  false, "Combat",  "Play a click on every landed hit (Lunar-style, pitch varies slightly)");
         addModule("NoHurtCam",  false, "Utility", "Disable the screen-shake camera tilt when taking damage");
+        addModule("NoNausea",   false, "Utility", "Remove the nausea screen-warp (motion-sickness relief; visual only)");
+        addModule("ClearSight", false, "Utility", "Suppress blindness + darkness fog (visual only — server logic unaffected)");
         // DamageIndicator removed — combat-prediction PvP hack.
         addModule("DeathLog",   false, "Display", "Auto-save death coords + dimension to config/shadowclient-deaths.txt");
         addModule("CoordsHistory", false, "Display", "Track places visited (>100b apart) → config/shadowclient-coords-history.txt");
@@ -1715,6 +1717,10 @@ public final class ShadowHud implements ClientModInitializer {
                 // HUD module is drawn — it only reads combat state and drives
                 // the sound engine, so it must not be gated behind renderHud.
                 try { updateCombatMusic(); } catch (Throwable t) { logOnce("CombatMusic", t); }
+                // NoNausea/ClearSight strip bad visual effects from the
+                // client-side player — like CombatMusic this must run every
+                // frame regardless of whether any HUD line is drawn.
+                try { stripBadEffects(); } catch (Throwable t) { logOnce("ClearSight", t); }
                 // Run renderHud and renderMenu in separate try-blocks so a
                 // throw in one doesn't skip the other. renderMenu drains
                 // pendingScrollDelta — if we let renderHud's exception
@@ -16262,6 +16268,81 @@ public final class ShadowHud implements ClientModInitializer {
         if (comp == null) return "";
         Object s = tryInvoke(comp, "getString", "method_10851");
         return s == null ? String.valueOf(comp) : String.valueOf(s);
+    }
+
+    // ── NoNausea / ClearSight: strip bad visual effects client-side ──────
+    // Works by removing the client's copy of the StatusEffectInstance — the
+    // server's copy still ticks, so gameplay logic (server checks, mob AI,
+    // effect duration) is untouched; only what WE render changes. Blindness
+    // and darkness fog, and the nausea screen-warp, are all computed from
+    // the client-side effect map, so removal is sufficient for all three.
+    private static long csLastSweepMs = 0;
+
+    private static void stripBadEffects() {
+        boolean noNausea   = modOn("NoNausea",   false);
+        boolean clearSight = modOn("ClearSight", false);
+        if (!noNausea && !clearSight) return;
+        if (mc == null || playerField == null) return;
+        Object player;
+        try { player = playerField.get(mc); } catch (Throwable t) { return; }
+        if (player == null) return;
+
+        // The effect map only changes on tick granularity — sweeping 10×/s
+        // is plenty and keeps the per-frame cost near zero.
+        long now = System.currentTimeMillis();
+        if (now - csLastSweepMs >= 100) {
+            csLastSweepMs = now;
+            Object effects = tryInvoke(player, "method_6026",
+                                       "getStatusEffects", "getActiveEffects");
+            if (effects instanceof java.util.Collection) {
+                // Collect first, remove after — removing mid-iteration would
+                // ConcurrentModificationException on the live effect map.
+                java.util.List<Object> doomed = new java.util.ArrayList<>();
+                for (Object ef : (java.util.Collection<?>) effects) {
+                    String path = statusEffectPath(ef);
+                    boolean bad =
+                        (noNausea   && "nausea".equals(path)) ||
+                        (clearSight && ("blindness".equals(path) || "darkness".equals(path)));
+                    if (bad) {
+                        Object holder = tryInvoke(ef, "method_5579", "getEffect", "getEffectType");
+                        if (holder != null) doomed.add(holder);
+                    }
+                }
+                for (Object holder : doomed) {
+                    try {
+                        // LivingEntity.removeStatusEffect(RegistryEntry<StatusEffect>)
+                        firstMethodInvoke(player, holder,
+                                "method_6016", "removeStatusEffect", "removeEffect");
+                    } catch (Throwable t) { logOnce("ClearSight.remove", t); }
+                }
+            }
+        }
+
+        // The nausea warp keeps decaying for ~1s after the effect is gone —
+        // zero the intensity fields directly for instant relief. Field names
+        // differ across versions; every miss is silently skipped.
+        if (noNausea) {
+            for (String fn : new String[]{"field_44911", "field_44912",
+                                          "nauseaIntensity", "prevNauseaIntensity"}) {
+                try {
+                    Field f = cachedField(player.getClass(), fn);
+                    if (f != null && f.getType() == float.class) f.setFloat(player, 0f);
+                } catch (Throwable ignored) {}
+            }
+        }
+    }
+
+    /** Raw registry path of a StatusEffectInstance ("nausea"), or "" on any miss. */
+    private static String statusEffectPath(Object effectInstance) {
+        try {
+            Object holder = tryInvoke(effectInstance, "method_5579", "getEffect", "getEffectType");
+            Object opt = tryInvoke(holder, "method_40230", "unwrapKey", "getKey");
+            if (!Boolean.TRUE.equals(tryInvoke(opt, "isPresent"))) return "";
+            Object key  = tryInvoke(opt, "get");
+            Object id   = tryInvoke(key, "method_29177", "getValue", "location");
+            Object path = tryInvoke(id, "method_12832", "getPath");
+            return path == null ? "" : String.valueOf(path);
+        } catch (Throwable ignored) { return ""; }
     }
 
     /** Resolve a StatusEffectInstance to a human-readable name ("Speed"). */

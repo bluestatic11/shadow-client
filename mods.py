@@ -90,7 +90,6 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # (through-walls highlight = ESP), client-kits / rebind-quick-swap
     # (automation-adjacent).
     ("modmenu",            "in-game mod list + config screens",         False),
-    ("custom-hitboxes",    "combat hitboxes — colors/styles, always-on", False),
     ("extrapvp",           "hitbox highlights, elytra + gapple indicators", False),
     ("crosshair-addons-public", "Lunar-style crosshair customization",  False),
     ("crosshair-attack-indicator", "crosshair tints red when target in reach", False),
@@ -100,7 +99,7 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("no-death-animation", "instant death poof — see totem pops clearly", False),
     ("status-effect-bars", "potion effects as timer bars",              False),
     ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
-    ("hitboxplus",         "configurable hitbox display (F3+B on keybind)", False),
+    ("combat-hitboxes",    "hitboxes recolor when target is in your sights (1.4M dl)", False),
 
     # --- shared library dependencies (required by mods above) ------------
     # These aren't FPS mods themselves — they're libraries other mods pull

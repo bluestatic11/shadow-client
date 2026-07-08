@@ -47,11 +47,11 @@ def flags(heap_mb: int, *, gc: str = "g1") -> list[str]:
     if gc == "safe":
         return [f"-Xms{heap_mb}M", f"-Xmx{heap_mb}M"]
     if gc == "zgc":
-        # Generational ZGC is experimental in 21, non-experimental in 24+.
+        # ZGC is generational BY DEFAULT since JDK 23, and the ZGenerational
+        # flag was removed in 24 — passing it on the bundled JDK 25 aborts
+        # the JVM with "Unrecognized VM option". Plain UseZGC is all it takes.
         base += [
-            "-XX:+UnlockExperimentalVMOptions",
             "-XX:+UseZGC",
-            "-XX:+ZGenerational",
         ]
     else:
         base += [

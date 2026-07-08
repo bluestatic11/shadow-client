@@ -1425,11 +1425,14 @@ def main(argv: list[str] | None = None) -> int:
                         "flag, doctor only reports and never mutates.")
 
     l = sub.add_parser("launch", help="launch Minecraft")
-    # 8 GB default: past ~8 GB, bigger heaps just lengthen G1 pauses. The old
-    # 6 GB default was sized for a 16 GB laptop; on 32-64 GB desktops 8 GB
-    # gives modpack headroom for free.
-    l.add_argument("--heap", type=int, default=8192, help="heap size in MB (default 8192)")
-    l.add_argument("--gc", choices=["g1", "zgc", "safe"], default="g1",
+    # 10 GB + ZGC defaults, tuned for the 9950X3D2/64 GB desktop: ZGC on
+    # JDK 25 is generational with sub-millisecond pauses — frametime
+    # consistency beats G1's throughput at high refresh rates, and the
+    # bigger-heap-longer-pause tradeoff that capped G1 at 8 GB doesn't
+    # apply to it. The extra headroom is for Distant Horizons' LOD builds.
+    # G1 (Aikar's) remains available via --gc g1 for low-RAM machines.
+    l.add_argument("--heap", type=int, default=10240, help="heap size in MB (default 10240)")
+    l.add_argument("--gc", choices=["g1", "zgc", "safe"], default="zgc",
                    help="GC profile; 'safe' = bare minimum flags for troubleshooting")
     l.add_argument("--java", help="path to java / javaw executable")
     l.add_argument("--username")

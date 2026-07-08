@@ -97,6 +97,9 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("consumableoptimizer","no desync on gapples/pots (Walksy optimizer)", False),
     ("anchor-optimizer",   "anchor PvP — no wait on server anchor cleanup", False),
     ("no-death-animation", "instant death poof — see totem pops clearly", False),
+    # 2.9M dl. Overlaps ShadowHud's NoHurtCam module — leave that module OFF
+    # when this is installed; the mod adds per-axis/FOV shake control on top.
+    ("betterhurtcam",      "adjustable/disable hurt-cam shake",          False),
     ("status-effect-bars", "potion effects as timer bars",              False),
     ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
     ("combat-hitboxes",    "hitboxes recolor when target is in your sights (1.4M dl)", False),
@@ -111,6 +114,7 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("walksylib",              "lib: needed by Shield Statuses + Shield Fixes", False),
     ("cloth-config",           "lib: needed by Shield Crosshair Indicator", False),
     ("placeholder-api",        "lib: needed by Mod Menu",               False),
+    ("ukulib",                 "lib: needed by BetterHurtCam",          False),
     ("fabric-language-kotlin", "lib: needed by Particle Core",          False),
     ("fzzy-config",            "lib: needed by Particle Core",          False),
     ("forge-config-api-port",  "lib: needed by RRLS",                   False),

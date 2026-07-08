@@ -75,6 +75,11 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("old-shield-animation", "revert 23w40a third-person shield arm pose", False),
     ("3dskinlayers",       "3D skin layers (hats/jackets render with depth)", False),
     ("not-enough-animations", "vanilla-style third-person animations (ladders, eating, maps)", False),
+    # Crystal PvP standard (3.5M downloads): client-side prediction that
+    # hides broken crystals immediately instead of waiting on the server
+    # round-trip. Allowed on most CPvP servers, but rules vary — some
+    # (e.g. VTL) ban optimizers outright; that's on the player to check.
+    ("marlow-crystal-optimizer", "crystal PvP — no wait on server crystal cleanup", False),
     ("status-effect-bars", "potion effects as timer bars",              False),
     ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
     ("hitboxplus",         "configurable hitbox display (F3+B on keybind)", False),

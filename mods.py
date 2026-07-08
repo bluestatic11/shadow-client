@@ -123,7 +123,10 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # servers that ban vision mods, like fullbright/ClearSight).
     ("clear-waterlavapowdersnow", "see through water/lava/powder snow when submerged", False),
     ("status-effect-bars", "potion effects as timer bars",              False),
-    ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
+    # health-indicators removed 2026-07-08: prime suspect for repeated
+    # "Pose stack not empty" world-render crashes in PvP (draws hearts over
+    # entities in the world pass; crashes correlated with players dying in
+    # view). Re-try when a fixed build ships. TargetHud covers crosshair HP.
     ("combat-hitboxes",    "hitboxes recolor when target is in your sights (1.4M dl)", False),
 
     # --- shared library dependencies (required by mods above) ------------
@@ -131,8 +134,7 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # in. Without them Fabric refuses to launch. Order doesn't matter at
     # install time, but keeping them last makes the log tidier.
     ("almanac",                "lib: needed by Let Me Despawn",         False),
-    ("yacl",                   "lib: needed by Zoomify, HitBox+, Health Indicators", False),
-    ("architectury-api",       "lib: needed by Health Indicators",      False),
+    ("yacl",                   "lib: needed by Zoomify, Combat Hitboxes, Debugify", False),
     ("walksylib",              "lib: needed by Shield Statuses + Shield Fixes", False),
     ("cloth-config",           "lib: needed by Shield Crosshair Indicator", False),
     ("placeholder-api",        "lib: needed by Mod Menu",               False),

@@ -474,6 +474,10 @@ def _sync_player_files(profile_dir: Path, *, pull: bool) -> None:
 ENFORCED_OPTIONS = {
     "maxFps": "260",          # 260 == "Unlimited" on MC's framerate slider
     "enableVsync": "false",   # vsync always off (uncapped frames, lower latency)
+    # User-requested pin: slider % maps value*200, so 41% == 0.205. Unlike
+    # the two above this IS a personal pref — enforced because the user
+    # explicitly asked for sensitivity to snap back to 41% on every launch.
+    "mouseSensitivity": "0.205",
 }
 
 

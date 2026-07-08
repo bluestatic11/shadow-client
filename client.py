@@ -351,8 +351,10 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print(f"[setup] installing performance mods into profile '{profile}'…")
         installed_mods, _ = mods.install_mods(profile_dir / "mods", mc_version)
 
-    # Per-profile options.txt — different versions can have different
-    # Sodium / Iris graphics settings without stepping on each other.
+    # Seed the new profile with the shared player files (server list,
+    # keybinds/settings, hotbars) BEFORE falling back to defaults — a new
+    # version profile should feel like home, not a fresh install.
+    _sync_player_files(profile_dir, pull=True)
     opts = profile_dir / "options.txt"
     if not opts.exists():
         _atomic_write(opts, jvm.OPTIONS_TXT)
@@ -425,6 +427,42 @@ def _sync_hud_into_profile(profile_dir: Path, shared_dir: Path) -> None:
             print(f"[setup] HUD staged at {staged.name} (MC holds the active jar)")
         except OSError as e:
             print(f"[setup] HUD sync failed: {e}")
+
+
+# Files that should follow the player across version profiles: the
+# multiplayer server list, keybinds + video settings, saved hotbars, and
+# command history. Master copies live at game_dir/ root — the same spot the
+# pre-profile layout used, so an old-PC game_dir migrates its servers and
+# settings for free. NOT shared: saves/ (world data is version-sensitive)
+# and config/ (mod configs can be version-specific).
+SHARED_PLAYER_FILES = ["servers.dat", "options.txt", "hotbar.nbt",
+                       "command_history.txt"]
+
+
+def _sync_player_files(profile_dir: Path, *, pull: bool) -> None:
+    """Keep per-profile copies of SHARED_PLAYER_FILES in step with the master
+    copies at game_dir/ root. Newest mtime wins; copy2 preserves mtime so the
+    comparison converges instead of ping-ponging.
+
+    pull=True  (pre-launch / setup): master → profile when master is newer.
+    pull=False (post-exit): profile → master when profile is newer — MC
+        rewrites these files on quit, so finishing a session naturally
+        publishes new servers/keybinds for every other profile to pull.
+    """
+    for name in SHARED_PLAYER_FILES:
+        master = SHARED_DIR / name
+        local  = profile_dir / name
+        src, dst = (master, local) if pull else (local, master)
+        try:
+            if not src.exists():
+                continue
+            if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            print(f"[sync] {name} {'master → profile' if pull else 'profile → master'}")
+        except OSError as e:
+            print(f"[sync] {name} skipped ({e})")
 
 
 def cmd_login(args: argparse.Namespace) -> int:
@@ -824,6 +862,10 @@ def cmd_launch(args: argparse.Namespace) -> int:
     print("[launch] Minecraft is starting — first boot can take 30-60s…")
     print("-" * 60)
 
+    # Pull shared player files (servers, keybinds, hotbars) that another
+    # profile may have updated since this one last ran.
+    _sync_player_files(profile_dir, pull=True)
+
     # Tee Java's output to both console and a log file so silent crashes leave
     # a trail. Runs with cwd=profile_dir so MC's relative paths (saves/,
     # screenshots/, crash-reports/) resolve into the per-version folder.
@@ -860,6 +902,10 @@ def cmd_launch(args: argparse.Namespace) -> int:
     print("-" * 60)
     print(f"[launch] Java exited with code {rc}")
     print(f"[launch] full log: {log_path}")
+    # Publish this session's servers/keybinds/hotbars back to the master
+    # copies — MC rewrites them on quit, so whatever you changed in-game
+    # is now the newest and every other profile picks it up on next launch.
+    _sync_player_files(profile_dir, pull=False)
     return rc
 
 

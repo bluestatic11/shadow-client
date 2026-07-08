@@ -128,7 +128,10 @@ pub async fn setup(
     let (installed_mods, _skipped) =
         mods::install_mods(&client, &mods_dir, &mc_version, progress.clone()).await?;
 
-    // Seed options.txt
+    // Seed the profile with the shared player files (server list, keybinds,
+    // hotbars) BEFORE falling back to the default options.txt — a new
+    // version profile should feel like home, not a fresh install.
+    sync_player_files(&profile_dir, &shared_dir, true);
     let opts = profile_dir.join("options.txt");
     if !opts.exists() {
         std::fs::write(&opts, jvm::OPTIONS_TXT)?;
@@ -350,6 +353,10 @@ pub async fn launch(
         Err(e) => progress(format!("Shadow Chat: disabled (couldn't write auth file: {e:#})")),
     }
 
+    // Pull shared player files (servers, keybinds, hotbars) that another
+    // profile — or the Python CLI — may have updated since this profile ran.
+    sync_player_files(&profile_dir, &shared_dir, true);
+
     // Spawn Java. We capture stdout/stderr line-by-line via an mpsc channel
     // so the UI sees output live instead of waiting for process exit.
     use std::process::Stdio;
@@ -384,7 +391,37 @@ pub async fn launch(
     let status = child.wait()?;
     let _ = t_out.join();
     let _ = t_err.join();
+    // Publish this session's servers/keybinds/hotbars back to the master
+    // copies so every other profile (and the Python CLI) picks them up.
+    sync_player_files(&profile_dir, &shared_dir, false);
     Ok(status.code().unwrap_or(-1))
+}
+
+/// Files that follow the player across version profiles: server list,
+/// keybinds + video settings, saved hotbars, command history. Master copies
+/// live at game_dir/ root; newest mtime wins in both directions. Mirrors
+/// `_sync_player_files` in client.py — keep the two lists identical.
+const SHARED_PLAYER_FILES: [&str; 4] =
+    ["servers.dat", "options.txt", "hotbar.nbt", "command_history.txt"];
+
+/// pull=true (pre-launch / setup): master → profile when master is newer.
+/// pull=false (post-exit): profile → master — MC rewrites these on quit, so
+/// a finished session publishes its changes for every other profile.
+pub fn sync_player_files(profile_dir: &Path, shared_dir: &Path, pull: bool) {
+    for name in SHARED_PLAYER_FILES {
+        let master = shared_dir.join(name);
+        let local = profile_dir.join(name);
+        let (src, dst) = if pull { (&master, &local) } else { (&local, &master) };
+        if !src.exists() { continue; }
+        let newer = |p: &Path| p.metadata().and_then(|m| m.modified()).ok();
+        if let (Some(s), Some(d)) = (newer(src), dst.exists().then(|| newer(dst)).flatten()) {
+            if d >= s { continue; }
+        }
+        if let Some(parent) = dst.parent() { let _ = std::fs::create_dir_all(parent); }
+        // fs::copy carries mtime on Windows; close enough elsewhere — worst
+        // case is one redundant copy, never data loss (newest always wins).
+        let _ = std::fs::copy(src, dst);
+    }
 }
 
 fn build_http_client() -> Result<reqwest::Client> {

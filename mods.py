@@ -84,6 +84,20 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # round-trip. Allowed on most CPvP servers, but rules vary — some
     # (e.g. VTL) ban optimizers outright; that's on the player to check.
     ("marlow-crystal-optimizer", "crystal PvP — no wait on server crystal cleanup", False),
+
+    # --- Walksy CPvP suite + combat hitboxes ------------------------------
+    # Deliberately skipped from the same ecosystem: totem-pop-chams
+    # (through-walls highlight = ESP), client-kits / rebind-quick-swap
+    # (automation-adjacent).
+    ("modmenu",            "in-game mod list + config screens",         False),
+    ("custom-hitboxes",    "combat hitboxes — colors/styles, always-on", False),
+    ("extrapvp",           "hitbox highlights, elytra + gapple indicators", False),
+    ("crosshair-addons-public", "Lunar-style crosshair customization",  False),
+    ("crosshair-attack-indicator", "crosshair tints red when target in reach", False),
+    ("mace-hitboxes",      "auto-show hitboxes while holding a mace",   False),
+    ("consumableoptimizer","no desync on gapples/pots (Walksy optimizer)", False),
+    ("anchor-optimizer",   "anchor PvP — no wait on server anchor cleanup", False),
+    ("no-death-animation", "instant death poof — see totem pops clearly", False),
     ("status-effect-bars", "potion effects as timer bars",              False),
     ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
     ("hitboxplus",         "configurable hitbox display (F3+B on keybind)", False),
@@ -97,6 +111,7 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("architectury-api",       "lib: needed by Health Indicators",      False),
     ("walksylib",              "lib: needed by Shield Statuses + Shield Fixes", False),
     ("cloth-config",           "lib: needed by Shield Crosshair Indicator", False),
+    ("placeholder-api",        "lib: needed by Mod Menu",               False),
     ("fabric-language-kotlin", "lib: needed by Particle Core",          False),
     ("fzzy-config",            "lib: needed by Particle Core",          False),
     ("forge-config-api-port",  "lib: needed by RRLS",                   False),

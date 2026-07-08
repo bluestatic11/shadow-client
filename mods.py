@@ -100,6 +100,16 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # 2.9M dl. Overlaps ShadowHud's NoHurtCam module — leave that module OFF
     # when this is installed; the mod adds per-axis/FOV shake control on top.
     ("betterhurtcam",      "adjustable/disable hurt-cam shake",          False),
+
+    # --- cherry-picked from the SODIUM community pack (stable builds only) -
+    ("iris",               "shader support (OptiFine-style, Sodium-native)", False),
+    ("reeses-sodium-options", "better video-settings UI for Sodium",    False),
+    ("sodium-fullbright",  "fullbright toggle (Lunar-standard)",        False),
+    ("tiertagger",         "tierlist ranks on players in tab/nametags", False),
+    ("in-game-account-switcher", "switch MC accounts without restarting", False),
+    ("scoreboardtweaks",   "hide/shrink the sidebar scoreboard",        False),
+    ("cursorcentered-fix", "cursor re-centers when menus close",        False),
+    ("multidisplayfix",    "fullscreen on the right monitor (multi-display)", False),
     ("status-effect-bars", "potion effects as timer bars",              False),
     ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
     ("combat-hitboxes",    "hitboxes recolor when target is in your sights (1.4M dl)", False),

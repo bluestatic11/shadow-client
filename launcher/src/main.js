@@ -134,6 +134,11 @@ const accountMenu    = $('account-menu');
 const accountAction  = $('account-action');
 const accountMenuName= $('account-menu-name');
 const accountMenuMode= $('account-menu-mode');
+// Real Minecraft name change (MSA only)
+const realnameWrap   = $('realname-field-wrap');
+const realnameInput  = $('realname-input');
+const realnameBtn    = $('realname-change-btn');
+const realnameHint   = $('realname-hint');
 
 // ───── State ────────────────────────────────────────────────────
 let installed = null;
@@ -494,7 +499,11 @@ function renderAccount() {
       }
     }
     if (hint) hint.textContent =
-      'Editable while signed in — change to whatever you want.';
+      'Local launch name only — online servers show your real name below.';
+    // Reveal the real-name changer and reset its transient state.
+    if (realnameWrap) realnameWrap.hidden = false;
+    if (realnameInput) realnameInput.value = '';
+    resetRealnameHint();
   } else {
     // Offline mode is always the literal name "Player". No choice, no
     // editing. Keeps every offline-mode user's identity consistent so
@@ -514,6 +523,7 @@ function renderAccount() {
     }
     if (hint) hint.textContent =
       'Locked in offline mode — sign in with Microsoft to rename.';
+    if (realnameWrap) realnameWrap.hidden = true;
   }
   // Shadow Chat status pill — tells the user in-game chat is ready
   // (and reminds them of the keybinds). Same auth signal as everything
@@ -587,6 +597,82 @@ accountAction.addEventListener('click', async () => {
     await doSignOut();
   } else {
     await doSignIn();
+  }
+});
+
+// ───── Real Minecraft name change (Mojang profile API) ──────────────
+// This is the genuine account rename — it takes effect on every server,
+// can't collide with an existing player (Mojang enforces uniqueness), and
+// is capped at one change per 30 days. Distinct from the local launch-name
+// field above, which online servers ignore.
+
+function setRealnameHint(msg, cls) {
+  if (!realnameHint) return;
+  realnameHint.textContent = msg;
+  realnameHint.classList.remove('ok', 'bad', 'checking');
+  if (cls) realnameHint.classList.add(cls);
+}
+function resetRealnameHint() {
+  setRealnameHint('Permanent, works on all servers, one change per 30 days.', null);
+}
+
+// Client-side mirror of Mojang's rule so we can reject obvious junk without
+// a round-trip. Mojang is still the final authority.
+function nameWellFormed(n) {
+  return /^[A-Za-z0-9_]{3,16}$/.test(n);
+}
+
+let realnameCheckTimer = null;
+let realnameCheckSeq = 0;   // guards against out-of-order async responses
+realnameInput?.addEventListener('input', () => {
+  const name = realnameInput.value.trim();
+  if (realnameBtn) realnameBtn.disabled = !nameWellFormed(name);
+  clearTimeout(realnameCheckTimer);
+  if (!name) { resetRealnameHint(); return; }
+  if (!nameWellFormed(name)) {
+    setRealnameHint('3–16 characters: letters, numbers, underscore.', 'bad');
+    return;
+  }
+  if (account && name.toLowerCase() === (account.username || '').toLowerCase()) {
+    setRealnameHint('That’s already your name.', null);
+    if (realnameBtn) realnameBtn.disabled = true;
+    return;
+  }
+  setRealnameHint('Checking availability…', 'checking');
+  const seq = ++realnameCheckSeq;
+  realnameCheckTimer = setTimeout(async () => {
+    try {
+      const status = await invoke('check_mc_name', { name });
+      if (seq !== realnameCheckSeq) return;   // a newer keystroke superseded this
+      if (status === 'AVAILABLE') setRealnameHint(`“${name}” is available ✓`, 'ok');
+      else if (status === 'DUPLICATE') setRealnameHint(`“${name}” is already taken.`, 'bad');
+      else setRealnameHint(`“${name}” isn’t allowed (reserved/blocked).`, 'bad');
+    } catch (e) {
+      if (seq !== realnameCheckSeq) return;
+      setRealnameHint(String(e).replace(/^Error:\s*/, ''), 'bad');
+    }
+  }, 450);
+});
+
+realnameBtn?.addEventListener('click', async () => {
+  if (busy) return;
+  const name = realnameInput.value.trim();
+  if (!nameWellFormed(name)) return;
+  const ok = window.confirm(
+    `Change your real Minecraft name to “${name}”?\n\n` +
+    `This affects every server and can only be done once every 30 days.`
+  );
+  if (!ok) return;
+  realnameBtn.disabled = true;
+  setRealnameHint('Changing name with Mojang…', 'checking');
+  try {
+    const newName = await invoke('change_mc_name', { name });
+    setStatus(`Minecraft name changed to ${newName}.`, 'ok');
+    await loadAccount();          // re-reads the saved account → repaints the menu
+    setRealnameHint(`Done — you are now “${newName}”.`, 'ok');
+  } catch (e) {
+    setRealnameHint(String(e).replace(/^Error:\s*/, ''), 'bad');
+    realnameBtn.disabled = false;
   }
 });
 

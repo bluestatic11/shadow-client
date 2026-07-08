@@ -330,6 +330,62 @@ fn read_account() -> Result<Option<AccountInfo>, String> {
     }))
 }
 
+/// Load the signed-in MSA account and make sure its Minecraft access token is
+/// fresh enough to hit the profile API. Shared by the name-change commands.
+/// Returns the (possibly refreshed + re-saved) account.
+async fn load_fresh_msa_account(account_file: &Path) -> Result<auth::Account, String> {
+    let mut acct = auth::Account::load(account_file)
+        .ok_or_else(|| "not signed in — sign in with Microsoft first".to_string())?;
+    if acct.user_type != "msa" {
+        return Err("offline mode — sign in with Microsoft to change your real Minecraft name".into());
+    }
+    if auth::needs_refresh(&acct) {
+        match auth::refresh_account(&acct, |_| {}).await {
+            Ok(fresh) => {
+                let _ = fresh.save(account_file);
+                acct = fresh;
+            }
+            // A refresh failure isn't necessarily fatal — the cached token
+            // may still be valid. Let the API call be the judge; it returns
+            // a clear "session expired" message on a real 401.
+            Err(_) => {}
+        }
+    }
+    Ok(acct)
+}
+
+/// Check whether a Minecraft name is available for the signed-in account.
+/// Returns "AVAILABLE", "DUPLICATE", or "NOT_ALLOWED" — the UI uses this to
+/// give live feedback before the user commits to the (cooldown-limited) change.
+#[tauri::command]
+async fn check_mc_name(name: String) -> Result<String, String> {
+    let account_file = project_root().join("game_dir").join("mc-client-account.json");
+    let acct = load_fresh_msa_account(&account_file).await?;
+    let status = auth::check_name_availability(&acct.access_token, name.trim())
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    Ok(match status {
+        auth::NameStatus::Available => "AVAILABLE",
+        auth::NameStatus::Duplicate => "DUPLICATE",
+        auth::NameStatus::NotAllowed => "NOT_ALLOWED",
+    }.to_string())
+}
+
+/// Perform the real Mojang name change for the signed-in account, then persist
+/// the updated account (new username + UUID). Returns the new username on
+/// success. This is a real, permanent, all-servers name change with a 30-day
+/// cooldown — not a client-side display override.
+#[tauri::command]
+async fn change_mc_name(name: String) -> Result<String, String> {
+    let account_file = project_root().join("game_dir").join("mc-client-account.json");
+    let acct = load_fresh_msa_account(&account_file).await?;
+    let updated = auth::change_minecraft_name(&acct, name.trim())
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    updated.save(&account_file).map_err(|e| format!("saved name but failed to write account file: {e:#}"))?;
+    Ok(updated.username)
+}
+
 /// Hand the JS layer the user's current MSA access token so it can run
 /// a diagnostic WebSocket round-trip against the chat relay. Returns
 /// Err in offline mode — the diagnostic UI gates on that to disable
@@ -1783,6 +1839,8 @@ pub fn run() {
             update_mods,
             read_state,
             read_account,
+            check_mc_name,
+            change_mc_name,
             list_mods,
             add_mod_jar,
             install_mod_from_url,

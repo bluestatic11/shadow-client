@@ -71,6 +71,27 @@
               Locked in offline mode — sign in with Microsoft to rename.
             </span>
           </label>
+          <!-- Real Minecraft name change (Mojang profile API). Unlike the
+               field above (which only sets the local launch name and is
+               ignored by online-mode servers), this permanently changes your
+               actual Minecraft account name: it applies on every server, is
+               globally unique (Mojang rejects taken names), and is limited to
+               one change per 30 days. Shown only when signed in with MSA. -->
+          <div class="account-menu-field" id="realname-field-wrap" hidden>
+            <span class="account-menu-field-label">Real Minecraft name</span>
+            <div class="realname-row">
+              <input type="text" id="realname-input" maxlength="16"
+                     placeholder="new name" autocomplete="off"
+                     autocapitalize="off" spellcheck="false"
+                     aria-label="New Minecraft account name">
+              <button class="realname-btn" id="realname-change-btn" type="button">
+                Change
+              </button>
+            </div>
+            <span class="account-menu-field-hint" id="realname-hint">
+              Permanent, works on all servers, one change per 30 days.
+            </span>
+          </div>
           <button class="account-menu-action" id="account-action" type="button" role="menuitem">
             Sign in with Microsoft
           </button>

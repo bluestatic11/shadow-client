@@ -22,6 +22,12 @@ pub const XBL_URL: &str         = "https://user.auth.xboxlive.com/user/authentic
 pub const XSTS_URL: &str        = "https://xsts.auth.xboxlive.com/xsts/authorize";
 pub const MC_LOGIN_URL: &str    = "https://api.minecraftservices.com/authentication/login_with_xbox";
 pub const MC_PROFILE_URL: &str  = "https://api.minecraftservices.com/minecraft/profile";
+/// Base for the name-availability + name-change endpoints. The real name
+/// change goes through Mojang here: the name must be globally unique (Mojang
+/// owns the namespace, so this is what makes "you can't have the same name as
+/// someone else" true), it takes effect on every online-mode server, and it's
+/// gated by a 30-day cooldown per account.
+pub const MC_NAME_URL: &str     = "https://api.minecraftservices.com/minecraft/profile/name";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Account {
@@ -404,6 +410,135 @@ pub async fn refresh_account(
     let ms_refresh = tok.refresh_token.unwrap_or_else(|| stale.refresh_token.clone());
 
     exchange_ms_to_account(&client, ms_access, ms_refresh, progress).await
+}
+
+// ───── Real Minecraft name change (Mojang profile API) ─────────────────
+
+/// Client-side sanity check of a Minecraft name before we spend a network
+/// round-trip on it. Mojang's rule: 3–16 chars, letters/digits/underscore
+/// only. We reject early so the UI can give instant feedback; Mojang is
+/// still the final authority (it also blocks reserved/blocked words, which
+/// we can't know locally — that comes back as NOT_ALLOWED).
+pub fn name_is_wellformed(name: &str) -> bool {
+    let len = name.chars().count();
+    (3..=16).contains(&len)
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Result of a name-availability probe. Mirrors Mojang's `status` field.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub enum NameStatus {
+    /// Free — you can take it (subject to your own 30-day cooldown).
+    Available,
+    /// Someone already owns it. This is Mojang's global-uniqueness guarantee.
+    Duplicate,
+    /// Reserved, blocked, or otherwise disallowed by Mojang.
+    NotAllowed,
+}
+
+#[derive(Debug, Deserialize)]
+struct NameAvailabilityResp {
+    status: String,
+}
+
+fn shared_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(crate::mojang::UA)
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(Into::into)
+}
+
+/// Ask Mojang whether `name` is available for this account. Requires a valid
+/// (non-expired) Minecraft access token — the caller should refresh first if
+/// the token is stale.
+pub async fn check_name_availability(access_token: &str, name: &str) -> Result<NameStatus> {
+    if !name_is_wellformed(name) {
+        bail!("name must be 3–16 characters, letters/numbers/underscore only");
+    }
+    let client = shared_client()?;
+    let url = format!("{MC_NAME_URL}/{name}/available");
+    let resp = client.get(&url).bearer_auth(access_token).send().await?;
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        bail!("your Minecraft session expired — sign in with Microsoft again");
+    }
+    let resp = resp.error_for_status().context("name-availability check failed")?;
+    let body: NameAvailabilityResp = resp.json().await.context("parsing availability response")?;
+    match body.status.to_ascii_uppercase().as_str() {
+        "AVAILABLE" => Ok(NameStatus::Available),
+        "DUPLICATE" => Ok(NameStatus::Duplicate),
+        // Anything else (NOT_ALLOWED and any future value) is "you can't have this".
+        _ => Ok(NameStatus::NotAllowed),
+    }
+}
+
+/// Perform the real name change against Mojang. On success returns an updated
+/// `Account` (new username, same UUID + tokens) that the caller must `save()`.
+///
+/// This is the operation that satisfies all three requirements at once, and it
+/// does so precisely *because* it goes through Mojang rather than the client:
+///   * works on every server — the server reads your name from Mojang's
+///     session response, not from anything the client claims;
+///   * transfers to actual Minecraft — it *is* your account's real name;
+///   * globally unique — Mojang refuses a name someone else already owns.
+pub async fn change_minecraft_name(account: &Account, name: &str) -> Result<Account> {
+    if account.user_type != "msa" {
+        bail!("offline mode — sign in with Microsoft to change your real Minecraft name");
+    }
+    if !name_is_wellformed(name) {
+        bail!("name must be 3–16 characters, letters/numbers/underscore only");
+    }
+    let client = shared_client()?;
+    let url = format!("{MC_NAME_URL}/{name}");
+    let resp = client
+        .put(&url)
+        .bearer_auth(&account.access_token)
+        .send()
+        .await?;
+    let status = resp.status();
+    match status {
+        reqwest::StatusCode::OK => {
+            // Mojang returns the updated profile. Reuse its name + id.
+            let profile: McProfile = resp.json().await.context("parsing changed-name profile")?;
+            if profile.id.len() != 32 {
+                bail!("Mojang returned an unexpected UUID format after the change");
+            }
+            let p = &profile.id;
+            let dashed = format!(
+                "{}-{}-{}-{}-{}",
+                &p[0..8], &p[8..12], &p[12..16], &p[16..20], &p[20..]
+            );
+            let mut updated = account.clone();
+            updated.username = profile.name;
+            updated.uuid = dashed;
+            Ok(updated)
+        }
+        reqwest::StatusCode::BAD_REQUEST => {
+            bail!("Mojang rejected '{name}' as invalid — 3–16 letters/numbers/underscore only")
+        }
+        reqwest::StatusCode::FORBIDDEN => {
+            // Name is taken or disallowed. Probe availability to say which.
+            match check_name_availability(&account.access_token, name).await {
+                Ok(NameStatus::Duplicate) =>
+                    bail!("'{name}' is already taken by another player — pick a different name"),
+                Ok(NameStatus::NotAllowed) =>
+                    bail!("'{name}' isn't allowed (reserved or blocked by Mojang)"),
+                _ => bail!("Mojang wouldn't allow the change to '{name}'"),
+            }
+        }
+        reqwest::StatusCode::TOO_MANY_REQUESTS => {
+            bail!("name change is on cooldown — Mojang allows one change every 30 days")
+        }
+        reqwest::StatusCode::UNAUTHORIZED => {
+            bail!("your Minecraft session expired — sign in with Microsoft again")
+        }
+        other => {
+            let detail = resp.text().await.unwrap_or_default();
+            bail!("name change failed (HTTP {}){}",
+                other.as_u16(),
+                if detail.is_empty() { String::new() } else { format!(": {detail}") })
+        }
+    }
 }
 
 /// True when the cached MSA token is older than ~12 hours and worth

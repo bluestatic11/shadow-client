@@ -1370,6 +1370,47 @@ body {
   line-height: 1.35;
 }
 
+/* Real Minecraft name changer: input + inline "Change" button on one row. */
+.realname-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.realname-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.realname-row input:focus {
+  outline: none;
+  border-color: var(--accent-focus);
+}
+.realname-btn {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.realname-btn:hover:not(:disabled) { filter: brightness(1.1); }
+.realname-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Availability feedback states on #realname-hint. */
+.account-menu-field-hint.ok       { color: #46d17f; }
+.account-menu-field-hint.bad      { color: #ff6b6b; }
+.account-menu-field-hint.checking { color: var(--text-dim); font-style: italic; }
+
 /* Original .username-row (no longer in DOM but keep selector defined so
    any straggling reference doesn't lay out weirdly) */
 .username-row input {

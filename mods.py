@@ -117,6 +117,10 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # server-side anyway), Silly's/Plus auto-totems (automation = cheat).
     ("cpvp",               "Totem Tweaks — small totem pop, custom pop anim", False),
     ("capes",              "cape support (OptiFine/Cosmetica capes render)", False),
+    # clears the fog/overlay when your camera is submerged in water/lava/
+    # powder snow — see through it clearly. Rendering-only (honor-system on
+    # servers that ban vision mods, like fullbright/ClearSight).
+    ("clear-waterlavapowdersnow", "see through water/lava/powder snow when submerged", False),
     ("status-effect-bars", "potion effects as timer bars",              False),
     ("health-indicators",  "hearts above players/mobs (synced HP only)",False),
     ("combat-hitboxes",    "hitboxes recolor when target is in your sights (1.4M dl)", False),

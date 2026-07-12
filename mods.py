@@ -35,7 +35,12 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("ebe",                "Enhanced Block Entities — baked chests",    False),
     ("particle-core",      "GPU-batched particle rendering",            False),
     ("scalablelux",        "modern lighting engine (Phosphor successor)",False),
-    ("exordium",           "render HUD/GUI at a lower framerate",       False),
+    # exordium removed 2026-07-12: maintenance-mode mod that batches HUD
+    # rendering into a framebuffer; officially unsupported alongside UI mods,
+    # and the top real-world cause of "Pose stack not empty" crashes. This
+    # stack is HUD-heavy (ShadowHud + Health Indicators + Combat Hitboxes +
+    # Crosshair Addons + Armor HUD ...), so Exordium fighting them for render
+    # state is the prime suspect for the intermittent render-pass crash.
 
     # --- CPU / memory / network ------------------------------------------
     ("krypton",            "network stack optimizations",               False),

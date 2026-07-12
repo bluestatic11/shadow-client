@@ -164,7 +164,16 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
 # version's Sodium dependency on Modrinth. Value is a substring matched
 # against the Modrinth version_number.
 VERSION_PINS: dict[str, str] = {
-    "sodium": "0.8.12",   # Iris 1.10.7 rejects Sodium 0.8.13
+    # The Iris/Sodium/Sodium-Extra trio is version-locked together:
+    #   Iris 1.10.7 (newest)        needs Sodium >=0.8.7  AND  <0.8.13
+    #   Sodium Extra 0.9.3 (newest) needs Sodium >=0.8.13
+    # These two can't both run their newest on one Sodium. Iris + Sodium
+    # 0.8.12 is the shader-capable pair, so we pin Sodium to 0.8.12 and hold
+    # Sodium Extra at 0.9.1 (last build that works with 0.8.12 — verified
+    # loading together). WHEN IRIS SHIPS A BUILD SUPPORTING 0.8.13, unpin
+    # all three so the whole trio jumps forward together.
+    "sodium": "0.8.12",
+    "sodium-extra": "0.9.1",
 }
 
 

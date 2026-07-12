@@ -118,12 +118,10 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     # server-side anyway), Silly's/Plus auto-totems (automation = cheat).
     ("cpvp",               "Totem Tweaks — small totem pop, custom pop anim", False),
     ("capes",              "cape support (OptiFine/Cosmetica capes render)", False),
-    # QoL, server-legal. NOTE: Xaero's entity/player radar is banned on many
-    # PvP servers (counts as ESP) — leave "Display Entities/Players" OFF in
-    # the minimap settings on Cosmos etc.; the map itself is fine.
-    ("xaeros-minimap",     "minimap + waypoints (turn OFF entity radar on PvP servers)", False),
-    ("xaeros-world-map",   "full explorable world map with waypoints",  False),
-    ("chat-heads",         "player face next to their chat messages",   False),
+    # Xaero's Minimap/WorldMap + Chat Heads removed 2026-07-11: added same day
+    # the "Pose stack not empty" render crashes returned after days clean.
+    # Pulled to test whether the new world-render code was the trigger. Re-add
+    # individually once the crash is pinned.
     # clears the fog/overlay when your camera is submerged in water/lava/
     # powder snow — see through it clearly. Rendering-only (honor-system on
     # servers that ban vision mods, like fullbright/ClearSight).

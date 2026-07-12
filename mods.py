@@ -74,7 +74,11 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("no-chat-reports",    "strip chat-report signatures (PvP-server standard)", False),
     ("better-ping-display-fabric", "numeric ping in the tab list",      False),
     ("armor-hud",          "armor pieces + durability by the hotbar",   False),
-    ("low-fire-reborn",    "low fire — lower 1st-person flames (always, no fire-res needed)", False),
+    # low-fire-reborn removed 2026-07-11: installed today (was pending during
+    # the crash-free days) and modifies fire-OVERLAY rendering — a render-pass
+    # matrix op, exactly what "Pose stack not empty" crashes point to. Prime
+    # suspect for the returning crash. Low fire is covered by the LT3 resource
+    # pack + dynamic-fire-overlay anyway.
     ("dynamic-fire-overlay","low fire — shrink/lower the burning overlay", False),
     ("shieldscale",        "low shield — custom shield scale/position", False),
     ("shield-statuses",    "color-coded shield states (up/disabled/cooldown)", False),
@@ -146,7 +150,7 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("cloth-config",           "lib: needed by Shield Crosshair Indicator", False),
     ("placeholder-api",        "lib: needed by Mod Menu",               False),
     ("ukulib",                 "lib: needed by BetterHurtCam",          False),
-    ("owo-lib",                "lib: needed by Low Fire Reborn",        False),
+    # owo-lib removed with low-fire-reborn (its only consumer) 2026-07-11
     ("fabric-language-kotlin", "lib: needed by Particle Core",          False),
     ("fzzy-config",            "lib: needed by Particle Core",          False),
     ("forge-config-api-port",  "lib: needed by RRLS",                   False),

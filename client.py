@@ -478,6 +478,11 @@ ENFORCED_OPTIONS = {
     # the two above this IS a personal pref — enforced because the user
     # explicitly asked for sensitivity to snap back to 41% on every launch.
     "mouseSensitivity": "0.205",
+    # User-requested "auto" toggles: view bobbing always OFF (steadier aim /
+    # no motion during hits), toggle-sprint always ON (tap to sprint instead
+    # of holding). Both re-applied every launch so they never revert.
+    "bobView": "false",
+    "toggleSprint": "true",
 }
 
 

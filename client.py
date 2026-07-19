@@ -472,7 +472,7 @@ def _sync_player_files(profile_dir: Path, *, pull: bool) -> None:
 # NOT here — those stay user-owned and synced by _sync_player_files. In
 # particular guiScale is left alone so "auto" (0) or any manual choice sticks.
 ENFORCED_OPTIONS = {
-    "maxFps": "260",          # 260 == "Unlimited" on MC's framerate slider
+    "maxFps": "120",          # CAPPED (was unlimited) — uncapped 1000+fps was overloading the GPU into display glitching + crashes
     "enableVsync": "false",   # vsync always off (uncapped frames, lower latency)
     # User-requested pin: slider % maps value*200, so 41% == 0.205. Unlike
     # the two above this IS a personal pref — enforced because the user

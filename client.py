@@ -473,7 +473,7 @@ def _sync_player_files(profile_dir: Path, *, pull: bool) -> None:
 # particular guiScale is left alone so "auto" (0) or any manual choice sticks.
 ENFORCED_OPTIONS = {
     "maxFps": "120",          # CAPPED (was unlimited) — uncapped 1000+fps was overloading the GPU into display glitching + crashes
-    "enableVsync": "false",   # vsync always off (uncapped frames, lower latency)
+    "enableVsync": "true",    # VSync ON — syncs frame delivery to refresh; fixed the residual OLED glitching (frame-pacing, not hardware)
     # User-requested pin: slider % maps value*200, so 41% == 0.205. Unlike
     # the two above this IS a personal pref — enforced because the user
     # explicitly asked for sensitivity to snap back to 41% on every launch.

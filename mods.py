@@ -1,4 +1,4 @@
-﻿"""Performance mod installer.
+"""Performance mod installer.
 
 Pulls Fabric-compatible performance mods straight from Modrinth's public API.
 All chosen mods are pure optimizations â€” they change rendering, memory, and

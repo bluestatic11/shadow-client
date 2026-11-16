@@ -1,7 +1,15 @@
 # Shadow Client
 
-A free Minecraft 1.21 client built around the modern Fabric performance stack.
-130+ HUD modules, Lunar-grade visual polish, **3× the FPS of Lunar Client** on the same hardware.
+A free Minecraft launcher and client for 1.21 and above, built around the
+Fabric performance-mod stack.
+
+**Download:** installers for Windows, macOS and Linux are on the
+[releases page](https://github.com/bluestatic11/shadow-client/releases/latest).
+Website: https://bluestatic11.github.io/shadow-client/
+
+The installer sets up Fabric and the performance mods and manages profiles,
+mods and resource packs. The Shadow HUD mod in this repo is separate; see
+[The HUD mod](#the-hud-mod-shadow-hud) for where it works.
 
 ## What's in this repo
 
@@ -15,7 +23,7 @@ shadow-client/
 ├── jvm.py               ── Tuned JVM flags (G1GC / ZGC profiles)
 ├── jdk.py               ── JDK auto-detect / bundled-JDK helper
 │
-├── branding/hud_mod/    ── Shadow HUD Fabric mod (~14k LOC, ~140 modules)
+├── branding/hud_mod/    ── Shadow HUD Fabric mod (~14k LOC, 180+ modules)
 │   ├── src/             ── Java source (reflection-based, no compile-time MC deps)
 │   ├── stubs/           ── Tiny stub classes for the few mixin signatures
 │   ├── resources/       ── Mixin manifest + cape/cosm PNGs
@@ -26,7 +34,7 @@ shadow-client/
 │   ├── src-tauri/       ── Backend (calls into client.py via subprocess)
 │   └── README.md        ── Build instructions
 │
-└── website/             ── Landing page (deploy to Cloudflare Pages)
+└── website/             ── Landing page (deployed to GitHub Pages)
     └── README.md        ── Deploy instructions
 ```
 
@@ -38,9 +46,11 @@ python client.py setup --username YourName
 python client.py launch
 ```
 
-First `setup` downloads MC 1.21.11, installs Fabric, fetches the perf mod stack
-(Sodium, Lithium, FerriteCore, ImmediatelyFast, EntityCulling, ScalableLux,
-ThreadTweak, Krypton, Iris, Bobby, etc.), and compiles the Shadow HUD mod.
+First `setup` downloads the latest Minecraft release (pass `--version 1.21.11`
+to pick one), installs Fabric, and fetches every performance mod in `mods.py`
+that has a build for that version (Sodium, Lithium, FerriteCore,
+ImmediatelyFast, Iris and others). Mods without a build for your version are
+skipped. It also tries to compile the Shadow HUD mod.
 
 For online Microsoft-account play: `python client.py login`.
 
@@ -55,24 +65,20 @@ npm run dev          # dev window with hot reload
 npm run build        # production .exe / .dmg / .AppImage
 ```
 
-## Performance
+## Performance mods
 
-Benchmarks on **Singleplayer**, 1.21.11, 32-chunk render distance, identical
-hardware.
-
-| Client | FPS |
-|---|---|
-| Lunar Client | 150–170 |
-| **Shadow Client** | **600** |
-
-The performance comes from bundling the modern community renderer stack
-(Sodium 0.8.7 + Iris + Lithium + ImmediatelyFast + EntityCulling + ScalableLux
-+ ThreadTweak + FerriteCore + Krypton + Bobby), all already configured.
-No driver tricks, no closed-source magic — just the right mods, pre-installed.
+Shadow Client has no renderer of its own. It installs the community
+performance mods (Sodium, Lithium, FerriteCore, ImmediatelyFast and others)
+and launches with tuned JVM flags. Which mods you get depends on the
+Minecraft version, because each mod is only installed if it has a build for it.
 
 ## The HUD mod (Shadow HUD)
 
-140+ toggleable in-game modules, all with their own config panel:
+180+ toggleable in-game modules, all with their own config panel.
+
+**Where it works:** the CLI `setup` builds it, and it runs on Minecraft
+1.21.11. It does not load on 26.x yet, because Fabric replaced the HUD API it
+hooks into. The desktop installer does not include it.
 
 - **Display** — FPS, HP, XYZ, Time, Compass, Day, Direction (with full settings)
 - **Combat** — CPS, Combo, Reach, Killstreak, Hit markers, etc.

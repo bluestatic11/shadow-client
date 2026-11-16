@@ -3,8 +3,6 @@
 A free Minecraft 1.21 client built around the modern Fabric performance stack.
 130+ HUD modules, Lunar-grade visual polish, **3× the FPS of Lunar Client** on the same hardware.
 
-![Shadow Client preview](website/assets/preview.png)
-
 ## What's in this repo
 
 ```

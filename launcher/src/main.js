@@ -4632,12 +4632,14 @@ $('diag-check-update')?.addEventListener('click', async () => {
     const data = await r.json();
     const latest = (data.tag_name || '').replace(/^v/, '').trim();
     if (!latest) throw new Error('No release found');
+    await launcherVersionReady;
     if (compareSemver(latest, CURRENT_LAUNCHER_VERSION) <= 0) {
       btn.textContent = `Already on latest (v${CURRENT_LAUNCHER_VERSION})`;
     } else {
-      btn.textContent = `Update found — v${latest}, installing…`;
-      // Fall through to the normal auto-install path.
-      checkForLauncherUpdate();
+      btn.textContent = `Update found — v${latest}`;
+      // Fall through to the normal update path. `manual` skips the
+      // "already tried this version" guard: the user asked for it.
+      checkForLauncherUpdate({ manual: true });
     }
   } catch (e) {
     btn.textContent = 'Check failed: ' + String(e).slice(0, 50);
@@ -4881,10 +4883,44 @@ function resolveCurrentVersion() {
   const t = (el?.textContent || '').replace(/^v/, '').trim();
   return t || HARDCODED_VERSION;
 }
-const CURRENT_LAUNCHER_VERSION = resolveCurrentVersion();
+let CURRENT_LAUNCHER_VERSION = resolveCurrentVersion();
+
+// The label in index.html is edited by hand and has shipped stale: the
+// v0.3.109 build still said v0.3.108, so every launch saw "a newer release",
+// ran the updater and quit — forever. Ask the app binary for its real
+// version instead and correct the label from it. The label stays as the
+// fallback if the Tauri app API is unavailable.
+const launcherVersionReady = (async () => {
+  try {
+    const v = await tauriGlobal?.app?.getVersion?.();
+    const clean = String(v || '').replace(/^v/, '').trim();
+    if (clean) {
+      CURRENT_LAUNCHER_VERSION = clean;
+      const el = document.getElementById('version-label')
+              || document.querySelector('.brand-sub');
+      if (el) el.textContent = 'v' + clean;
+    }
+  } catch (e) {
+    console.warn('[shadow] could not read app version, using label:', e);
+  }
+})();
+
+// Remember which release we last tried to auto-install. If we are asked to
+// install the same release again, the previous attempt did not take, and
+// retrying on every boot would quit the launcher on every boot. Offer a
+// manual download instead.
+const AUTO_UPDATE_ATTEMPT_KEY = 'shadow.autoUpdateAttempt';
+function alreadyTriedAutoUpdate(version) {
+  try { return localStorage.getItem(AUTO_UPDATE_ATTEMPT_KEY) === version; }
+  catch (_) { return false; }
+}
+function rememberAutoUpdateAttempt(version) {
+  try { localStorage.setItem(AUTO_UPDATE_ATTEMPT_KEY, version); } catch (_) {}
+}
 const LAUNCHER_UPDATE_URL = 'https://api.github.com/repos/bluestatic11/shadow-client/releases/latest';
 
-async function checkForLauncherUpdate() {
+async function checkForLauncherUpdate(opts = {}) {
+  await launcherVersionReady;
   if (!CURRENT_LAUNCHER_VERSION) return;
   try {
     const r = await fetch(LAUNCHER_UPDATE_URL);
@@ -4907,13 +4943,53 @@ async function checkForLauncherUpdate() {
     const asset = (data.assets || []).find(a => patterns[platform].test(a.name));
     if (!asset) return;
 
-    // FIRE-AND-FORGET auto-update. No button, no prompt — just fetch the
-    // installer and run it. The user sees a status banner so they know what's
-    // happening, but they don't need to click anything.
+    // macOS and Linux cannot be updated silently: a .dmg has to be dragged
+    // into Applications by hand. Downloading it and quitting just closed the
+    // launcher on every start. Keep running and offer the download instead.
+    if (platform !== 'windows') {
+      showUpdateAvailable(latest, asset.browser_download_url, platform);
+      return;
+    }
+
+    // Windows: silent auto-update, but only once per release (see the guard
+    // above) unless the user pressed the manual check button.
+    if (!opts.manual && alreadyTriedAutoUpdate(latest)) {
+      showUpdateAvailable(latest, asset.browser_download_url, platform);
+      return;
+    }
+    rememberAutoUpdateAttempt(latest);
     autoInstallUpdate(latest, asset.browser_download_url);
   } catch (e) {
     console.warn('[shadow] update check failed:', e);
   }
+}
+
+// Passive "update available" banner: a download button and a dismiss
+// button. Never exits the launcher.
+function showUpdateAvailable(latest, downloadUrl, platform) {
+  if (document.getElementById('update-available-banner')) return;
+  const how = platform === 'mac'
+    ? 'Download it, open the .dmg and drag Shadow Client into Applications to replace this version.'
+    : platform === 'linux'
+      ? 'Download the new AppImage and use it in place of this one.'
+      : 'The automatic update did not finish last time. Download the installer and run it.';
+  const banner = document.createElement('div');
+  banner.id = 'update-available-banner';
+  banner.className = 'startup-banner update';
+  banner.setAttribute('role', 'status');
+  banner.innerHTML = `
+    <div class="startup-banner-title">▲ Update available: v${escapeHtml(latest)}</div>
+    <div class="startup-banner-body">You are on v${escapeHtml(CURRENT_LAUNCHER_VERSION)}. ${how}</div>
+    <div class="startup-banner-actions">
+      <button type="button" class="banner-action-primary" id="update-available-download">Download update</button>
+      <button type="button" class="banner-action-primary" id="update-available-later">Later</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+  banner.querySelector('#update-available-download')
+    ?.addEventListener('click', () => { openExternal(downloadUrl); });
+  banner.querySelector('#update-available-later')
+    ?.addEventListener('click', () => banner.remove());
 }
 
 async function autoInstallUpdate(latest, downloadUrl) {

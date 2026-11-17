@@ -46,6 +46,22 @@ jobs:
           # pulls everything.
           fetch-depth: 0
 
+      # The launcher compares its own version to the release tag to decide
+      # whether to update. If the two disagree, every install believes it is
+      # out of date and updates on every start, so refuse to build.
+      - name: Check tag matches app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          conf=$(grep -m1 '"version"' launcher/src-tauri/tauri.conf.json | sed -E 's/.*"version": *"([^"]+)".*/\1/')
+          cargo=$(grep -m1 '^version' launcher/src-tauri/Cargo.toml | sed -E 's/^version *= *"([^"]+)".*/\1/')
+          echo "tag=$tag tauri.conf.json=$conf Cargo.toml=$cargo"
+          if [ "v$conf" != "$tag" ] || [ "$conf" != "$cargo" ]; then
+            echo "::error::Version mismatch: tag $tag, tauri.conf.json $conf, Cargo.toml $cargo. Bump both files to match the tag."
+            exit 1
+          fi
+
       - name: Extract user-facing changelog for release body
         id: changelog
         shell: bash

@@ -17,7 +17,7 @@ MODRINTH = "https://api.modrinth.com/v2"
 # (slug, description, critical?) â€” ordered by impact on FPS.
 #
 # The list includes a few slugs that don't yet ship a 1.21.11 build
-# (nvidium, ebe) â€” _pick_version skips them with a "skip" message and
+# (ebe) â€” _pick_version skips them with a "skip" message and
 # picks them up automatically the next time you run `update-mods` once
 # their maintainers release. Keeping them here documents intent.
 PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
@@ -31,7 +31,6 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
     ("dynamic-fps",        "drop FPS when window is unfocused",         True),
 
     # --- GPU-side extras (big wins when supported) -----------------------
-    ("nvidium",            "NVIDIA mesh-shader accelerated chunks",     False),
     ("ebe",                "Enhanced Block Entities â€” baked chests",    False),
     ("particle-core",      "GPU-batched particle rendering",            False),
     ("scalablelux",        "modern lighting engine (Phosphor successor)",False),

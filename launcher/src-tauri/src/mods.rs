@@ -46,7 +46,6 @@ pub const PERFORMANCE_MODS: &[(&str, &str, bool)] = &[
     ("immediatelyfast",       "faster HUD / GUI rendering",                 true),
     ("entityculling",         "skip rendering occluded entities",           true),
     ("dynamic-fps",           "drop FPS when window is unfocused",          true),
-    ("nvidium",               "NVIDIA mesh-shader accelerated chunks",      false),
     ("ebe",                   "Enhanced Block Entities — baked chests",     false),
     ("particle-core",         "GPU-batched particle rendering",             false),
     ("scalablelux",           "modern lighting engine",                     false),

@@ -52,7 +52,7 @@ pub const MOD_JAR_URL: &str =
 
 /// MC versions the mod is currently built for. The auto-installer scopes
 /// the entry to these versions only — older / unsupported versions skip
-/// it silently the same way they skip Nvidium etc.
+/// it silently the same way they skip other mods with no build.
 pub const SUPPORTED_MC_VERSIONS: &[&str] = &["1.21.10", "1.21.11", "26.1.2"];
 
 /// On-disk schema. Field names are wire-format — do not rename.

@@ -2143,6 +2143,26 @@ body {
 
 .mod-row.disabled { opacity: 0.55; }
 
+.mod-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.mod-remove {
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--text-mute);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.mod-remove:hover:not(:disabled),
+.mod-remove:focus-visible { color: #ff6b6b; border-color: #ff6b6b; }
+
+.mod-remove:disabled { opacity: 0.6; cursor: default; }
+
 .mod-status {
   width: 8px;
   height: 8px;

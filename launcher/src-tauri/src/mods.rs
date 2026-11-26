@@ -1,6 +1,7 @@
 //! Modrinth performance-mod installer. Rust port of `mods.py`.
 
 use anyhow::Result;
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::mojang::{self, download_file};
@@ -63,6 +64,12 @@ pub const PERFORMANCE_MODS: &[(&str, &str, bool)] = &[
     ("sodium-extra",          "extra sodium options",                       false),
     ("almanac",               "lib: needed by Let Me Despawn",              false),
     ("cloth-config",          "lib: needed by More Culling",                false),
+    ("iris",                  "shader support",                             false),
+    ("modmenu",               "in-game mod list + config screens",          false),
+    ("combat-hitboxes",       "hitbox colour when a target is in reach",    false),
+    ("hitcolor",              "hit players flash a colour",                 false),
+    ("yacl",                  "lib: needed by HitColor",                    false),
+    ("placeholder-api",       "lib: needed by Mod Menu",                    false),
     ("fabric-language-kotlin", "lib: needed by Particle Core",              false),
     ("fzzy-config",           "lib: needed by Particle Core",               false),
     ("forge-config-api-port", "lib: needed by RRLS",                        false),
@@ -70,6 +77,21 @@ pub const PERFORMANCE_MODS: &[(&str, &str, bool)] = &[
 
 /// Newest Modrinth version compatible with (mc_version, loader=fabric).
 /// Exact `mc_version` match only — avoids the 1.21.1-mod-into-1.21.11 trap.
+/// Exact Modrinth version_number to use for a mod on one Minecraft version
+/// (mc, slug, version_number), when the newest release conflicts with another
+/// mod in the list. 26.3: every Sodium from 0.9.3 on marks Iris <= 1.12.0 as
+/// incompatible, and More Culling 1.9.2 marks Sodium <= 0.9.3-beta.1 as
+/// incompatible. Drop these once Iris 1.12 is out for 26.3. Keep in sync with
+/// VERSION_PINS in mods.py.
+pub const VERSION_PINS: &[(&str, &str, &str)] = &[
+    ("26.3", "sodium", "mc26.3-0.9.2-fabric"),
+    ("26.3", "sodium-extra", "mc26.3-0.9.5+fabric"),
+    ("26.3", "moreculling", "1.9.1"),
+];
+
+/// Newest release for (mc_version, fabric); a beta only when the mod has no
+/// release for that version, never an alpha. Betas are often ahead of the
+/// rest of the ecosystem (Sodium betas declare current Iris incompatible).
 pub async fn pick_version(
     client: &reqwest::Client,
     slug: &str,
@@ -78,15 +100,84 @@ pub async fn pick_version(
     let url = format!("{MODRINTH}/project/{slug}/version");
     let arr: serde_json::Value = mojang::http_get_json(client, &url).await.ok()?;
     let arr = arr.as_array()?;
-    for v in arr {
-        let loaders = v.get("loaders").and_then(|v| v.as_array())?;
-        if !loaders.iter().any(|l| l.as_str() == Some("fabric")) { continue; }
-        let gv = v.get("game_versions").and_then(|v| v.as_array())?;
-        if !gv.iter().any(|g| g.as_str() == Some(mc_version)) { continue; }
-        if v.get("version_type").and_then(|v| v.as_str()) == Some("alpha") { continue; }
-        return Some(v.clone());
+    let pin = VERSION_PINS
+        .iter()
+        .find(|(mc, s, _)| *mc == mc_version && *s == slug)
+        .map(|(_, _, v)| *v);
+    let matching: Vec<&serde_json::Value> = arr
+        .iter()
+        .filter(|v| {
+            let fabric = v.get("loaders").and_then(|l| l.as_array())
+                .map_or(false, |l| l.iter().any(|x| x.as_str() == Some("fabric")));
+            let mc = v.get("game_versions").and_then(|g| g.as_array())
+                .map_or(false, |g| g.iter().any(|x| x.as_str() == Some(mc_version)));
+            fabric && mc
+        })
+        .collect();
+    if let Some(pin) = pin {
+        if let Some(v) = matching.iter().find(|v| {
+            v.get("version_number").and_then(|x| x.as_str()) == Some(pin)
+        }) {
+            return Some((*v).clone());
+        }
     }
-    None
+    let of_type = |t: &str| {
+        matching.iter().find(|v| v.get("version_type").and_then(|x| x.as_str()) == Some(t))
+    };
+    of_type("release").or_else(|| of_type("beta")).map(|v| (*v).clone())
+}
+
+/// File in a profile folder listing the Modrinth project IDs the user removed
+/// with the Remove button. install_mods never reinstalls them.
+pub const REMOVED_MODS_FILE: &str = "removed-mods.json";
+
+pub fn load_removed(profile_dir: &Path) -> Vec<String> {
+    std::fs::read(profile_dir.join(REMOVED_MODS_FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_removed(profile_dir: &Path, ids: &[String]) -> Result<()> {
+    std::fs::write(profile_dir.join(REMOVED_MODS_FILE), serde_json::to_vec_pretty(ids)?)?;
+    Ok(())
+}
+
+/// Map each .jar in `mods_dir` to its Modrinth project ID (one batched
+/// lookup by SHA-1). Jars Modrinth doesn't know are left out. Best effort:
+/// any network failure returns an empty map.
+async fn projects_of_jars(client: &reqwest::Client, mods_dir: &Path) -> HashMap<String, String> {
+    let mut by_hash: HashMap<String, String> = HashMap::new();
+    if let Ok(rd) = std::fs::read_dir(mods_dir) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".jar") { continue; }
+            if let Ok(h) = mojang::sha1_file(&e.path()) {
+                by_hash.insert(h, name);
+            }
+        }
+    }
+    let mut out = HashMap::new();
+    if by_hash.is_empty() { return out; }
+    let hashes: Vec<&String> = by_hash.keys().collect();
+    let body = serde_json::json!({ "hashes": hashes, "algorithm": "sha1" });
+    let resp = client
+        .post(format!("{MODRINTH}/version_files"))
+        .header("User-Agent", mojang::UA)
+        .json(&body)
+        .send()
+        .await;
+    let Ok(resp) = resp else { return out };
+    let Ok(val) = resp.json::<serde_json::Value>().await else { return out };
+    if let Some(obj) = val.as_object() {
+        for (hash, ver) in obj {
+            let pid = ver.get("project_id").and_then(|v| v.as_str());
+            if let (Some(name), Some(pid)) = (by_hash.get(hash), pid) {
+                out.insert(name.clone(), pid.to_string());
+            }
+        }
+    }
+    out
 }
 
 pub async fn install_mods(
@@ -99,6 +190,12 @@ pub async fn install_mods(
     let mut installed = Vec::new();
     let mut skipped = Vec::new();
     let total = PERFORMANCE_MODS.len() + DIRECT_URL_MODS.len();
+    // Mods the user removed with the Remove button stay removed, and each
+    // jar already present is mapped to its Modrinth project so an update can
+    // delete the old version instead of leaving two copies (Fabric refuses
+    // to start with duplicate mods).
+    let removed = mods_dir.parent().map(load_removed).unwrap_or_default();
+    let existing = projects_of_jars(client, mods_dir).await;
     for (i, (slug, desc, critical)) in PERFORMANCE_MODS.iter().enumerate() {
         progress(format!("  [{}/{}] {} — {}", i + 1, total, slug, desc));
         let v = match pick_version(client, slug, mc_version).await {
@@ -110,6 +207,12 @@ pub async fn install_mods(
                 continue;
             }
         };
+        let project_id = v.get("project_id").and_then(|p| p.as_str()).unwrap_or_default().to_string();
+        if !project_id.is_empty() && removed.iter().any(|r| *r == project_id) {
+            progress(format!("  skip {slug} — you removed it"));
+            skipped.push(slug.to_string());
+            continue;
+        }
         let files = v.get("files").and_then(|f| f.as_array()).cloned().unwrap_or_default();
         let Some(file) = files.first() else { skipped.push(slug.to_string()); continue };
         let filename = file
@@ -126,7 +229,16 @@ pub async fn install_mods(
         // Previously a single `?` here turned a transient CDN flake
         // into "setup failed, deleted half the profile" pain.
         match download_file(client, url, &dest, sha1).await {
-            Ok(()) => installed.push(slug.to_string()),
+            Ok(()) => {
+                installed.push(slug.to_string());
+                for (name, pid) in &existing {
+                    if !project_id.is_empty() && *pid == project_id && name.as_str() != filename {
+                        if std::fs::remove_file(mods_dir.join(name)).is_ok() {
+                            progress(format!("  removed old {name}"));
+                        }
+                    }
+                }
+            }
             Err(e) => {
                 let msg = if *critical { " (critical!)" } else { "" };
                 progress(format!("  skip {slug} — download failed: {e:#}{msg}"));

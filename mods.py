@@ -171,10 +171,18 @@ PERFORMANCE_MODS: list[tuple[str, str, bool]] = [
 # that supports a newer Sodium, bump or delete this entry** â€” check the Iris
 # version's Sodium dependency on Modrinth. Value is a substring matched
 # against the Modrinth version_number.
-VERSION_PINS: dict[str, str] = {
-    # (cleared 2026-09 for the 26.3 update — the Iris/Sodium version-lock that
-    # forced these was a transient 1.21.11-era issue; 26.3 mods are re-synced.
-    # Re-add a pin here only if a specific version conflict reappears.)
+# Exact Modrinth version_number to use for a mod on one Minecraft version,
+# when the newest release conflicts with another mod in the list.
+# 26.3: every Sodium from 0.9.3 on marks Iris <= 1.12.0 as incompatible, and
+# More Culling 1.9.2 marks Sodium <= 0.9.3-beta.1 as incompatible. Drop these
+# once Iris 1.12 is out for 26.3. Keep in sync with VERSION_PINS in
+# launcher/src-tauri/src/mods.rs.
+VERSION_PINS: dict[str, dict[str, str]] = {
+    "26.3": {
+        "sodium": "mc26.3-0.9.2-fabric",
+        "sodium-extra": "mc26.3-0.9.5+fabric",
+        "moreculling": "1.9.1",
+    },
 }
 
 
@@ -187,27 +195,25 @@ def _pick_version(slug: str, mc_version: str, loader: str = "fabric") -> dict[st
     had changed â€” see ModernFix/Noisium earlier. Better to miss a mod than
     install a poisoned one.
     """
-    pin = VERSION_PINS.get(slug)
+    pin = VERSION_PINS.get(mc_version, {}).get(slug)
     try:
         versions = json.loads(_http_get(f"{MODRINTH}/project/{slug}/version"))
     except Exception as e:
         print(f"[mods] {slug}: lookup failed ({e})")
         return None
-    for v in versions:  # Modrinth returns newest first
-        if loader not in v.get("loaders", []):
-            continue
-        if mc_version not in v.get("game_versions", []):
-            continue
-        if v.get("version_type") == "alpha":
-            continue
-        # Version-locked mods (see VERSION_PINS): skip any build whose version
-        # string doesn't contain the pinned token. Release sorts ahead of its
-        # own betas in Modrinth's newest-first order, so the first match is the
-        # pinned release, not a beta of it.
-        if pin and pin not in v.get("version_number", ""):
-            continue
-        return v
-    return None
+    matching = [v for v in versions  # Modrinth returns newest first
+                if loader in v.get("loaders", []) and mc_version in v.get("game_versions", [])]
+    if pin:
+        pinned = next((v for v in matching if v.get("version_number") == pin), None)
+        if pinned:
+            return pinned
+        print(f"[mods] {slug}: pinned version {pin} not found, using the newest release")
+    # Newest release; a beta only when the mod has no release for this
+    # version. Betas are often ahead of the rest of the ecosystem (Sodium
+    # betas declare current Iris incompatible). Never alpha.
+    release = next((v for v in matching if v.get("version_type") == "release"), None)
+    beta = next((v for v in matching if v.get("version_type") == "beta"), None)
+    return release or beta
 
 
 # â”€â”€â”€ Direct-URL mods (not on Modrinth) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

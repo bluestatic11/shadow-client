@@ -96,7 +96,7 @@ pub async fn http_get_json<T: for<'de> Deserialize<'de>>(
 }
 
 /// SHA-1 hex of a file's contents.
-fn sha1_file(path: &Path) -> Result<String> {
+pub fn sha1_file(path: &Path) -> Result<String> {
     use std::io::Read;
     let mut f = std::fs::File::open(path)?;
     let mut hasher = Sha1::new();

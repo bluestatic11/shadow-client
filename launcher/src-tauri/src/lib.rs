@@ -976,6 +976,69 @@ fn add_mod_jar(
     Ok(safe)
 }
 
+/// Remove one mod from a profile. The jar moves to <profile>/mods-removed/
+/// (restore it by moving it back), and if Modrinth knows the mod its project
+/// is recorded so "update mods" doesn't reinstall it.
+#[tauri::command]
+async fn remove_mod(version: Option<String>, name: String) -> Result<String, String> {
+    use std::path::Path;
+    let here = project_root();
+    let profile_dir = match version.as_deref() {
+        Some(v) if !v.is_empty() => here.join("game_dir").join("profiles").join(v),
+        _ => here.join("game_dir"),
+    };
+    let mods_dir = profile_dir.join("mods");
+    let safe = Path::new(&name)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if safe.is_empty() || safe != name || safe.contains("..") {
+        return Err(format!("invalid mod filename: {name}"));
+    }
+    let lower = safe.to_lowercase();
+    if !(lower.ends_with(".jar") || lower.ends_with(".jar.disabled")) {
+        return Err(format!("not a mod jar: {safe}"));
+    }
+    let src = mods_dir.join(&safe);
+    if !src.is_file() {
+        return Err(format!("{safe} is not in this profile's mods folder"));
+    }
+
+    // Look the jar up before moving it, so we know which project to block.
+    let project_id = match mojang::sha1_file(&src) {
+        Ok(hash) => {
+            let client = reqwest::Client::builder()
+                .user_agent(mojang::UA)
+                .build()
+                .map_err(|e| e.to_string())?;
+            let url = format!("{}/version_file/{hash}?algorithm=sha1", mods::MODRINTH);
+            mojang::http_get_json::<serde_json::Value>(&client, &url)
+                .await
+                .ok()
+                .and_then(|v| v.get("project_id").and_then(|p| p.as_str()).map(String::from))
+        }
+        Err(_) => None,
+    };
+
+    let bin = profile_dir.join("mods-removed");
+    std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
+    let dest = bin.join(&safe);
+    if dest.exists() {
+        let _ = std::fs::remove_file(&dest);
+    }
+    std::fs::rename(&src, &dest)
+        .map_err(|e| format!("could not move {safe} (is Minecraft running?): {e}"))?;
+
+    if let Some(pid) = project_id {
+        let mut removed = mods::load_removed(&profile_dir);
+        if !removed.contains(&pid) {
+            removed.push(pid);
+        }
+        mods::save_removed(&profile_dir, &removed).map_err(|e| e.to_string())?;
+    }
+    Ok(safe)
+}
+
 // ───── Cosmetics persistence ──────────────────────────────────
 //
 // Stored as a JSON object at <project_root>/cosmetics.json with one key
@@ -1861,6 +1924,7 @@ pub fn run() {
             change_mc_name,
             list_mods,
             add_mod_jar,
+            remove_mod,
             install_mod_from_url,
             project_path,
             check_python,

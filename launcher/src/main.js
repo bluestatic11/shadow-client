@@ -2739,7 +2739,13 @@ async function refreshMods() {
       const label = document.createElement('span');
       label.className = 'mod-name';
       label.textContent = name;
-      row.append(status, label);
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'mod-remove';
+      removeBtn.textContent = 'Remove';
+      removeBtn.setAttribute('aria-label', 'Remove ' + name);
+      removeBtn.addEventListener('click', () => removeMod(name, removeBtn));
+      row.append(status, label, removeBtn);
       list.appendChild(row);
     }
     // Only offer the filter when there's enough to filter through.
@@ -2747,6 +2753,24 @@ async function refreshMods() {
     applyModFilter();
   } catch (e) {
     list.innerHTML = '<li class="empty">Error: ' + e + '</li>';
+  }
+}
+
+async function removeMod(name, btn) {
+  const ok = confirm(
+    `Remove ${name}?\n\nIt moves to this profile's mods-removed folder, ` +
+    `and "Update mods" won't reinstall it.`);
+  if (!ok) return;
+  btn.disabled = true;
+  btn.textContent = 'Removing…';
+  try {
+    await invoke('remove_mod', { version: getPickedVersion(), name });
+    await refreshMods();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Remove';
+    btn.title = 'Could not remove: ' + e;
+    alert('Could not remove ' + name + ':\n' + e);
   }
 }
 

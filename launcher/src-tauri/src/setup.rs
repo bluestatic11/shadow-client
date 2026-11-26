@@ -207,11 +207,11 @@ pub async fn launch(
         }
         let Some(art) = lib.get("downloads").and_then(|d| d.get("artifact")) else { continue };
         let Some(path) = art.get("path").and_then(|v| v.as_str()) else { continue };
-        // Skip native-only libs from classpath
-        let name = lib.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-        if name.contains(&format!(":natives-{os_name}"))
-            || name.ends_with(&format!("-natives-{os_name}"))
-        { continue; }
+        // Native jars stay on the classpath, as in Mojang's launcher and the
+        // Python CLI. LWJGL then loads the build for this CPU from them by
+        // itself. Minecraft 26.x points java.library.path at natives/java,
+        // which we never fill, so without these jars the game died with
+        // "Failed to locate library: lwjgl.dll".
         let jar = shared_dir.join("libraries").join(path);
         if jar.exists() { classpath.push(jar); }
     }

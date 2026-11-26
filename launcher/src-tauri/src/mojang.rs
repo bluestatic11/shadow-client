@@ -249,6 +249,23 @@ pub fn rule_allows(
     allowed
 }
 
+/// For a modern native library name such as
+/// "org.lwjgl:lwjgl:3.4.3:natives-windows-arm64", return `Some(true)` when it
+/// is the native jar for this exact OS and CPU, `Some(false)` when it is a
+/// native jar for another OS or CPU, and `None` when it is not a native jar.
+pub fn native_jar_for_this_platform(name: &str, os_name: &str, arch: &str) -> Option<bool> {
+    let classifier = name.rsplit(':').next()?;
+    let rest = classifier.strip_prefix("natives-")?;
+    // Mojang calls macOS "osx" in rules but "macos" in classifiers.
+    let os_tag = if os_name == "osx" { "macos" } else { os_name };
+    let want = match arch {
+        "x64" => os_tag.to_string(),
+        "arm64" => format!("{os_tag}-arm64"),
+        _ => format!("{os_tag}-x86"),
+    };
+    Some(rest == want)
+}
+
 /// One library download task.
 #[derive(Debug, Clone)]
 pub struct LibTask {
@@ -276,10 +293,16 @@ fn library_downloads(
         let url = art.get("url").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         let path = art.get("path").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         let sha1 = art.get("sha1").and_then(|v| v.as_str()).map(String::from);
-        // Modern (1.19+) natives: artifact name has ":natives-<os>" suffix.
+        // Modern (1.19+) natives: the classifier names the OS and CPU, e.g.
+        // ":natives-windows" (x64) and ":natives-windows-arm64". Only extract
+        // the one built for this machine. Extracting all of them into one
+        // folder let an ARM64 DLL overwrite the x64 one at random, depending
+        // on which parallel download finished last.
         let name = lib.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-        let is_native = name.contains(&format!(":natives-{os_name}"))
-            || name.ends_with(&format!("-natives-{os_name}"));
+        let is_native = match native_jar_for_this_platform(name, os_name, arch) {
+            Some(this_platform) => this_platform,
+            None => name.ends_with(&format!("-natives-{os_name}")),
+        };
         out.push(LibTask {
             url,
             dest: lib_root.join(&path),

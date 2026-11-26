@@ -62,6 +62,7 @@ pub const PERFORMANCE_MODS: &[(&str, &str, bool)] = &[
     ("puzzle",                "resource-pack / particle cache",             false),
     ("sodium-extra",          "extra sodium options",                       false),
     ("almanac",               "lib: needed by Let Me Despawn",              false),
+    ("cloth-config",          "lib: needed by More Culling",                false),
     ("fabric-language-kotlin", "lib: needed by Particle Core",              false),
     ("fzzy-config",           "lib: needed by Particle Core",               false),
     ("forge-config-api-port", "lib: needed by RRLS",                        false),
